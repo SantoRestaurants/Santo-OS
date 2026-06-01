@@ -1,0 +1,19 @@
+{
+  "workflow_key": "corte_santo_daily_sales_reconciliation",
+  "phase": "P0",
+  "dry_run": true,
+  "source_channel": "agent_mail",
+  "payload": {
+    "business_date": "2026-05-27",
+    "restaurant_key": "[CONFIRM]",
+    "documents": [
+      {
+        "document_key": "daily_sales_report",
+        "document_type": "daily_sales_report",
+        "source_system": "agent_mail",
+        "source_uri": "email://msg-corte-001/corte.xlsx",
+        "source_hash": "[CONFIRM]"
+      }
+    ]
+  }
+}

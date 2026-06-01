@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante
+  xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+  Version="4.0"
+  Fecha="2026-05-27T12:00:00"
+  Total="1234.56">
+  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="EMISOR DEMO"/>
+  <cfdi:Receptor Rfc="BBB010101BBB" Nombre="RECEPTOR DEMO"/>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital UUID="11111111-2222-3333-4444-555555555555"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>

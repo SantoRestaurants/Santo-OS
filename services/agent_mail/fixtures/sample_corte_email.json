@@ -1,0 +1,18 @@
+{
+  "provider": "gmail",
+  "provider_message_id": "msg-corte-001",
+  "internet_message_id": "<msg-corte-001@example.com>",
+  "inbox_address": "santo-os@example.com",
+  "from_address": "admin@example.com",
+  "to_addresses": ["santo-os@example.com"],
+  "cc_addresses": [],
+  "subject": "[CORTE] Corte Santo 2026-05-27",
+  "received_at": "2026-05-27T12:00:00Z",
+  "attachments": [
+    {
+      "filename": "corte.xlsx",
+      "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
+  ],
+  "labels": ["inbox"]
+}

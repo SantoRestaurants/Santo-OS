@@ -1,0 +1,15 @@
+{
+  "command_type": "workflow.run",
+  "phase": "P0",
+  "source_channel": "dashboard",
+  "workflow_key": "corte_santo_daily_sales_reconciliation",
+  "dry_run": true,
+  "actor": {
+    "id": "local_dev",
+    "role": "admin_ops"
+  },
+  "payload": {
+    "business_date": "2026-05-27",
+    "restaurant_key": "[CONFIRM]"
+  }
+}

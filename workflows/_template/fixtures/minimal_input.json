@@ -1,0 +1,12 @@
+{
+  "workflow_key": "template_workflow",
+  "phase": "P0",
+  "dry_run": true,
+  "trigger": {
+    "channel": "dashboard",
+    "actor": "codex"
+  },
+  "payload": {
+    "example": true
+  }
+}

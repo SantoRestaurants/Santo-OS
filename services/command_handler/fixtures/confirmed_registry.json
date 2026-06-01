@@ -1,0 +1,15 @@
+{
+  "corte_santo_daily_sales_reconciliation": {
+    "workflow_key": "corte_santo_daily_sales_reconciliation",
+    "display_name": "Corte Santo - Daily Sales Reconciliation",
+    "confirmation_status": "confirmed",
+    "default_config": {
+      "thresholds": {
+        "cash_difference_medium": 0
+      },
+      "reviewer_map": {
+        "default": "admin_ops"
+      }
+    }
+  }
+}

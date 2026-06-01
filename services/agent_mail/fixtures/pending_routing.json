@@ -1,0 +1,7 @@
+{
+  "confirmed": false,
+  "subject_prefixes": {
+    "[CORTE]": "[CONFIRM]"
+  },
+  "ignored_subject_prefixes": ["[CONFIRM]"]
+}

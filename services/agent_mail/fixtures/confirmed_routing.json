@@ -1,0 +1,11 @@
+{
+  "confirmed": true,
+  "dry_run": true,
+  "default_actor_role": "agent_mail_intake",
+  "subject_prefixes": {
+    "[CORTE]": "corte_santo_daily_sales_reconciliation",
+    "[XML]": "xml_sat_validation",
+    "[UTILIDADES]": "utility_receipts_matching"
+  },
+  "ignored_subject_prefixes": ["[FYI]"]
+}

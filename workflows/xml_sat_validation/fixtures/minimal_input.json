@@ -1,0 +1,17 @@
+{
+  "workflow_key": "xml_sat_validation",
+  "phase": "P0",
+  "dry_run": true,
+  "source_channel": "dashboard",
+  "payload": {
+    "documents": [
+      {
+        "document_key": "sample_cfdi",
+        "filename": "sample_cfdi.xml",
+        "source_system": "dashboard_upload",
+        "source_uri": "fixture://sample_cfdi.xml",
+        "xml_text": "[CONFIRM]"
+      }
+    ]
+  }
+}

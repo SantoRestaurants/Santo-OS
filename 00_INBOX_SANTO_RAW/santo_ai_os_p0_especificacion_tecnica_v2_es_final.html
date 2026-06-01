@@ -1,0 +1,247 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Santo AI OS P0 Especificación Técnica v2</title><style>
+:root{--bg:#f7f4ed;--card:#fffdf8;--ink:#1f211d;--muted:#687064;--line:#ddd4c5;--accent:#654321;--soft:#efe6d8;--warn:#986300;--bad:#9a2d2d;--good:#2f6f4e;--code:#f4efe6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;line-height:1.55}.header{padding:46px 56px 32px;background:linear-gradient(135deg,#fffdf8,#ede3d4);border-bottom:1px solid var(--line)}.kicker{text-transform:uppercase;letter-spacing:.12em;color:var(--accent);font-weight:800;font-size:12px;margin-bottom:12px}h1{font-size:40px;line-height:1.05;margin:0 0 12px;max-width:1050px}.subtitle{color:var(--muted);font-size:18px;max-width:1050px}.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}.badge{border:1px solid var(--line);background:rgba(255,255,255,.75);padding:6px 10px;border-radius:999px;color:#484b43;font-size:13px}.layout{display:grid;grid-template-columns:305px 1fr;gap:28px;padding:28px 56px 60px}nav{position:sticky;top:18px;align-self:start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 8px 20px rgba(41,35,25,.06)}nav h2{font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin:0 0 10px}nav ul{margin:0;padding-left:18px;max-height:78vh;overflow:auto}nav li{font-size:13px;margin:8px 0}nav li.toc-l2{margin-left:10px;font-size:12px}nav a{color:var(--ink);text-decoration:none}nav a:hover{color:var(--accent);text-decoration:underline}main{max-width:1100px}.section{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px 30px;margin-bottom:20px;box-shadow:0 8px 20px rgba(41,35,25,.05)}h2{font-size:28px;margin:0 0 16px}h3{font-size:22px;margin:0 0 14px}h4{font-size:18px;margin:0 0 12px}p{margin:0 0 12px}ul,ol{margin-top:8px;margin-bottom:14px}li{margin:5px 0}table{width:100%;border-collapse:collapse;margin:16px 0;background:white;border-radius:12px;overflow:hidden}th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top;font-size:14px}th{background:var(--soft);color:#2d2d29}.callout{border-left:4px solid var(--accent);background:#faf5eb;padding:14px 16px;border-radius:12px;margin:16px 0}.good{border-left-color:var(--good)}.warn{border-left-color:var(--warn)}.bad{border-left-color:var(--bad)}code,pre{background:var(--code);border:1px solid var(--line);border-radius:10px}code{padding:2px 5px}pre{padding:14px 16px;overflow:auto;white-space:pre-wrap}.small{color:var(--muted);font-size:13px}.checklist li{list-style:'□  ';padding-left:4px}@media(max-width:900px){.layout{grid-template-columns:1fr;padding:20px}nav{position:relative;top:auto}.header{padding:34px 24px}h1{font-size:32px}}@media print{nav{display:none}.layout{display:block;padding:0}.section{break-inside:avoid;box-shadow:none}body{background:#fff}.header{padding:24px 0}}
+</style></head><body><header class="header"><div class="kicker">Santo AI OS · v2 corrected source of truth</div><h1>Santo AI OS P0 Especificación Técnica v2</h1><div class="subtitle">Roadmap técnico corregido paso a paso para Dante.</div><div class="meta"><span class="badge">P0 Foundation Slice</span><span class="badge">No separate addendum until team answers</span><span class="badge">Generated 2026-05-25</span></div></header><div class="layout"><nav><h2>Contents</h2><ul><li class="toc-l1"><a href="#s1">Propósito y regla de construcción</a></li><li class="toc-l1"><a href="#s2">Arquitectura general</a></li><li class="toc-l1"><a href="#s3">Secuencia de PRs</a></li><li class="toc-l1"><a href="#s4">Estructura de repo</a></li><li class="toc-l1"><a href="#s5">Template santo_context.md</a></li><li class="toc-l1"><a href="#s6">skill_template.md</a></li><li class="toc-l1"><a href="#s7">Contrato script.py</a></li><li class="toc-l1"><a href="#s8">Schema explícito adicional</a></li><li class="toc-l1"><a href="#s9">Schema de config por módulo</a></li><li class="toc-l1"><a href="#s10">Idempotency y source_hash</a></li><li class="toc-l1"><a href="#s11">Comportamiento default si faltan reglas</a></li><li class="toc-l1"><a href="#s12">Routing de Agent Mail</a></li><li class="toc-l1"><a href="#s13">RLS y acceso</a></li><li class="toc-l1"><a href="#s14">Drive folder map y regla de espejo</a></li><li class="toc-l1"><a href="#s15">Utilidades y escritura a Sheets</a></li><li class="toc-l1"><a href="#s16">Scheduler</a></li><li class="toc-l1"><a href="#s17">Criterios de aceptación antes de merge</a></li></ul></nav><main><section id="s1" class="section"><h2>Propósito y regla de construcción</h2><p>Esta Especificación Técnica v2 corregida es la guía paso a paso para Dante en P0. Reemplaza la v2 anterior. No se debe crear addendum técnico separado; el único addendum posterior debe contener respuestas operativas confirmadas por el equipo Santo.</p><div class="callout warn"><strong>Regla crítica:</strong> Dante puede iniciar PR 1–PR 5 de inmediato. Dante no debe hardcodear rutas de Drive, thresholds, revisores, códigos de restaurante, routing de emails, source_hash ni supuestos de negocio. Todo debe ser configurable y confirmado por Santo.</div></section><section id="s2" class="section"><h2>Arquitectura general</h2><pre>Agent Mail / Dashboard / Scheduler / futuro WhatsApp
+  → Shared Command Handler
+  → Permission Check
+  → Workflow Module
+  → Supabase/Postgres
+  → Notification
+  → Events + Watchdog</pre><table><tr><th>Capa</th><th>Implementación P0</th></tr><tr><td>Fuente de verdad</td><td>Supabase/Postgres</td></tr><tr><td>Dashboard</td><td>Next.js con vistas por rol</td></tr><tr><td>Entrada/notificación</td><td>Agent Mail / inbox OS</td></tr><tr><td>Ejecución</td><td>Módulos Python con skill.md y script.py</td></tr><tr><td>IA</td><td>Claude para ambigüedad, clasificación y resúmenes; nunca verdad de aprobación</td></tr><tr><td>Scheduler</td><td>Decidir antes de jobs diarios: GitHub Actions o Railway</td></tr></table></section><section id="s3" class="section"><h2>Secuencia de PRs</h2><table><tr><th>PR</th><th>Alcance</th><th>¿Puede iniciar?</th><th>¿Depende del equipo?</th></tr><tr><td>PR 1</td><td>Repo, templates, santo_context.md, skill_template.md, env examples</td><td>Sí</td><td>No</td></tr><tr><td>PR 2</td><td>Schema Supabase, workflow_runs/email_messages explícitos, RLS, seed placeholders</td><td>Sí</td><td>No, usando placeholders claros</td></tr><tr><td>PR 3</td><td>Dashboard shell + auth + roles</td><td>Sí</td><td>No</td></tr><tr><td>PR 4</td><td>Shared command handler + events/watchdog</td><td>Sí</td><td>No</td></tr><tr><td>PR 5</td><td>Agent Mail polling/intake: email_messages + metadata + clasificación segura</td><td>Sí</td><td>Convención de routing puede quedar pendiente</td></tr><tr><td>PR 6</td><td>Corte intake crea workflow_run/documents/tasks; sin reconciliación final</td><td>Parcial</td><td>Adjuntos/folder map pendientes</td></tr><tr><td>PR 7</td><td>Checks de Corte + excepciones</td><td>No</td><td>Thresholds, severidades y revisores requeridos</td></tr><tr><td>PR 8</td><td>XML SAT validación delgada</td><td>Parcial</td><td>RFCs/folders pendientes</td></tr><tr><td>PR 9</td><td>Utilidades validación delgada</td><td>No</td><td>Plantilla/folders/scope Sheets pendientes</td></tr><tr><td>PR 10</td><td>Hardening, tests, deploy checklist, handoff</td><td>Después</td><td>Depende de PRs previos</td></tr></table></section><section id="s4" class="section"><h2>Estructura de repo</h2><pre>/
+  santo_context.md
+  .env.example
+  /app
+    /api/commands
+    /api/agent-mail
+    /dashboard
+  /supabase
+    /migrations
+    /seed
+    rls_examples.sql
+  /modules
+    /corte_santo
+      skill.md
+      script.py
+      config.example.json
+      /tests
+      /fixtures
+    /xml_sat_validation
+      skill.md
+      script.py
+      config.example.json
+    /utility_receipts
+      skill.md
+      script.py
+      config.example.json
+    /shared
+      command_handler.py
+      supabase_client.py
+      mail_client.py
+      drive_client.py
+      logging.py
+      watchdog.py
+      permissions.py
+  /templates
+    santo_context_template.md
+    skill_template.md
+    script_contract.py
+    config_schema.md
+  /jobs
+    poll_agent_mail.py
+    run_corte_daily.py
+    watchdog_check.py
+  /docs
+    operational_inputs_pending.md
+    drive_folder_map_pending.md
+    corte_thresholds_pending.md
+</pre></section><section id="s5" class="section"><h2>Template santo_context.md</h2><p><code>santo_context.md</code> es un archivo vivo de contexto de empresa. Empieza con P0 y crece con el OS. Supabase sigue siendo la fuente de verdad. Nunca guardar credenciales, datos bancarios, FIEL, passwords SAT/IDSE, nómina o bancos.</p><pre># santo_context.md
+
+## Company
+Name:
+Business:
+Timezone:
+Current phase: P0 — Foundation Slice
+Primary workflow: Corte Santo — Daily Sales Reconciliation
+Secondary workflows: XML SAT Validation; Utility Receipts
+
+## Operating Domains
+| Domain | Status | Owner | Notes |
+|---|---|---|---|
+| Admin / HR / Payroll / Accounting / Fiscal | Active P0 | | |
+| Legal Operations | Future | | |
+| Restaurant Operations | Future | | |
+
+## People / Owners
+| Name | Area | Email | Phone | Role | Notes |
+|---|---|---|---|---|---|
+| Mich | HR / Payroll | | | hr_owner | |
+| Abraham | CxP | | | cxp_owner | |
+| Fernanda | Fiscal | | | fiscal_owner | |
+| Manuela | Accounting Control | | | accounting_owner | |
+
+## Restaurants / Units
+| Name | Short Code [CONFIRM] | Manager | Email | Legal Entity | RFC | Main Drive Folder | Status |
+|---|---|---|---|---|---|---|---|
+| Santo | [CONFIRM: SANTO or other] | | | | | | active |
+
+## Legal Entities / RFCs
+| Legal Name | RFC | Related Units | Fiscal Owner | Drive Folder | Status |
+|---|---|---|---|---|---|
+
+## Workflow Registry
+| Workflow | Owner | Frequency | Trigger | Execution | Risk | Review Required | Status |
+|---|---|---|---|---|---|---|---|
+| Corte Santo | Manuela/Abraham | Daily | Agent Mail/Dashboard/Scheduled | Remote/Hybrid | Medium | Exceptions | Active P0 |
+| XML SAT Validation | Fernanda | Monthly | Manual/Agent Mail | Local/Hybrid | High | Yes | P0 thin |
+| Utility Receipts | Abraham/Manuela | Monthly/as needed | Agent Mail/Dashboard | Remote/Hybrid | Medium | Mismatches | P0 thin |
+
+## Drive Folder Map
+Pendiente de confirmar. No hardcodear.
+
+## Corte Thresholds
+Pendiente de confirmar. Mientras tanto, todo default a requires_review.
+
+## Email Routing
+Pendiente: prefijos, labels, remitentes o reglas de forwarding.
+</pre></section><section id="s6" class="section"><h2>skill_template.md</h2><pre># Skill: [Workflow Name]
+
+## 1. Objective
+Qué hace y por qué existe.
+
+## 2. Workflow Owner
+Owner primario:
+Backup:
+Revisores:
+
+## 3. Operating Domain
+Dominio operativo.
+
+## 4. P0 Role
+Primario / Secundario delgado / Futuro.
+
+## 5. Inputs
+Archivos requeridos, opcionales, email/source, config.
+
+## 6. Outputs
+Registros Supabase, archivos Drive, dashboard, notificaciones.
+
+## 7. Risk Level
+Low / Medium / High y explicación.
+
+## 8. Execution Environment
+Local / Remote / Hybrid.
+requires_local_machine:
+requires_sensitive_credentials:
+allowed_trigger_channels:
+
+## 9. Dependencias de Modelo de Datos
+Tablas que lee:
+Tablas que escribe:
+Tablas que actualiza:
+Foreign keys requeridas:
+Tablas específicas del workflow que toca:
+
+## 10. Trigger Channels
+Dashboard, Agent Mail, scheduled job, WhatsApp later.
+
+## 11. Approval / Review Points
+Qué requiere revisión humana y qué nunca debe ser automático.
+
+## 12. Input Schema
+JSON esperado.
+
+## 13. Output Schema
+Resultado y status.
+
+## 14. Dry Run Mode
+Cómo probar sin tocar datos reales.
+
+## 15. Idempotency
+idempotency_key, source_hash, qué pasa si corre dos veces.
+
+## 16. Logging Behavior
+Eventos, watchdog, email logs.
+
+## 17. Exception Behavior
+Tipos, severidades, fallback si faltan reglas.
+
+## 18. Watchdog Behavior
+Duración esperada, retries, stuck threshold, alertas.
+
+## 19. Test Fixtures
+Archivos sintéticos; no usar datos reales sensibles salvo aprobación.
+
+## 20. Manual Fallback
+Proceso manual si falla.
+
+## 21. Rollback Procedure
+Cómo desactivar o revertir seguro.
+</pre></section><section id="s7" class="section"><h2>Contrato script.py</h2><pre>def run(input_payload: dict, *, dry_run: bool = False) -> dict:
+    """
+    {
+      "status": "completed|requires_review|failed|skipped",
+      "workflow_run_id": "uuid",
+      "idempotency_key": "string",
+      "created_documents": [],
+      "created_tasks": [],
+      "created_exceptions": [],
+      "approvals_required": [],
+      "events": [],
+      "summary": "resumen legible",
+      "errors": []
+    }
+    """
+</pre><ul><li>Debe soportar dry_run.</li><li>Debe crear o reutilizar workflow_runs vía idempotency.</li><li>No debe pasar silenciosamente si falta config.</li><li>Debe loggear start/end/failure en watchdog.</li><li>Debe devolver requires_review cuando thresholds/reglas estén pendientes.</li></ul></section><section id="s8" class="section"><h2>Schema explícito adicional</h2><h3>workflow_runs</h3><table><tr><th>Campo</th><th>Propósito</th></tr><tr><td>id</td><td>UUID PK</td></tr><tr><td>workflow_id</td><td>FK workflows</td></tr><tr><td>restaurant_id</td><td>FK opcional</td></tr><tr><td>legal_entity_id</td><td>FK opcional</td></tr><tr><td>period_date</td><td>Fecha diaria para Corte</td></tr><tr><td>period_month / period_year</td><td>Mensual</td></tr><tr><td>status</td><td>queued, running, completed, requires_review, failed, skipped</td></tr><tr><td>source_channel</td><td>dashboard, email, scheduled_job, whatsapp, manual</td></tr><tr><td>actor_id</td><td>Usuario/sistema/integración</td></tr><tr><td>started_at / completed_at</td><td>Timestamps</td></tr><tr><td>idempotency_key</td><td>Clave única anti duplicados</td></tr><tr><td>notes</td><td>Notas</td></tr></table><h3>email_messages</h3><table><tr><th>Campo</th><th>Propósito</th></tr><tr><td>id</td><td>UUID PK</td></tr><tr><td>gmail_message_id</td><td>ID proveedor</td></tr><tr><td>thread_id</td><td>Thread</td></tr><tr><td>from_email / to_email</td><td>Remitente/destinatario</td></tr><tr><td>subject</td><td>Asunto</td></tr><tr><td>received_at</td><td>Timestamp</td></tr><tr><td>workflow_run_id</td><td>FK opcional</td></tr><tr><td>processing_status</td><td>new, classified, attachments_saved, processed, requires_review, failed, ignored</td></tr><tr><td>attachment_count</td><td>Número de adjuntos</td></tr><tr><td>event_id</td><td>FK events</td></tr></table></section><section id="s9" class="section"><h2>Schema de config por módulo</h2><pre>{
+  "workflow_key": "corte_santo",
+  "module_version": "0.1.0",
+  "enabled": true,
+  "restaurant_id": "[CONFIRM]",
+  "restaurant_short_code": "[CONFIRM]",
+  "legal_entity_id": "[CONFIRM]",
+  "period_type": "daily|monthly|ad_hoc",
+  "allowed_trigger_channels": ["dashboard", "email", "scheduled_job"],
+  "required_attachments": [
+    {"key": "wansoft_global_report", "required": true, "accepted_types": ["xlsx", "pdf", "image"]}
+  ],
+  "thresholds": {
+    "terminal_vs_pos": "[PENDING]",
+    "cash": "[PENDING]",
+    "tips": "[PENDING]",
+    "delivery": "[PENDING]"
+  },
+  "reviewers": {
+    "default": "[PENDING]",
+    "cash_exception": "[PENDING]",
+    "fiscal_exception": "[PENDING]"
+  },
+  "drive_folder_map_ids": {
+    "source": "[PENDING]",
+    "evidence": "[PENDING]",
+    "reports": "[PENDING]"
+  },
+  "exception_severity_rules": {
+    "missing_required_attachment": "high",
+    "unconfirmed_threshold": "medium"
+  },
+  "idempotency": {
+    "strategy": "workflow+entity+period+source_hash",
+    "source_hash_definition": "[DEFINE PER WORKFLOW]"
+  }
+}</pre></section><section id="s10" class="section"><h2>Idempotency y source_hash</h2><table><tr><th>Workflow</th><th>Key</th><th>source_hash</th></tr><tr><td>Corte Santo</td><td>workflow_key + restaurant_id + period_date + source_hash</td><td>Preferir Gmail message ID. Si no existe, sha256 de nombres de adjuntos ordenados + tamaños + fecha de email.</td></tr><tr><td>XML SAT</td><td>workflow_key + legal_entity_id + mes/año + source_hash</td><td>sha256 de UUIDs XML ordenados o manifest de exportación.</td></tr><tr><td>Utilidades</td><td>workflow_key + restaurant/person + periodo + source_hash</td><td>sha256 de filename + tamaño + periodo; content hash si se puede.</td></tr></table><div class="callout warn">Si no se puede calcular con confianza, status <code>requires_review</code>, no <code>completed</code>.</div></section><section id="s11" class="section"><h2>Comportamiento default si faltan reglas</h2><ul><li>Thresholds no confirmados: cada check genera excepción media y workflow_run queda <code>requires_review</code>.</li><li>Folder no confirmado: no escribir en carpeta desconocida; crear placeholder y excepción.</li><li>Reviewer no confirmado: usar owner default si existe; si no, <code>requires_review</code>.</li><li>Email no clasificado: <code>email_messages.processing_status = requires_review</code>; no adivinar.</li><li>Ningún threshold pendiente debe pasar como <code>completed</code>.</li></ul></section><section id="s12" class="section"><h2>Routing de Agent Mail</h2><p>La convención final está pendiente. Debe ser configurable.</p><table><tr><th>Opción</th><th>Ejemplo</th><th>Notas</th></tr><tr><td>Prefijo asunto</td><td>[CORTE], [XML], [UTILIDADES]</td><td>Recomendado para P0 si el equipo puede cumplir.</td></tr><tr><td>Por remitente</td><td>Email gerente → Corte</td><td>Útil pero riesgoso si mezclan contenido.</td></tr><tr><td>Gmail label</td><td>Label manual o regla</td><td>Buen puente si asuntos son inconsistentes.</td></tr><tr><td>Tipo adjunto</td><td>.xml → XML</td><td>Señal de apoyo, no autoridad única.</td></tr></table><div class="callout warn"><strong>ignored vs requires_review:</strong> <code>ignored</code> solo puede usarse cuando el correo es definitivamente no-workflow por una regla confirmada, por ejemplo newsletter automática, spam conocido o remitente explícitamente excluido. Todo correo ambiguo debe quedar como <code>requires_review</code>, nunca <code>ignored</code>.</div></section><section id="s13" class="section"><h2>RLS y acceso</h2><pre>profiles(id, email, role, department)
+user_domain_access(user_id, operating_domain_id, access_level)
+workflow_access(user_id, workflow_id, access_level)
+</pre><ul><li>Activar RLS en toda tabla expuesta.</li><li>Service role solo backend.</li><li>Acceso por dominio y workflow.</li><li>Tablas específicas como corte_daily_runs, corte_line_items, corte_reconciliation_checks, sat_xml_files, sat_validation_matrix y utility_receipt_records heredan acceso vía workflow_runs → workflows → workflow_access/user_domain_access.</li></ul></section><section id="s14" class="section"><h2>Drive folder map y regla de espejo</h2><p>En P0 se espeja la estructura actual. <strong>Espejar significa mapear carpetas existentes en <code>drive_folder_map</code>, no hardcodear rutas en código.</strong></p><pre>drive_folder_map:
+- id
+- workflow_id
+- restaurant_id
+- legal_entity_id
+- folder_purpose: source|evidence|report|archive|review
+- folder_name
+- drive_folder_url
+- parent_folder_url
+- naming_rule
+- read_allowed
+- write_allowed
+- confirmed_by
+- confirmed_at
+</pre><p>Si una carpeta no está confirmada, el workflow no debe escribir ahí.</p></section><section id="s15" class="section"><h2>Utilidades y escritura a Sheets</h2><p>En P0, Utilidades debe registrar estatus en Supabase. Escribir de regreso en Google Sheets/plantilla queda <strong>diferido salvo confirmación explícita</strong>.</p></section><section id="s16" class="section"><h2>Scheduler</h2><table><tr><th>Opción</th><th>Pros</th><th>Contras</th></tr><tr><td>GitHub Actions</td><td>Simple, barato, bueno para cron</td><td>Menos ideal para polling continuo; posibles delays</td></tr><tr><td>Railway</td><td>Worker always-on, polling/cron simple, Dante lo conoce</td><td>Servicio pagado y dependencia adicional</td></tr></table><p>Documentar decisión antes de activar <code>run_corte_daily.py</code>.</p></section><section id="s17" class="section"><h2>Criterios de aceptación antes de merge</h2><ul class="checklist"><li>No secrets en repo.</li><li>RLS activo.</li><li>Service role no expuesto al frontend.</li><li>workflow_runs y email_messages explícitos.</li><li>Cada módulo tiene skill.md, config.example.json y una sección explícita de Dependencias de Modelo de Datos con tablas leídas/escritas.</li><li>Cada script soporta dry_run e idempotency.</li><li>Reglas pendientes default a requires_review.</li><li>Agent Mail no adivina routing.</li><li>Dashboard muestra runs y excepciones.</li><li>Tests cubren duplicados/idempotency y falta de config.</li></ul></section></main></div></body></html>

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Santo AI OS — Need-to-Know para Dante</title>
+  <style>
+    :root{
+      --bg:#f7f4ed;
+      --card:#fffdf8;
+      --ink:#1f211d;
+      --muted:#687064;
+      --line:#ddd4c5;
+      --accent:#654321;
+      --soft:#efe6d8;
+      --warn:#986300;
+      --good:#2f6f4e;
+      --code:#f4efe6;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
+      line-height:1.58;
+    }
+    header{
+      padding:42px 54px 28px;
+      background:linear-gradient(135deg,#fffdf8,#ede3d4);
+      border-bottom:1px solid var(--line);
+    }
+    .kicker{
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      color:var(--accent);
+      font-weight:800;
+      font-size:12px;
+      margin-bottom:12px;
+    }
+    h1{
+      font-size:38px;
+      line-height:1.05;
+      margin:0 0 12px;
+      max-width:1000px;
+    }
+    .subtitle{
+      color:var(--muted);
+      font-size:18px;
+      max-width:1000px;
+    }
+    main{
+      max-width:1080px;
+      margin:0 auto;
+      padding:28px 22px 60px;
+    }
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:20px;
+      padding:26px 30px;
+      margin-bottom:18px;
+      box-shadow:0 8px 20px rgba(41,35,25,.05);
+    }
+    h2{font-size:26px;margin:0 0 14px}
+    h3{font-size:19px;margin:20px 0 10px}
+    p{margin:0 0 12px}
+    ul,ol{margin-top:8px;margin-bottom:14px}
+    li{margin:6px 0}
+    code{
+      background:var(--code);
+      border:1px solid var(--line);
+      border-radius:8px;
+      padding:2px 5px;
+    }
+    .callout{
+      border-left:4px solid var(--accent);
+      background:#faf5eb;
+      padding:14px 16px;
+      border-radius:12px;
+      margin:16px 0;
+    }
+    .good{border-left-color:var(--good)}
+    .warn{border-left-color:var(--warn)}
+    .small{color:var(--muted);font-size:13px}
+    table{
+      width:100%;
+      border-collapse:collapse;
+      margin:16px 0;
+      background:white;
+      border-radius:12px;
+      overflow:hidden;
+    }
+    th,td{
+      border:1px solid var(--line);
+      padding:10px 12px;
+      text-align:left;
+      vertical-align:top;
+      font-size:14px;
+    }
+    th{background:var(--soft)}
+    @media print{
+      body{background:#fff}
+      header{padding:24px 0}
+      main{padding:0}
+      .card{box-shadow:none;break-inside:avoid}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="kicker">Santo AI OS · Need-to-know para Dante</div>
+    <h1>Qué cambió, por qué importa y cómo debe construir P0</h1>
+    <div class="subtitle">
+      Documento corto para explicar los ajustes recientes sin incluir el contexto interno de la conversación.
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. La idea central</h2>
+      <p>
+        Dante, ajustamos las instrucciones para que el proyecto no se convierta en una colección de scripts sueltos.
+      </p>
+      <p>
+        Santo AI OS debe ser una base común donde cada workflow fortalece la memoria operativa de Santo.
+      </p>
+      <div class="callout">
+        <strong>Principio:</strong> si una automatización funciona, pero no se conecta a la columna vertebral del OS, no está bien construida para este proyecto.
+      </div>
+      <p>Todos los workflows deben conectarse a la misma estructura base:</p>
+      <ul>
+        <li><code>workflows</code></li>
+        <li><code>workflow_runs</code></li>
+        <li><code>documents</code></li>
+        <li><code>tasks</code></li>
+        <li><code>exceptions</code></li>
+        <li><code>approvals/reviews</code></li>
+        <li><code>events</code></li>
+        <li><code>watchdog_log</code></li>
+        <li><code>drive_folder_map</code></li>
+        <li><code>email_messages</code></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>2. Por qué lo estructuramos así</h2>
+      <p>
+        Tomamos una lógica tipo YC/startup: construir una visión grande, pero ejecutarla en fases pequeñas, medibles y muy claras.
+      </p>
+      <p>Eso significa:</p>
+      <ul>
+        <li>tener una North Star clara</li>
+        <li>definir un P0 muy acotado</li>
+        <li>trabajar por PRs pequeños</li>
+        <li>tener criterios de aceptación claros</li>
+        <li>separar arquitectura de reglas operativas</li>
+        <li>evitar scope creep</li>
+        <li>no inventar reglas del negocio</li>
+      </ul>
+      <div class="callout good">
+        <strong>Objetivo:</strong> que puedas moverte rápido técnicamente, pero sin comprometer la arquitectura ni asumir cosas que debe confirmar el equipo Santo.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3. Jerarquía de documentos</h2>
+      <p>
+        Para evitar confusión, definimos qué documento manda sobre cuál.
+      </p>
+      <table>
+        <tr>
+          <th>Documento</th>
+          <th>Función</th>
+        </tr>
+        <tr>
+          <td>Claude Project Instructions</td>
+          <td>Constitución de largo plazo: visión, arquitectura, reglas, seguridad y roadmap general.</td>
+        </tr>
+        <tr>
+          <td>PRD v2</td>
+          <td>Fuente de verdad de producto para P0: qué se construye y qué no.</td>
+        </tr>
+        <tr>
+          <td>Technical Build Spec v2</td>
+          <td>Fuente de verdad técnica para Dante: cómo construir P0.</td>
+        </tr>
+        <tr>
+          <td>Operational Addendum</td>
+          <td>Configuración operativa confirmada por el equipo: folders, thresholds, revisores, RFCs, routing, etc.</td>
+        </tr>
+      </table>
+      <div class="callout warn">
+        <strong>Regla de conflicto:</strong> si las Claude Instructions y el PRD/Technical Spec dicen cosas distintas sobre P0, para P0 mandan el PRD v2 y el Technical Build Spec v2.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Scope final de P0</h2>
+      <p>P0 no es todo el Santo AI OS. P0 prueba el modelo operativo.</p>
+      <p><strong>P0 activo:</strong></p>
+      <ul>
+        <li><strong>Primario:</strong> Corte Santo — Daily Sales Reconciliation.</li>
+        <li><strong>Secundario delgado:</strong> Validación Facturas / XML SAT.</li>
+        <li><strong>Secundario delgado:</strong> Recibos de Utilidades.</li>
+      </ul>
+      <p>
+        Employee Document Intake no es P0 activo. Puede aparecer en instrucciones anteriores, pero queda como futuro/P3+ salvo que Alonso lo reintroduzca explícitamente.
+      </p>
+      <div class="callout">
+        <strong>Mensaje clave:</strong> P0 = Corte Santo como workflow principal + XML SAT y Utilidades como pruebas delgadas de reutilización de la foundation.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5. DRY / MECE Skill Registry Rule</h2>
+      <p>
+        Antes de crear un nuevo skill, módulo o script, Dante debe revisar si ya existe algo que cubra esa función o si un skill existente puede parametrizarse.
+      </p>
+      <p>Debe confirmar:</p>
+      <ol>
+        <li>No existe ya un skill que cubra esta función.</li>
+        <li>No puede resolverse extendiendo o parametrizando un skill existente.</li>
+        <li>El nuevo skill no se traslapa con el propósito, inputs u outputs de otro skill.</li>
+      </ol>
+      <p>
+        Si ya existe un skill que puede cubrir el caso, la acción default es extender el skill existente, no crear otro.
+      </p>
+      <div class="callout warn">
+        <strong>Regla:</strong> todo skill nuevo debe estar registrado en el Workflow Registry antes del primer commit. Si no está registrado, para Santo AI OS no existe oficialmente.
+      </div>
+      <p>
+        Esto evita duplicados, scripts aislados y lógica repetida.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>6. Progressive Context Loading</h2>
+      <p>
+        <code>santo_context.md</code> debe mantenerse ligero. No debe convertirse en una enciclopedia gigante de toda la empresa.
+      </p>
+      <p>Debe contener solo contexto general:</p>
+      <ul>
+        <li>company overview</li>
+        <li>brand list</li>
+        <li>operating domains</li>
+        <li>fase actual</li>
+        <li>workflow activo</li>
+        <li>reglas generales</li>
+      </ul>
+      <p>
+        El contexto detallado debe vivir por dominio:
+      </p>
+      <ul>
+        <li><code>context_accounting.md</code></li>
+        <li><code>context_fiscal.md</code></li>
+        <li><code>context_hr.md</code></li>
+        <li><code>context_legal.md</code></li>
+        <li><code>context_restaurant_ops.md</code></li>
+      </ul>
+      <p>
+        Cada workflow carga solo lo que necesita. Corte Santo no debe cargar contexto de HR. XML SAT no debe cargar contexto de restaurant ops si no lo necesita.
+      </p>
+      <div class="callout good">
+        <strong>Por qué importa:</strong> esto mantiene el sistema escalable, evita contexto inflado y permite agregar departamentos sin romper la base.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>7. Agent Mail en P0</h2>
+      <p>
+        Agent Mail sí es parte de P0. La idea es tener un correo del sistema, por ejemplo <code>os@santo.com</code>, como canal controlado de entrada y notificación.
+      </p>
+      <p>Agent Mail en P0 debe:</p>
+      <ul>
+        <li>recibir correos y adjuntos de workflows</li>
+        <li>crear registros en <code>email_messages</code></li>
+        <li>ligar correos clasificados a <code>workflow_runs</code></li>
+        <li>guardar metadata de adjuntos como <code>documents</code></li>
+        <li>mandar resúmenes, alertas y solicitudes de revisión</li>
+        <li>loggear actividad en <code>events</code></li>
+      </ul>
+      <p>Agent Mail no debe:</p>
+      <ul>
+        <li>ser fuente de verdad</li>
+        <li>aprobar acciones delicadas</li>
+        <li>leer correos no relacionados</li>
+        <li>ignorar silenciosamente correos ambiguos</li>
+      </ul>
+      <div class="callout warn">
+        <strong>Regla:</strong> un correo ambiguo debe quedar en <code>requires_review</code>, no en <code>ignored</code>.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>8. Qué puede construir Dante ya</h2>
+      <p>Dante puede avanzar con la base técnica de P0 sin esperar las respuestas del equipo.</p>
+      <ul>
+        <li><strong>PR 1:</strong> repo, templates, <code>santo_context.md</code>, <code>skill_template.md</code>, env examples.</li>
+        <li><strong>PR 2:</strong> schema Supabase, RLS, seed placeholders, <code>workflow_runs</code>, <code>email_messages</code>.</li>
+        <li><strong>PR 3:</strong> dashboard shell, auth y roles.</li>
+        <li><strong>PR 4:</strong> shared command handler, events y watchdog.</li>
+        <li><strong>PR 5:</strong> Agent Mail polling/intake y metadata logging.</li>
+      </ul>
+      <div class="callout good">
+        <strong>Mensaje clave:</strong> puedes avanzar con foundation, pero no con lógica de negocio no confirmada.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>9. Qué no debe construir todavía</h2>
+      <p>Dante no debe finalizar todavía:</p>
+      <ul>
+        <li>reconciliación final de Corte Santo</li>
+        <li>thresholds de AMEX, Banorte, efectivo, propinas, Uber, Rappi, etc.</li>
+        <li>rutas definitivas de Drive</li>
+        <li>revisores por tipo de excepción</li>
+        <li>mapeos restaurante / entidad legal / RFC</li>
+        <li>routing definitivo de Agent Mail</li>
+        <li>reglas de plantilla de Utilidades</li>
+        <li>escritura a Google Sheets para Utilidades</li>
+        <li>parser final de XML SAT sin fixtures reales sanitizados</li>
+      </ul>
+      <div class="callout warn">
+        <strong>Regla:</strong> si falta confirmación del equipo, el sistema debe marcar <code>requires_review</code>, no <code>completed</code>.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>10. Operational Addendum</h2>
+      <p>
+        El Operational Addendum será el documento/configuración que salga de las respuestas del equipo Santo. No es otro PRD y no es otra arquitectura.
+      </p>
+      <p>Su función es convertir respuestas operativas en configuración técnica:</p>
+      <ul>
+        <li><code>drive_folder_map</code> — carpetas, permisos, jerarquía y naming.</li>
+        <li><code>corte_thresholds</code> — tolerancias y reglas de conciliación.</li>
+        <li><code>reviewer_map</code> — quién revisa cada tipo de excepción.</li>
+        <li><code>restaurant_entity_rfc_map</code> — restaurante, razón social, RFC y unidad.</li>
+        <li><code>agent_mail_routing_rules</code> — cómo clasificar correos del inbox OS.</li>
+        <li><code>utility_receipt_config</code> — columnas, matching, color/marcado y Sheets scope.</li>
+        <li><code>xml_sat_config</code> — RFCs, periodos, folders, tipos de XML y fixtures.</li>
+      </ul>
+      <div class="callout">
+        <strong>Mensaje para Dante:</strong> el addendum no cambia la arquitectura; llena la configuración que tú no debes inventar.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>11. Regla de no hardcodear</h2>
+      <p>Dante no debe hardcodear:</p>
+      <ul>
+        <li>rutas de Drive</li>
+        <li>thresholds</li>
+        <li>reviewers</li>
+        <li>restaurant short codes</li>
+        <li>RFCs</li>
+        <li>email routing</li>
+        <li>source_hash rules</li>
+        <li>columnas de plantillas</li>
+        <li>reglas de excepción</li>
+      </ul>
+      <p>Todo eso debe vivir en configuración, tablas, seed data placeholder o archivos config confirmados.</p>
+      <div class="callout warn">
+        <strong>Traducción simple:</strong> no queremos que el sistema funcione porque Dante adivinó cómo opera Santo. Queremos que funcione porque Santo confirmó las reglas.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>12. Qué significa <code>requires_review</code></h2>
+      <p>
+        <code>requires_review</code> es el estado seguro cuando el sistema no tiene suficiente información para decidir.
+      </p>
+      <p>Debe usarse cuando:</p>
+      <ul>
+        <li>falta un threshold</li>
+        <li>falta una carpeta confirmada</li>
+        <li>falta un reviewer</li>
+        <li>un correo no puede clasificarse con confianza</li>
+        <li>un archivo no se puede leer</li>
+        <li>un input no tiene suficiente metadata</li>
+        <li>el sistema detecta ambigüedad</li>
+      </ul>
+      <div class="callout good">
+        <strong>Regla de oro:</strong> incertidumbre nunca debe convertirse en <code>completed</code>.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>13. Frase corta para explicarlo</h2>
+      <div class="callout">
+        <p>
+          Dante, los cambios que hicimos son para que puedas moverte rápido en la base técnica, pero sin inventar reglas de negocio. La arquitectura debe ser reusable, configurable y auditable. P0 prueba el modelo; no intenta construir todo el Santo AI OS desde el día uno.
+        </p>
+      </div>
+      <div class="callout">
+        <p>
+          Si algo no está confirmado por Santo, no lo hardcodees y no lo marques como completed. Déjalo como config pendiente o <code>requires_review</code>.
+        </p>
+      </div>
+      <p class="small">
+        Este documento es una referencia rápida para conversar con Dante. No sustituye el PRD v2 ni el Technical Build Spec v2.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "workflow_key": "corte_santo_daily_sales_reconciliation",
+  "restaurant_map": "[CONFIRM]",
+  "drive_folder_map": "[CONFIRM]",
+  "mandatory_attachments": "[CONFIRM]",
+  "reviewer_map": "[CONFIRM]",
+  "thresholds": "[CONFIRM]"
+}

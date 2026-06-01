@@ -1,0 +1,11 @@
+{
+  "workflow_key": "[CONFIRM]",
+  "owner_role": "[CONFIRM]",
+  "review_policy": {
+    "default_reviewer_role": "[CONFIRM]",
+    "missing_config_status": "requires_review"
+  },
+  "registries": {
+    "supabase_required": true
+  }
+}

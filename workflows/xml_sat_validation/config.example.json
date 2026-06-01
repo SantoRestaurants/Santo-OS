@@ -1,0 +1,6 @@
+{
+  "workflow_key": "xml_sat_validation",
+  "rfc_map": "[CONFIRM]",
+  "drive_folder_map": "[CONFIRM]",
+  "trusted_source_exports": "[CONFIRM]"
+}
