@@ -1,39 +1,35 @@
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient, getSupabasePublicConfig } from "@/lib/supabase/server";
 
-async function requestMagicLink(formData: FormData) {
+async function signInWithPassword(formData: FormData) {
   "use server";
 
   const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
   const supabase = await createSupabaseServerClient();
 
-  if (!email || !supabase) {
-    redirect("/?auth=requires_config");
+  if (!email || !password || !supabase) {
+    redirect("/auth/sign-in?error=missing_fields");
   }
 
-  const headerStore = await headers();
-  const origin =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    headerStore.get("origin") ||
-    "http://localhost:3000";
-
-  const { error } = await supabase.auth.signInWithOtp({
+  const { error } = await supabase.auth.signInWithPassword({
     email,
-    options: {
-      emailRedirectTo: `${origin}/auth/callback`,
-    },
+    password,
   });
 
   if (error) {
-    redirect("/?auth=requires_config");
+    redirect(`/auth/sign-in?error=${encodeURIComponent(error.message)}`);
   }
 
-  redirect("/?auth=check_email");
+  redirect("/");
 }
 
-export default function SignInPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function SignInPage({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const errorMessage = typeof params.error === "string" ? params.error : null;
   const config = getSupabasePublicConfig();
 
   return (
@@ -42,7 +38,7 @@ export default function SignInPage() {
         <p className="text-sm font-medium text-stone-500">Santo AI OS · P0</p>
         <h1 className="mt-2 text-2xl font-semibold text-stone-950">Ingresar al panel</h1>
         <p className="mt-2 text-sm text-stone-600">
-          Acceso por magic link de Supabase Auth. El rol operativo se lee desde app_metadata.
+          Acceso con email y contraseña. El rol operativo se lee desde app_metadata.
         </p>
 
         {!config.configured ? (
@@ -51,24 +47,45 @@ export default function SignInPage() {
           </div>
         ) : null}
 
-        <form action={requestMagicLink} className="mt-6 space-y-4">
-          <label className="block text-sm font-medium text-stone-700" htmlFor="email">
-            Email
-          </label>
-          <input
-            className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
-            id="email"
-            name="email"
-            placeholder="tu@email.com"
-            required
-            type="email"
-          />
+        {errorMessage ? (
+          <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            {errorMessage}
+          </div>
+        ) : null}
+
+        <form action={signInWithPassword} className="mt-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-stone-700" htmlFor="email">
+              Email
+            </label>
+            <input
+              className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
+              id="email"
+              name="email"
+              placeholder="tu@email.com"
+              required
+              type="email"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-stone-700" htmlFor="password">
+              Contraseña
+            </label>
+            <input
+              className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
+              id="password"
+              name="password"
+              placeholder="••••••••"
+              required
+              type="password"
+            />
+          </div>
           <button
             className="w-full rounded-md bg-stone-950 px-4 py-2 text-sm font-medium text-white disabled:bg-stone-300"
             disabled={!config.configured}
             type="submit"
           >
-            Enviar magic link
+            Ingresar
           </button>
         </form>
       </section>
