@@ -81,18 +81,21 @@ class SupabaseWriter:
                 "apikey": service_key,
                 "Authorization": f"Bearer {service_key}",
                 "Content-Type": "application/json",
-                "Prefer": "resolution=merge-duplicates",
+                "Prefer": "resolution=merge-duplicates,return=representation",
             },
             timeout=30.0,
         )
 
-    def upsert_email_message(self, record: dict[str, Any]) -> bool:
-        """Upsert into email_messages. Returns True on success."""
+    def upsert_email_message(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        """Upsert into email_messages. Returns the record on success."""
         resp = self.http.post("/rest/v1/email_messages", json=record)
         if resp.status_code >= 400:
             logger.error("Failed to write email_message: %s %s", resp.status_code, resp.text)
-            return False
-        return True
+            return None
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return data[0]
+        return data if isinstance(data, dict) else None
 
     def insert_event(self, event: dict[str, Any]) -> bool:
         resp = self.http.post("/rest/v1/events", json=event)
@@ -100,6 +103,48 @@ class SupabaseWriter:
             logger.error("Failed to write event: %s %s", resp.status_code, resp.text)
             return False
         return True
+
+    def insert_review(self, review: dict[str, Any]) -> bool:
+        """Insert a review record (requires workflow_run_id)."""
+        resp = self.http.post("/rest/v1/reviews", json=review)
+        if resp.status_code >= 400:
+            logger.error("Failed to write review: %s %s", resp.status_code, resp.text)
+            return False
+        return True
+
+    def insert_exception(self, exception: dict[str, Any]) -> bool:
+        """Insert an exception record (requires workflow_run_id)."""
+        resp = self.http.post("/rest/v1/exceptions", json=exception)
+        if resp.status_code >= 400:
+            logger.error("Failed to write exception: %s %s", resp.status_code, resp.text)
+            return False
+        return True
+
+    def get_workflow_id(self, workflow_key: str) -> str | None:
+        """Get workflow UUID by key."""
+        resp = self.http.get(
+            "/rest/v1/workflows",
+            params={"workflow_key": f"eq.{workflow_key}", "select": "id", "limit": "1"},
+        )
+        if resp.status_code >= 400:
+            return None
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return data[0].get("id")
+        return None
+
+    def upsert_workflow_run(self, run: dict[str, Any]) -> str | None:
+        """Upsert a workflow_run. Returns the run ID."""
+        resp = self.http.post("/rest/v1/workflow_runs", json=run)
+        if resp.status_code >= 400:
+            logger.error("Failed to write workflow_run: %s %s", resp.status_code, resp.text)
+            return None
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return data[0].get("id")
+        if isinstance(data, dict):
+            return data.get("id")
+        return None
 
 
 def _agentmail_to_intake_format(msg: dict[str, Any]) -> dict[str, Any]:
@@ -179,7 +224,7 @@ def poll_and_classify(
 
         if supabase and not dry_run:
             email_record = result["email_message"]
-            # Clean up for Supabase insert
+            # Write email_message
             supabase_record = {
                 "provider": email_record["provider"],
                 "provider_message_id": email_record["provider_message_id"],
@@ -197,8 +242,57 @@ def poll_and_classify(
             }
             supabase.upsert_email_message(supabase_record)
 
+            # Write events
             for event in result.get("events", []):
                 supabase.insert_event(event)
+
+            # If classified → create workflow_run + review
+            if result["status"] == "classified" and result.get("command"):
+                workflow_key = result["command"]["workflow_key"]
+                workflow_id = supabase.get_workflow_id(workflow_key)
+                if workflow_id:
+                    import hashlib
+                    idem_key = hashlib.sha256(
+                        f"agent_mail:{email_record['provider_message_id']}".encode()
+                    ).hexdigest()[:32]
+
+                    run_id = supabase.upsert_workflow_run({
+                        "workflow_id": workflow_id,
+                        "business_date": datetime.now(UTC).strftime("%Y-%m-%d"),
+                        "status": "requires_review",
+                        "source_channel": "agent_mail",
+                        "idempotency_key": idem_key,
+                        "input_payload": {
+                            "email_subject": email_record["subject"],
+                            "email_from": email_record["from_address"],
+                            "classification": email_record.get("classification_key"),
+                        },
+                        "requires_review_reason": "Procesado por Agent Mail — pendiente de revisión humana",
+                    })
+
+                    if run_id:
+                        # Create a review for the human
+                        supabase.insert_review({
+                            "workflow_run_id": run_id,
+                            "review_key": f"agent_mail_intake_{idem_key[:12]}",
+                            "status": "requires_review",
+                            "metadata": {
+                                "source": "agent_mail",
+                                "email_subject": email_record["subject"],
+                                "email_from": email_record["from_address"],
+                            },
+                        })
+
+            # If requires_review → create exception
+            elif result["status"] == "requires_review":
+                reason = email_record.get("requires_review_reason", "unknown")
+                # We need a workflow_run_id for exceptions, but since this email
+                # couldn't be classified, we skip creating an exception in the DB
+                # (it shows as requires_review in email_messages which the dashboard reads)
+                logger.info(
+                    "Email requires review (reason=%s), recorded in email_messages",
+                    reason,
+                )
 
     return results
 

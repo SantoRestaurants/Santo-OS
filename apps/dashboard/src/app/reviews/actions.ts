@@ -3,13 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 
 const AGENTMAIL_API_KEY = process.env.AGENTMAIL_API_KEY || "";
 const AGENTMAIL_INBOX_ID = process.env.AGENTMAIL_INBOX_ID || "santoos@agentmail.to";
 
 async function sendCorrectionEmail(to: string, subject: string, notes: string) {
-    if (!AGENTMAIL_API_KEY) return; // Skip if not configured
+    if (!AGENTMAIL_API_KEY) return;
 
     try {
         await fetch(
@@ -39,25 +39,32 @@ async function sendCorrectionEmail(to: string, subject: string, notes: string) {
             }
         );
     } catch {
-        // Email send is best-effort, don't block the review action
+        // Email send is best-effort
     }
 }
 
-export async function approveReview(formData: FormData) {
-    const reviewId = formData.get("reviewId") as string;
-    const notes = (formData.get("notes") as string) || null;
-
+async function requireAuth() {
     const supabase = await createSupabaseServerClient();
     if (!supabase) redirect("/auth/sign-in");
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/auth/sign-in");
 
-    const { error } = await supabase
+    const serviceClient = createSupabaseServiceClient();
+    if (!serviceClient) redirect("/reviews?error=service_client_not_configured");
+
+    return { user, serviceClient };
+}
+
+export async function approveReview(formData: FormData) {
+    const reviewId = formData.get("reviewId") as string;
+    const { serviceClient } = await requireAuth();
+
+    const { error } = await serviceClient
         .from("reviews")
         .update({
             status: "approved",
-            review_notes: notes,
+            review_notes: "Aprobado",
             completed_at: new Date().toISOString(),
         })
         .eq("id", reviewId);
@@ -73,18 +80,18 @@ export async function approveReview(formData: FormData) {
 
 export async function requestCorrection(formData: FormData) {
     const reviewId = formData.get("reviewId") as string;
-    const notes = (formData.get("notes") as string) || "Se requieren correcciones.";
+    const notes = (formData.get("notes") as string)?.trim();
     const originalFrom = (formData.get("originalFrom") as string) || "";
     const originalSubject = (formData.get("originalSubject") as string) || "Operación";
 
-    const supabase = await createSupabaseServerClient();
-    if (!supabase) redirect("/auth/sign-in");
+    // Notes are required
+    if (!notes) {
+        redirect("/reviews?error=Escribí qué hay que corregir antes de enviar");
+    }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) redirect("/auth/sign-in");
+    const { serviceClient } = await requireAuth();
 
-    // Update review status
-    const { error } = await supabase
+    const { error } = await serviceClient
         .from("reviews")
         .update({
             status: "changes_requested",
@@ -97,7 +104,7 @@ export async function requestCorrection(formData: FormData) {
         redirect(`/reviews?error=${encodeURIComponent(error.message)}`);
     }
 
-    // Send correction email back to the original sender
+    // Send correction email
     if (originalFrom) {
         await sendCorrectionEmail(originalFrom, originalSubject, notes);
     }
@@ -109,19 +116,13 @@ export async function requestCorrection(formData: FormData) {
 
 export async function resolveException(formData: FormData) {
     const exceptionId = formData.get("exceptionId") as string;
-    const notes = (formData.get("notes") as string) || null;
+    const { user, serviceClient } = await requireAuth();
 
-    const supabase = await createSupabaseServerClient();
-    if (!supabase) redirect("/auth/sign-in");
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) redirect("/auth/sign-in");
-
-    const { error } = await supabase
+    const { error } = await serviceClient
         .from("exceptions")
         .update({
             status: "resolved",
-            details: { resolved_notes: notes, resolved_by: user.email },
+            details: { resolved_by: user.email, resolved_at: new Date().toISOString() },
         })
         .eq("id", exceptionId);
 
