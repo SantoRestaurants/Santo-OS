@@ -9,13 +9,13 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
     const tones: Record<string, string> = {
-        neutral: "border-zinc-200 bg-zinc-50 text-zinc-700",
-        green: "border-emerald-200 bg-emerald-50 text-emerald-800",
-        amber: "border-amber-200 bg-amber-50 text-amber-900",
-        red: "border-red-200 bg-red-50 text-red-800",
+        neutral: "border-zinc-300 bg-zinc-100 text-zinc-900",
+        green: "border-emerald-300 bg-emerald-100 text-emerald-900",
+        amber: "border-amber-300 bg-amber-100 text-amber-950",
+        red: "border-red-300 bg-red-100 text-red-950",
     };
     return (
-        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>
+        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}>
             {children}
         </span>
     );
@@ -87,7 +87,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                 {/* Header */}
                 <header className="flex items-center justify-between">
                     <div>
-                        <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+                        <div className="flex items-center gap-2 text-xs font-medium text-zinc-700">
                             <ShieldCheck className="h-3.5 w-3.5" />
                             Santo AI OS
                         </div>
@@ -125,13 +125,13 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                         <h2 className="text-sm font-semibold text-zinc-900">
                             Esperando tu decisión ({pendingReviews.length})
                         </h2>
-                        <p className="mt-0.5 text-xs text-zinc-500">
+                        <p className="mt-0.5 text-xs text-zinc-700">
                             Estas operaciones no pueden avanzar hasta que las apruebes o pidas corrección.
                         </p>
                     </div>
                     <div className="divide-y divide-zinc-100">
                         {pendingReviews.length === 0 && (
-                            <p className="px-5 py-8 text-center text-sm text-zinc-400">
+                            <p className="px-5 py-8 text-center text-sm text-zinc-600">
                                 No hay nada esperando tu decisión.
                             </p>
                         )}
@@ -142,7 +142,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                         <h3 className="text-sm font-semibold text-zinc-900">
                                             {humanizeReviewKey(review.review_key)}
                                         </h3>
-                                        <p className="mt-0.5 text-xs text-zinc-500">
+                                        <p className="mt-0.5 text-xs text-zinc-700">
                                             {formatDate(review.requested_at)}
                                         </p>
                                     </div>
@@ -170,7 +170,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                         <input type="hidden" name="originalSubject" value={review.review_key} />
                                         <div className="flex-1">
                                             <input
-                                                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+                                                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-800 placeholder:text-zinc-600 focus:border-zinc-400 focus:outline-none"
                                                 name="notes"
                                                 placeholder="Notas de corrección (ej: falta el voucher del banco)"
                                                 type="text"
@@ -196,14 +196,14 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                         <h2 className="text-sm font-semibold text-zinc-900">
                             Problemas detectados ({exceptions.length})
                         </h2>
-                        <p className="mt-0.5 text-xs text-zinc-500">
+                        <p className="mt-0.5 text-xs text-zinc-700">
                             El sistema encontró estos problemas automáticamente. Podés resolverlos o dejarlos para
                             después.
                         </p>
                     </div>
                     <div className="divide-y divide-zinc-100">
                         {exceptions.length === 0 && (
-                            <p className="px-5 py-8 text-center text-sm text-zinc-400">
+                            <p className="px-5 py-8 text-center text-sm text-zinc-600">
                                 Sin problemas detectados — todo en orden.
                             </p>
                         )}
@@ -214,7 +214,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                         <h3 className="text-sm font-medium text-zinc-900">
                                             {humanizeExceptionType(ex.exception_type)}
                                         </h3>
-                                        <p className="mt-0.5 text-xs text-zinc-500">
+                                        <p className="mt-0.5 text-xs text-zinc-700">
                                             {formatDate(ex.created_at)}
                                             {ex.severity === "high" || ex.severity === "critical"
                                                 ? " · Prioridad alta"
@@ -256,7 +256,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                             {humanizeReviewKey(review.review_key)}
                                         </span>
                                         {review.review_notes && (
-                                            <p className="mt-0.5 text-xs text-zinc-500">
+                                            <p className="mt-0.5 text-xs text-zinc-700">
                                                 Notas: {review.review_notes}
                                             </p>
                                         )}

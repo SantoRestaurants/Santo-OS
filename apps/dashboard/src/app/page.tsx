@@ -18,14 +18,14 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
   const tones: Record<string, string> = {
-    neutral: "border-zinc-200 bg-zinc-50 text-zinc-700",
-    green: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    blue: "border-sky-200 bg-sky-50 text-sky-800",
-    amber: "border-amber-200 bg-amber-50 text-amber-900",
-    red: "border-red-200 bg-red-50 text-red-800",
+    neutral: "border-zinc-300 bg-zinc-100 text-zinc-900",
+    green: "border-emerald-300 bg-emerald-100 text-emerald-900",
+    blue: "border-sky-300 bg-sky-100 text-sky-900",
+    amber: "border-amber-300 bg-amber-100 text-amber-950",
+    red: "border-red-300 bg-red-100 text-red-950",
   };
   return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}>
       {children}
     </span>
   );
@@ -44,7 +44,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 function Empty({ text }: { text: string }) {
   return (
-    <p className="py-6 text-center text-sm text-zinc-400">{text}</p>
+    <p className="py-6 text-center text-sm text-zinc-700">{text}</p>
   );
 }
 
@@ -356,7 +356,7 @@ function DemoRunRow({
         <div className="text-sm font-medium text-zinc-900">{restaurant} — {date}</div>
         <Badge tone={tone}>{status}</Badge>
       </div>
-      <p className="mt-1 text-xs text-zinc-500">{reason}</p>
+      <p className="mt-1 text-xs text-zinc-700">{reason}</p>
     </div>
   );
 }
@@ -377,7 +377,7 @@ function DemoEmailRow({
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-sm font-medium text-zinc-900">{subject}</div>
-          <div className="mt-0.5 text-xs text-zinc-500">{from}</div>
+          <div className="mt-0.5 text-xs text-zinc-700">{from}</div>
         </div>
         <Badge tone={tone}>{status}</Badge>
       </div>
@@ -396,29 +396,29 @@ function LiveView({ data }: { data: DashboardData }) {
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-500">Operaciones</span>
-            <FileText className="h-4 w-4 text-zinc-400" />
+            <span className="text-xs font-medium text-zinc-700">Operaciones</span>
+            <FileText className="h-4 w-4 text-zinc-600" />
           </div>
           <div className="mt-2 text-2xl font-bold">{data.runs.length}</div>
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-500">Necesitan revisión</span>
+            <span className="text-xs font-medium text-zinc-700">Necesitan revisión</span>
             <AlertTriangle className="h-4 w-4 text-amber-500" />
           </div>
           <div className="mt-2 text-2xl font-bold text-amber-700">{requiresReviewCount}</div>
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-500">En cola de revisión</span>
+            <span className="text-xs font-medium text-zinc-700">En cola de revisión</span>
             <CheckCircle2 className="h-4 w-4 text-emerald-500" />
           </div>
           <div className="mt-2 text-2xl font-bold">{data.reviews.length}</div>
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-500">Emails recibidos</span>
-            <Mail className="h-4 w-4 text-zinc-400" />
+            <span className="text-xs font-medium text-zinc-700">Emails recibidos</span>
+            <Mail className="h-4 w-4 text-zinc-600" />
           </div>
           <div className="mt-2 text-2xl font-bold">{data.emailMessages.length}</div>
         </div>
@@ -429,7 +429,7 @@ function LiveView({ data }: { data: DashboardData }) {
         {data.runs.length ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-zinc-100 text-xs text-zinc-500">
+              <thead className="border-b border-zinc-100 text-xs text-zinc-700">
                 <tr>
                   <th className="pb-2 pr-4 font-medium">Fecha</th>
                   <th className="pb-2 pr-4 font-medium">Origen</th>
@@ -469,7 +469,7 @@ function LiveView({ data }: { data: DashboardData }) {
                     <div className="text-sm font-medium text-zinc-900">
                       {humanizeExceptionType(ex.exception_type)}
                     </div>
-                    <div className="mt-0.5 text-xs text-zinc-500">{formatStatus(ex.status)}</div>
+                    <div className="mt-0.5 text-xs text-zinc-700">{formatStatus(ex.status)}</div>
                   </div>
                   <Badge tone={ex.severity === "high" || ex.severity === "critical" ? "red" : "amber"}>
                     {ex.severity === "high" || ex.severity === "critical" ? "Alta" : "Media"}
@@ -491,7 +491,7 @@ function LiveView({ data }: { data: DashboardData }) {
                     <div className="text-sm font-medium text-zinc-900">
                       {humanizeReviewKey(review.review_key)}
                     </div>
-                    <div className="mt-0.5 text-xs text-zinc-500">{formatStatus(review.status)}</div>
+                    <div className="mt-0.5 text-xs text-zinc-700">{formatStatus(review.status)}</div>
                   </div>
                   <StatusDot color={review.status === "requires_review" ? "amber" : "green"} />
                 </div>
@@ -511,7 +511,7 @@ function LiveView({ data }: { data: DashboardData }) {
               <div key={msg.id} className="flex items-start justify-between gap-3 rounded-lg border border-zinc-100 p-3">
                 <div>
                   <div className="text-sm font-medium text-zinc-900">{msg.subject ?? "Sin asunto"}</div>
-                  <div className="mt-0.5 text-xs text-zinc-500">{msg.from_address}</div>
+                  <div className="mt-0.5 text-xs text-zinc-700">{msg.from_address}</div>
                 </div>
                 <Badge tone={msg.processing_status === "requires_review" ? "amber" : msg.processing_status === "classified" || msg.processing_status === "linked" ? "green" : "neutral"}>
                   {formatEmailStatus(msg.processing_status)}
@@ -626,14 +626,14 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
         {/* Header */}
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+            <div className="flex items-center gap-2 text-xs font-medium text-zinc-700">
               <ShieldCheck className="h-3.5 w-3.5" />
               Santo AI OS
             </div>
             <h1 className="mt-1 text-2xl font-bold text-zinc-900">Panel de operaciones</h1>
           </div>
           <div className="flex items-center gap-2">
-            {data.userEmail && <span className="text-xs text-zinc-500">{data.userEmail}</span>}
+            {data.userEmail && <span className="text-xs text-zinc-700">{data.userEmail}</span>}
             <Link
               className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
               href={demoMode ? "/" : "/?demo=1"}
