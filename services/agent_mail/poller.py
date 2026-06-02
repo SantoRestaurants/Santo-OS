@@ -26,6 +26,7 @@ from typing import Any
 import httpx
 
 from services.agent_mail.intake import intake_email
+from services.ai.classifier import classify_email, summarize_email
 
 logger = logging.getLogger("agent_mail.poller")
 
@@ -70,6 +71,14 @@ class AgentMailClient:
         resp.raise_for_status()
         return resp.json()
 
+    def download_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        """Download an attachment from AgentMail API."""
+        resp = self.http.get(
+            f"/inboxes/{self.inbox_id}/messages/{message_id}/attachments/{attachment_id}"
+        )
+        resp.raise_for_status()
+        return resp.content
+
 
 class SupabaseWriter:
     """Writes classified email records to Supabase."""
@@ -96,6 +105,60 @@ class SupabaseWriter:
         if isinstance(data, list) and data:
             return data[0]
         return data if isinstance(data, dict) else None
+
+    def upload_document(self, path: str, content: bytes, content_type: str) -> str | None:
+        """Upload to Supabase Storage bucket 'documents' and return public URL."""
+        storage_url = self.http.base_url
+        upload_resp = self.http.request(
+            "POST",
+            f"/storage/v1/object/documents/{path}",
+            content=content,
+            headers={
+                "Content-Type": content_type,
+                "x-upsert": "true",
+            },
+        )
+        if upload_resp.status_code >= 400:
+            # Try creating the bucket first, then retry
+            logger.info("Upload failed, attempting to create 'documents' bucket...")
+            create_resp = self.http.post(
+                "/storage/v1/bucket",
+                json={"id": "documents", "name": "documents", "public": False},
+            )
+            if create_resp.status_code < 400 or "already exists" in create_resp.text.lower():
+                upload_resp = self.http.request(
+                    "POST",
+                    f"/storage/v1/object/documents/{path}",
+                    content=content,
+                    headers={
+                        "Content-Type": content_type,
+                        "x-upsert": "true",
+                    },
+                )
+            if upload_resp.status_code >= 400:
+                logger.error(
+                    "Failed to upload document: %s %s",
+                    upload_resp.status_code,
+                    upload_resp.text,
+                )
+                return None
+
+        # Return the storage path as URL
+        public_url = f"{storage_url}/storage/v1/object/public/documents/{path}"
+        return public_url
+
+    def insert_document(self, document: dict[str, Any]) -> str | None:
+        """Insert a document record. Returns the document ID."""
+        resp = self.http.post("/rest/v1/documents", json=document)
+        if resp.status_code >= 400:
+            logger.error("Failed to write document: %s %s", resp.status_code, resp.text)
+            return None
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return data[0].get("id")
+        if isinstance(data, dict):
+            return data.get("id")
+        return None
 
     def insert_event(self, event: dict[str, Any]) -> bool:
         resp = self.http.post("/rest/v1/events", json=event)
@@ -211,6 +274,75 @@ def poll_and_classify(
         intake_input = _agentmail_to_intake_format(msg)
         result = intake_email(intake_input, routing_config)
 
+        # AI classification for unclassified emails
+        if (
+            result["status"] == "requires_review"
+            and result["email_message"].get("requires_review_reason") == "unclassified_email"
+        ):
+            subject = msg.get("subject", "")
+            body = msg.get("body_text", "") or msg.get("body", "")
+            prefix_map = routing_config.get("subject_prefixes", {})
+
+            ai_result = classify_email(
+                subject=subject,
+                body=body,
+                available_workflows=prefix_map,
+            )
+
+            if ai_result["classified"]:
+                # Update the result with AI classification
+                result["status"] = "classified"
+                result["email_message"]["processing_status"] = "classified"
+                result["email_message"]["classification_key"] = ai_result["classification_key"]
+                result["email_message"]["requires_review_reason"] = None
+                result["email_message"]["raw_metadata"]["workflow_key"] = ai_result["workflow_key"]
+                result["email_message"]["raw_metadata"]["ai_classification"] = {
+                    "confidence": ai_result["confidence"],
+                    "reasoning": ai_result["reasoning"],
+                }
+
+                # Build the command envelope
+                result["command"] = {
+                    "command_type": "workflow.intake",
+                    "phase": "P0",
+                    "source_channel": "agent_mail",
+                    "workflow_key": ai_result["workflow_key"],
+                    "dry_run": bool(routing_config.get("dry_run", True)),
+                    "actor": {
+                        "id": "agent_mail",
+                        "role": routing_config.get("default_actor_role", "agent_mail_intake"),
+                    },
+                    "payload": {
+                        "email_provider": result["email_message"]["provider"],
+                        "provider_message_id": result["email_message"]["provider_message_id"],
+                        "classification_key": ai_result["classification_key"],
+                        "classified_by": "ai",
+                        "ai_confidence": ai_result["confidence"],
+                    },
+                }
+
+                logger.info(
+                    "AI classified: subject=%r workflow=%s confidence=%.2f",
+                    subject,
+                    ai_result["workflow_key"],
+                    ai_result["confidence"],
+                )
+            else:
+                # Store AI reasoning even when not classified
+                result["email_message"]["raw_metadata"]["ai_classification"] = {
+                    "confidence": ai_result["confidence"],
+                    "reasoning": ai_result["reasoning"],
+                    "classified": False,
+                }
+
+        # Generate summary for classified emails
+        if result["status"] == "classified":
+            subject = msg.get("subject", "")
+            body = msg.get("body_text", "") or msg.get("body", "")
+            summary = summarize_email(subject=subject, body=body)
+            if summary:
+                result["email_message"]["raw_metadata"]["ai_summary"] = summary
+
         result["_source_message_id"] = msg.get("message_id")
         result["_source_subject"] = msg.get("subject")
         result["_source_from"] = msg.get("from")
@@ -245,6 +377,44 @@ def poll_and_classify(
             # Write events
             for event in result.get("events", []):
                 supabase.insert_event(event)
+
+            # Handle attachments — download and store
+            attachments = msg.get("attachments") or []
+            message_id = msg.get("message_id", "")
+            for att in attachments:
+                att_id = att.get("attachment_id")
+                filename = att.get("filename", "unknown")
+                content_type = att.get("content_type", "application/octet-stream")
+
+                if not att_id:
+                    continue
+
+                try:
+                    content = client.download_attachment(message_id, att_id)
+                    storage_path = f"agent_mail/{message_id}/{filename}"
+                    public_url = supabase.upload_document(
+                        path=storage_path,
+                        content=content,
+                        content_type=content_type,
+                    )
+
+                    if public_url:
+                        supabase.insert_document({
+                            "document_key": f"email_att_{message_id}_{att_id}",
+                            "document_type": "email_attachment",
+                            "source_system": "agent_mail",
+                            "source_uri": public_url,
+                            "status": "registered",
+                            "metadata": {
+                                "original_filename": filename,
+                                "content_type": content_type,
+                                "email_message_id": message_id,
+                                "attachment_id": att_id,
+                            },
+                        })
+                        logger.info("Stored attachment: %s → %s", filename, public_url)
+                except Exception:
+                    logger.exception("Failed to download/store attachment %s", att_id)
 
             # If classified → create workflow_run + review
             if result["status"] == "classified" and result.get("command"):

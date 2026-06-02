@@ -18,6 +18,12 @@ REQUIRED_CONFIG_KEYS = (
     "thresholds",
 )
 
+# Default reconciliation thresholds (can be overridden in config)
+DEFAULT_THRESHOLDS = {
+    "cash_tolerance": 500,
+    "deposit_tolerance": 200,
+}
+
 
 def _json_dumps(data: dict[str, Any]) -> str:
     return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -123,6 +129,112 @@ def _document_records(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
 
     return records
+
+
+def reconcile(
+    sales_total: float,
+    bank_deposit: float,
+    cash_count: float,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Reconcile Corte Santo figures against configurable thresholds.
+
+    Compares sales_total against bank_deposit + cash_count, and checks
+    individual tolerances for cash and deposit discrepancies.
+
+    Args:
+        sales_total: Total reported sales for the day.
+        bank_deposit: Amount deposited at the bank.
+        cash_count: Cash counted at close.
+        config: Optional config with 'thresholds' key containing
+                'cash_tolerance' and 'deposit_tolerance'.
+
+    Returns:
+        dict with:
+            - status: "ready_for_approval" or "requires_review"
+            - exceptions: list of any discrepancies found
+            - summary: reconciliation summary data
+    """
+    config = config or {}
+    thresholds_config = config.get("thresholds", {})
+
+    # Use config thresholds or defaults
+    if _has_unconfirmed_value(thresholds_config):
+        thresholds_config = {}
+
+    cash_tolerance = float(
+        thresholds_config.get("cash_tolerance", DEFAULT_THRESHOLDS["cash_tolerance"])
+    )
+    deposit_tolerance = float(
+        thresholds_config.get("deposit_tolerance", DEFAULT_THRESHOLDS["deposit_tolerance"])
+    )
+
+    # Calculate differences
+    total_accounted = bank_deposit + cash_count
+    overall_difference = abs(sales_total - total_accounted)
+    cash_difference = abs(cash_count - (sales_total - bank_deposit))
+    deposit_difference = abs(bank_deposit - (sales_total - cash_count))
+
+    exceptions: list[dict[str, Any]] = []
+
+    if cash_difference > cash_tolerance:
+        exceptions.append({
+            "exception_key": "cash_discrepancy",
+            "exception_type": "reconciliation_discrepancy",
+            "severity": "high" if cash_difference > cash_tolerance * 2 else "medium",
+            "status": "requires_review",
+            "details": {
+                "type": "cash",
+                "expected": sales_total - bank_deposit,
+                "actual": cash_count,
+                "difference": cash_difference,
+                "tolerance": cash_tolerance,
+            },
+        })
+
+    if deposit_difference > deposit_tolerance:
+        exceptions.append({
+            "exception_key": "deposit_discrepancy",
+            "exception_type": "reconciliation_discrepancy",
+            "severity": "high" if deposit_difference > deposit_tolerance * 2 else "medium",
+            "status": "requires_review",
+            "details": {
+                "type": "deposit",
+                "expected": sales_total - cash_count,
+                "actual": bank_deposit,
+                "difference": deposit_difference,
+                "tolerance": deposit_tolerance,
+            },
+        })
+
+    status = "requires_review" if exceptions else "ready_for_approval"
+
+    logging.info(
+        "corte_santo_reconcile status=%s sales=%.2f deposit=%.2f cash=%.2f diff=%.2f",
+        status,
+        sales_total,
+        bank_deposit,
+        cash_count,
+        overall_difference,
+    )
+
+    return {
+        "status": status,
+        "summary": {
+            "sales_total": sales_total,
+            "bank_deposit": bank_deposit,
+            "cash_count": cash_count,
+            "total_accounted": total_accounted,
+            "overall_difference": overall_difference,
+            "thresholds": {
+                "cash_tolerance": cash_tolerance,
+                "deposit_tolerance": deposit_tolerance,
+            },
+        },
+        "exceptions": exceptions,
+        "reconciled_at": _now(),
+    }
 
 
 def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> dict[str, Any]:

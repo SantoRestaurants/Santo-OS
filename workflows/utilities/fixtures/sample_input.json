@@ -1,0 +1,18 @@
+{
+    "dry_run": true,
+    "source_channel": "agent_mail",
+    "payload": {
+        "provider": "cfe",
+        "amount": 2450.00,
+        "due_date": "2026-06-15",
+        "service_number": "123456789012",
+        "documents": [
+            {
+                "document_key": "cfe_receipt_202606",
+                "filename": "recibo_cfe_junio.pdf",
+                "source_uri": null,
+                "source_hash": null
+            }
+        ]
+    }
+}

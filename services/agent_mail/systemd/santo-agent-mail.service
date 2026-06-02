@@ -1,0 +1,19 @@
+[Unit]
+Description=SantoOS Agent Mail Poller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=santoos
+WorkingDirectory=/opt/santoos
+EnvironmentFile=/opt/santoos/.env
+ExecStart=/usr/bin/python3 -m services.agent_mail.poller --config /opt/santoos/services/agent_mail/config.json --write --watch
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=santo-agent-mail
+
+[Install]
+WantedBy=multi-user.target

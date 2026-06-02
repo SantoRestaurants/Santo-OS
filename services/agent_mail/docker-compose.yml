@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  agent-mail-poller:
+    build:
+      context: ../../
+      dockerfile: services/agent_mail/Dockerfile
+    container_name: santo-agent-mail-poller
+    restart: unless-stopped
+    env_file:
+      - ../../.env.local
+    environment:
+      - LOG_LEVEL=INFO
+    volumes:
+      - ../../services/agent_mail/config.json:/app/services/agent_mail/config.json:ro

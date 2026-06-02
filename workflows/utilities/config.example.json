@@ -1,0 +1,36 @@
+{
+    "workflow_key": "utility_receipts_matching",
+    "providers": {
+        "cfe": {
+            "name": "CFE (Comisión Federal de Electricidad)",
+            "service_number_pattern": "[CONFIRM]",
+            "payment_method": "[CONFIRM]"
+        },
+        "agua": {
+            "name": "Agua / SIAPA",
+            "service_number_pattern": "[CONFIRM]",
+            "payment_method": "[CONFIRM]"
+        },
+        "gas": {
+            "name": "Gas Natural",
+            "service_number_pattern": "[CONFIRM]",
+            "payment_method": "[CONFIRM]"
+        }
+    },
+    "matching_rules": {
+        "subject_keywords": [
+            "[UTILIDADES]",
+            "recibo",
+            "CFE",
+            "agua",
+            "gas"
+        ],
+        "attachment_types": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+        ]
+    },
+    "reviewer_map": "[CONFIRM]",
+    "drive_folder_map": "[CONFIRM]"
+}
