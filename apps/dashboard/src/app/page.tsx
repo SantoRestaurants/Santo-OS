@@ -2,23 +2,28 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
+  Database,
   Inbox,
   LockKeyhole,
   Mail,
+  Play,
   RefreshCw,
+  Server,
   ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 
+import { simulateCorteSantoIntake } from "@/app/actions";
 import { getDashboardData, type DashboardData } from "@/lib/dashboard-data";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 const statusLabels: Record<DashboardData["status"], string> = {
   ready: "Operativo",
+  demo: "Demo",
   requires_config: "Config pendiente",
-  auth_required: "Auth requerida",
-  query_failed: "Consulta fallida",
+  auth_required: "Login requerido",
+  query_failed: "Error de datos",
 };
 
 function formatDate(value: string | null) {
@@ -38,14 +43,15 @@ function formatDate(value: string | null) {
 
 function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
   const tones: Record<string, string> = {
-    neutral: "border-stone-200 bg-stone-100 text-stone-700",
-    green: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-800",
-    red: "border-red-200 bg-red-50 text-red-700",
+    neutral: "border-zinc-300 bg-white text-zinc-700",
+    green: "border-emerald-300 bg-emerald-50 text-emerald-800",
+    blue: "border-sky-300 bg-sky-50 text-sky-800",
+    amber: "border-amber-300 bg-amber-50 text-amber-900",
+    red: "border-red-300 bg-red-50 text-red-800",
   };
 
   return (
-    <span className={`rounded-md border px-2 py-1 text-xs font-medium ${tones[tone]}`}>
+    <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}>
       {children}
     </span>
   );
@@ -61,52 +67,158 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-stone-200 bg-white">
-      <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-stone-950">{title}</h2>
+    <section className="rounded-lg border border-zinc-300 bg-white shadow-sm">
+      <div className="flex min-h-14 items-center justify-between gap-4 border-b border-zinc-200 px-5 py-4">
+        <h2 className="text-base font-bold text-zinc-950">{title}</h2>
         {action}
       </div>
-      <div className="p-4">{children}</div>
+      <div className="p-5">{children}</div>
     </section>
   );
 }
 
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm text-stone-500">
+    <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-4 py-8 text-center text-sm font-medium text-zinc-600">
       {label}
     </div>
   );
 }
 
-function ConfigBanner({ data, authMessage }: { data: DashboardData; authMessage?: string }) {
-  if (authMessage === "check_email") {
+function ConnectionCard({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone: "green" | "amber" | "blue";
+}) {
+  const valueColor = {
+    green: "text-emerald-800",
+    amber: "text-amber-900",
+    blue: "text-sky-800",
+  }[tone];
+
+  return (
+    <div className="rounded-lg border border-zinc-300 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-semibold text-zinc-600">{label}</span>
+        {icon}
+      </div>
+      <div className={`mt-3 text-lg font-bold ${valueColor}`}>{value}</div>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  icon,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ReactNode;
+  tone?: "neutral" | "amber";
+}) {
+  return (
+    <div className="rounded-lg border border-zinc-300 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-semibold text-zinc-600">{label}</span>
+        {icon}
+      </div>
+      <div className={`mt-3 text-3xl font-bold ${tone === "amber" ? "text-amber-900" : "text-zinc-950"}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function WorkflowRow({
+  name,
+  description,
+  status,
+  primaryAction,
+  secondaryAction,
+}: {
+  name: string;
+  description: string;
+  status: React.ReactNode;
+  primaryAction?: React.ReactNode;
+  secondaryAction?: React.ReactNode;
+}) {
+  return (
+    <div className="grid gap-4 border-b border-zinc-200 py-4 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-bold text-zinc-950">{name}</h3>
+          {status}
+        </div>
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-700">{description}</p>
+      </div>
+      <div className="flex flex-wrap gap-2 md:justify-end">
+        {primaryAction}
+        {secondaryAction}
+      </div>
+    </div>
+  );
+}
+
+function RealStatusBanner({
+  data,
+  simulationStatus,
+}: {
+  data: DashboardData;
+  simulationStatus?: string;
+}) {
+  if (simulationStatus === "created") {
     return (
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-        Revisá tu email para completar el ingreso.
+      <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-5 py-4 text-sm leading-6 text-emerald-950">
+        Simulacion escrita en Supabase. Si estas logueado, los registros aparecen en runs,
+        revisiones, excepciones y Agent Mail.
+      </div>
+    );
+  }
+
+  if (simulationStatus) {
+    return (
+      <div className="rounded-lg border border-amber-300 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-950">
+        No se pudo escribir la simulacion: {simulationStatus}. Revisa env vars, migracion y seeds.
+      </div>
+    );
+  }
+
+  if (data.status === "demo") {
+    return (
+      <div className="rounded-lg border border-sky-300 bg-sky-50 px-5 py-4 text-sm leading-6 text-sky-950">
+        Estas viendo una simulacion local. Los botones muestran como se operaria P0; todavia no
+        escriben en Supabase ni disparan Agent Mail real.
       </div>
     );
   }
 
   if (data.status === "requires_config") {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        Faltan variables para conectar Supabase: {data.missingConfig.join(", ")}.
+      <div className="rounded-lg border border-amber-300 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-950">
+        Falta conectar Supabase para leer datos reales: {data.missingConfig.join(", ")}.
       </div>
     );
   }
 
   if (data.status === "auth_required") {
     return (
-      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
-        Iniciá sesión para leer datos operativos protegidos por RLS.
+      <div className="rounded-lg border border-zinc-300 bg-white px-5 py-4 text-sm leading-6 text-zinc-700">
+        Inicia sesion para ver los datos protegidos por RLS.
       </div>
     );
   }
 
   if (data.status === "query_failed") {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+      <div className="rounded-lg border border-red-300 bg-red-50 px-5 py-4 text-sm leading-6 text-red-900">
         No se pudieron consultar las tablas P0: {data.error}
       </div>
     );
@@ -117,108 +229,171 @@ function ConfigBanner({ data, authMessage }: { data: DashboardData; authMessage?
 
 export default async function Home({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const authMessage = typeof params.auth === "string" ? params.auth : undefined;
-  const data = await getDashboardData();
+  const demoMode = params.demo === "1" || params.demo === "true";
+  const simulationStatus = typeof params.simulation === "string" ? params.simulation : undefined;
+  const data = await getDashboardData({ demo: demoMode });
   const requiresReviewCount = data.runs.filter((run) => run.status === "requires_review").length;
 
   return (
-    <main className="min-h-screen bg-stone-50">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-stone-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-stone-500">
-              <ShieldCheck className="h-4 w-4" />
-              Santo AI OS · P0
+    <main className="min-h-screen bg-zinc-100 text-zinc-950">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+        <header className="rounded-lg border border-zinc-300 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-sm font-bold text-zinc-600">
+                <ShieldCheck className="h-4 w-4" />
+                Santo AI OS / P0
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight text-zinc-950">
+                Operaciones P0
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-700">
+                Corte Santo, revisiones, excepciones y conectores. Primero se simula, despues se
+                conecta a Supabase y se activan workflows reales.
+              </p>
             </div>
-            <h1 className="text-3xl font-semibold text-stone-950">Panel operativo</h1>
-            <p className="mt-2 max-w-2xl text-sm text-stone-600">
-              Corte Santo, excepciones, revisión humana y Agent Mail en una sola vista.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={data.status === "ready" ? "green" : "amber"}>
-              {statusLabels[data.status]}
-            </Badge>
-            <Badge>{data.role}</Badge>
-            {data.userEmail ? <Badge>{data.userEmail}</Badge> : null}
-            <Link
-              className="rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-800 hover:bg-stone-100"
-              href="/auth/sign-in"
-            >
-              Ingresar
-            </Link>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <Badge tone={data.status === "ready" ? "green" : data.status === "demo" ? "blue" : "amber"}>
+                {statusLabels[data.status]}
+              </Badge>
+              <Badge>{data.role}</Badge>
+              {data.userEmail ? <Badge>{data.userEmail}</Badge> : null}
+              <Link
+                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-bold text-zinc-800 hover:bg-zinc-100"
+                href={demoMode ? "/" : "/?demo=1"}
+              >
+                {demoMode ? "Salir demo" : "Ver demo"}
+              </Link>
+            </div>
           </div>
         </header>
 
-        <ConfigBanner data={data} authMessage={authMessage} />
+        <RealStatusBanner data={data} simulationStatus={simulationStatus} />
 
         <section className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-lg border border-stone-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-stone-500">Runs Corte</span>
-              <Clock3 className="h-4 w-4 text-stone-400" />
-            </div>
-            <div className="mt-3 text-2xl font-semibold">{data.runs.length}</div>
-          </div>
-          <div className="rounded-lg border border-stone-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-stone-500">Requires review</span>
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-            </div>
-            <div className="mt-3 text-2xl font-semibold">{requiresReviewCount}</div>
-          </div>
-          <div className="rounded-lg border border-stone-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-stone-500">Revisiones</span>
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-            </div>
-            <div className="mt-3 text-2xl font-semibold">{data.reviews.length}</div>
-          </div>
-          <div className="rounded-lg border border-stone-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-stone-500">Agent Mail</span>
-              <Mail className="h-4 w-4 text-stone-400" />
-            </div>
-            <div className="mt-3 text-2xl font-semibold">{data.emailMessages.length}</div>
-          </div>
+          <ConnectionCard
+            icon={<Database className="h-4 w-4 text-amber-700" />}
+            label="Supabase"
+            tone={data.status === "ready" ? "green" : "amber"}
+            value={data.status === "ready" ? "Conectado" : "Pendiente"}
+          />
+          <ConnectionCard
+            icon={<Server className="h-4 w-4 text-amber-700" />}
+            label="Vercel"
+            tone="amber"
+            value="Pendiente"
+          />
+          <ConnectionCard
+            icon={<Mail className="h-4 w-4 text-amber-700" />}
+            label="Agent Mail"
+            tone="amber"
+            value="No seteado"
+          />
+          <ConnectionCard
+            icon={<Play className="h-4 w-4 text-sky-700" />}
+            label="Simulacion"
+            tone="blue"
+            value={demoMode ? "Activa" : "Disponible"}
+          />
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <Panel
-            title="Corte Santo"
-            action={
+        <section className="grid gap-3 md:grid-cols-4">
+          <MetricCard
+            icon={<Clock3 className="h-4 w-4 text-zinc-500" />}
+            label="Runs"
+            value={data.runs.length}
+          />
+          <MetricCard
+            icon={<AlertTriangle className="h-4 w-4 text-amber-700" />}
+            label="Requires review"
+            tone="amber"
+            value={requiresReviewCount}
+          />
+          <MetricCard
+            icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
+            label="Reviews"
+            value={data.reviews.length}
+          />
+          <MetricCard
+            icon={<Inbox className="h-4 w-4 text-zinc-500" />}
+            label="Inbox demo"
+            value={demoMode ? data.emailMessages.length : 0}
+          />
+        </section>
+
+        <Panel title="Activar workflows">
+          <WorkflowRow
+            description="Workflow principal de P0. En demo crea un run sintetico con excepciones y review pendiente."
+            name="Corte Santo"
+            primaryAction={
+              <form action={simulateCorteSantoIntake}>
+                <button
+                  className="inline-flex items-center gap-2 rounded-md bg-zinc-950 px-3 py-2 text-sm font-bold text-white hover:bg-zinc-800"
+                  type="submit"
+                >
+                  <Play className="h-4 w-4" />
+                  Simular intake
+                </button>
+              </form>
+            }
+            secondaryAction={
               <button
-                className="rounded-md border border-stone-300 px-3 py-1.5 text-sm text-stone-500"
+                className="rounded-md border border-zinc-300 bg-zinc-100 px-3 py-2 text-sm font-bold text-zinc-500"
                 disabled
                 type="button"
               >
-                Ejecutar por command handler
+                Ejecutar real pendiente
               </button>
             }
-          >
+            status={<Badge tone="blue">P0 principal</Badge>}
+          />
+          <WorkflowRow
+            description="Validacion fiscal delgada. Esta armada como modulo, pero necesita fixture XML real sanitizado."
+            name="XML SAT"
+            primaryAction={
+              <Link
+                className="inline-flex items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-bold text-zinc-800 hover:bg-zinc-100"
+                href="/?demo=1&workflow=xml_sat"
+              >
+                Simular XML
+              </Link>
+            }
+            status={<Badge tone="amber">Thin validation</Badge>}
+          />
+          <WorkflowRow
+            description="Debe esperar reglas de plantilla, Drive y alcance de Sheets antes de construirse."
+            name="Utilidades"
+            status={<Badge tone="amber">Bloqueado por config</Badge>}
+          />
+        </Panel>
+
+        <section className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+          <Panel title="Runs recientes">
             {data.runs.length ? (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-xs uppercase text-stone-500">
+                <table className="w-full min-w-[620px] text-left text-sm">
+                  <thead className="border-b border-zinc-200 text-xs uppercase text-zinc-600">
                     <tr>
-                      <th className="pb-3 font-medium">Fecha</th>
-                      <th className="pb-3 font-medium">Canal</th>
-                      <th className="pb-3 font-medium">Estado</th>
-                      <th className="pb-3 font-medium">Motivo</th>
+                      <th className="pb-3 pr-4 font-bold">Fecha</th>
+                      <th className="pb-3 pr-4 font-bold">Canal</th>
+                      <th className="pb-3 pr-4 font-bold">Estado</th>
+                      <th className="pb-3 font-bold">Motivo</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-stone-100">
+                  <tbody className="divide-y divide-zinc-200">
                     {data.runs.map((run) => (
                       <tr key={run.id}>
-                        <td className="py-3 font-mono text-xs">{formatDate(run.business_date)}</td>
-                        <td className="py-3">{run.source_channel}</td>
-                        <td className="py-3">
+                        <td className="py-3 pr-4 font-mono text-xs text-zinc-800">
+                          {formatDate(run.business_date)}
+                        </td>
+                        <td className="py-3 pr-4 text-zinc-800">{run.source_channel}</td>
+                        <td className="py-3 pr-4">
                           <Badge tone={run.status === "requires_review" ? "amber" : "neutral"}>
                             {run.status}
                           </Badge>
                         </td>
-                        <td className="py-3 text-stone-500">
-                          {run.requires_review_reason ?? "Sin observación"}
+                        <td className="py-3 text-zinc-700">
+                          {run.requires_review_reason ?? "Sin observacion"}
                         </td>
                       </tr>
                     ))}
@@ -226,22 +401,22 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
                 </table>
               </div>
             ) : (
-              <EmptyState label="Todavía no hay runs registrados para Corte Santo." />
+              <EmptyState label="Todavia no hay runs. Usa Simular intake para ver el flujo P0." />
             )}
           </Panel>
 
-          <Panel title="Cola de revisión">
+          <Panel title="Cola de revision">
             {data.reviews.length ? (
               <div className="space-y-3">
                 {data.reviews.map((review) => (
-                  <div key={review.id} className="rounded-lg border border-stone-200 p-3">
+                  <div key={review.id} className="rounded-lg border border-zinc-300 bg-white p-3">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">{review.review_key}</span>
+                      <span className="font-bold text-zinc-950">{review.review_key}</span>
                       <Badge tone={review.status === "requires_review" ? "amber" : "neutral"}>
                         {review.status}
                       </Badge>
                     </div>
-                    <div className="mt-2 font-mono text-xs text-stone-500">
+                    <div className="mt-2 font-mono text-xs text-zinc-600">
                       {formatDate(review.requested_at)}
                     </div>
                   </div>
@@ -258,14 +433,14 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
             {data.exceptions.length ? (
               <div className="space-y-3">
                 {data.exceptions.map((exception) => (
-                  <div key={exception.id} className="rounded-lg border border-stone-200 p-3">
+                  <div key={exception.id} className="rounded-lg border border-zinc-300 bg-white p-3">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">{exception.exception_type}</span>
+                      <span className="font-bold text-zinc-950">{exception.exception_type}</span>
                       <Badge tone={exception.severity === "high" ? "red" : "amber"}>
                         {exception.severity}
                       </Badge>
                     </div>
-                    <div className="mt-2 text-sm text-stone-500">{exception.status}</div>
+                    <div className="mt-2 text-sm font-medium text-zinc-700">{exception.status}</div>
                   </div>
                 ))}
               </div>
@@ -274,15 +449,22 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
             )}
           </Panel>
 
-          <Panel title="Agent Mail">
+          <Panel
+            action={<Badge tone="amber">No conectado</Badge>}
+            title="Agent Mail"
+          >
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+              El inbox real de Agent Mail/Gmail todavia no esta seteado. Abajo solo se muestran
+              mensajes demo para probar clasificacion.
+            </div>
             {data.emailMessages.length ? (
               <div className="space-y-3">
                 {data.emailMessages.map((message) => (
-                  <div key={message.id} className="rounded-lg border border-stone-200 p-3">
+                  <div key={message.id} className="rounded-lg border border-zinc-300 bg-white p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="font-medium">{message.subject ?? "Sin asunto"}</div>
-                        <div className="mt-1 text-sm text-stone-500">{message.from_address}</div>
+                        <div className="font-bold text-zinc-950">{message.subject ?? "Sin asunto"}</div>
+                        <div className="mt-1 text-sm text-zinc-700">{message.from_address}</div>
                       </div>
                       <Badge
                         tone={message.processing_status === "requires_review" ? "amber" : "neutral"}
@@ -294,18 +476,16 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
                 ))}
               </div>
             ) : (
-              <EmptyState label="No hay mensajes clasificados todavía." />
+              <EmptyState label="Sin mensajes demo. Activa el modo demo para ver ejemplos." />
             )}
           </Panel>
         </section>
 
-        <footer className="flex flex-wrap items-center gap-3 pb-4 text-xs text-stone-500">
+        <footer className="flex flex-wrap items-center gap-3 pb-4 text-xs font-medium text-zinc-600">
           <LockKeyhole className="h-4 w-4" />
-          Las acciones de escritura quedan reservadas para el command handler server-side.
+          Escrituras reales solo por command handler server-side.
           <RefreshCw className="h-4 w-4" />
-          Inputs no confirmados permanecen como requires_review.
-          <Inbox className="h-4 w-4" />
-          Agent Mail no adivina routing ambiguo.
+          Config faltante queda como requires_review.
         </footer>
       </div>
     </main>

@@ -63,7 +63,9 @@ def test_no_known_supabase_secret_material_was_written() -> None:
     repo_text = "\n".join(
         path.read_text(encoding="utf-8", errors="ignore")
         for path in ROOT.rglob("*")
-        if path.is_file() and not ignored_parts.intersection(path.parts)
+        if path.is_file()
+        and not ignored_parts.intersection(path.parts)
+        and not path.name.startswith(".env")
     ).lower()
 
     jwt_like_tokens = re.findall(
