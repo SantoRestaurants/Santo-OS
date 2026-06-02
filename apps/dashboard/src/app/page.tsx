@@ -648,6 +648,14 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
                 Iniciar sesión
               </Link>
             )}
+            {data.userEmail && (
+              <Link
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
+                href="/reviews"
+              >
+                Revisiones
+              </Link>
+            )}
           </div>
         </header>
 

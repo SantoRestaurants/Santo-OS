@@ -142,6 +142,31 @@ def intake_email(email: dict[str, Any], routing_config: dict[str, Any] | None = 
             ],
         }
 
+    # Sender allowlist check — only process emails from known senders
+    allowed_senders = routing_config.get("allowed_senders", [])
+    if allowed_senders:
+        from_address = str(email.get("from_address", "")).strip().lower()
+        sender_allowed = any(
+            from_address == sender.strip().lower()
+            for sender in allowed_senders
+        )
+        if not sender_allowed:
+            record = _base_email_message(email, REQUIRES_REVIEW)
+            record["requires_review_reason"] = "sender_not_in_allowlist"
+            return {
+                "status": REQUIRES_REVIEW,
+                "email_message": record,
+                "command": None,
+                "events": [
+                    _event("agent_mail.received", "info", {"subject": subject}),
+                    _event(
+                        "agent_mail.requires_review",
+                        "warning",
+                        {"reason": "sender_not_in_allowlist", "from": from_address},
+                    ),
+                ],
+            }
+
     ignored_prefixes = routing_config.get("ignored_subject_prefixes", [])
     for ignored_prefix in ignored_prefixes:
         if subject.strip().upper().startswith(str(ignored_prefix).upper()):

@@ -3,6 +3,10 @@
     "dry_run": false,
     "default_actor_role": "agent_mail_intake",
     "inbox_address": "santoos@agentmail.to",
+    "allowed_senders": [
+        "developer@santorestaurants.com",
+        "santoos@agentmail.to"
+    ],
     "subject_prefixes": {
         "[CORTE]": "corte_santo_daily_sales_reconciliation",
         "[XML]": "xml_sat_validation",
