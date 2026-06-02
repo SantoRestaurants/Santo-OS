@@ -1,9 +1,9 @@
-import { AlertTriangle, ArrowLeft, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquare, ShieldCheck, XCircle } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { approveReview, rejectReview, resolveException } from "./actions";
+import { approveReview, requestCorrection, resolveException } from "./actions";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -33,13 +33,22 @@ function humanizeReviewKey(k: string) {
 
 function humanizeExceptionType(t: string) {
     const map: Record<string, string> = {
-        missing_corte_operational_config: "Configuración del Corte pendiente",
-        agent_mail_not_connected: "Email no conectado",
-        document_requires_review: "Documento necesita revisión",
-        cash_difference_above_threshold: "Diferencia de caja fuera de rango",
-        missing_mandatory_document: "Falta documento obligatorio",
+        missing_corte_operational_config: "Falta configuración del Corte (rangos, revisores, documentos obligatorios)",
+        agent_mail_not_connected: "El email del sistema no está conectado a un inbox real",
+        document_requires_review: "Un documento necesita ser revisado manualmente",
+        cash_difference_above_threshold: "La diferencia de caja supera el rango aceptable",
+        missing_mandatory_document: "Falta un documento obligatorio en el corte",
+        unclassified_email: "Llegó un email que el sistema no pudo clasificar",
+        sender_not_in_allowlist: "Email de un remitente no autorizado",
     };
     return map[t] ?? t.replace(/_/g, " ");
+}
+
+function formatDate(iso: string) {
+    return new Intl.DateTimeFormat("es-MX", {
+        dateStyle: "medium",
+        timeStyle: "short",
+    }).format(new Date(iso));
 }
 
 export default async function ReviewsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -56,7 +65,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
     const [reviewsResult, exceptionsResult] = await Promise.all([
         supabase
             .from("reviews")
-            .select("id,review_key,status,review_notes,requested_at,completed_at,workflow_run_id")
+            .select("id,review_key,status,review_notes,requested_at,completed_at,workflow_run_id,metadata")
             .order("requested_at", { ascending: false })
             .limit(20),
         supabase
@@ -82,9 +91,9 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                             <ShieldCheck className="h-3.5 w-3.5" />
                             Santo AI OS
                         </div>
-                        <h1 className="mt-1 text-2xl font-bold text-zinc-900">Revisión y aprobación</h1>
+                        <h1 className="mt-1 text-2xl font-bold text-zinc-900">Revisiones</h1>
                         <p className="mt-1 text-sm text-zinc-600">
-                            Acá se aprueban o rechazan las operaciones que necesitan decisión humana.
+                            Operaciones que necesitan tu aprobación o corrección.
                         </p>
                     </div>
                     <Link
@@ -96,12 +105,12 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                     </Link>
                 </header>
 
-                {/* Feedback banners */}
+                {/* Feedback */}
                 {successMsg && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                        {successMsg === "approved" && "✓ Revisión aprobada correctamente."}
-                        {successMsg === "changes_requested" && "✓ Se pidieron cambios. El responsable será notificado."}
-                        {successMsg === "resolved" && "✓ Excepción marcada como resuelta."}
+                        {successMsg === "approved" && "✓ Aprobado. La operación puede continuar."}
+                        {successMsg === "correction_sent" && "✓ Corrección enviada por email al remitente original."}
+                        {successMsg === "resolved" && "✓ Problema marcado como resuelto."}
                     </div>
                 )}
                 {errorMsg && (
@@ -114,47 +123,64 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                 <section className="rounded-xl border border-zinc-200 bg-white shadow-sm">
                     <div className="border-b border-zinc-100 px-5 py-4">
                         <h2 className="text-sm font-semibold text-zinc-900">
-                            Pendientes de revisión ({pendingReviews.length})
+                            Esperando tu decisión ({pendingReviews.length})
                         </h2>
+                        <p className="mt-0.5 text-xs text-zinc-500">
+                            Estas operaciones no pueden avanzar hasta que las apruebes o pidas corrección.
+                        </p>
                     </div>
                     <div className="divide-y divide-zinc-100">
                         {pendingReviews.length === 0 && (
                             <p className="px-5 py-8 text-center text-sm text-zinc-400">
-                                No hay nada pendiente de revisión.
+                                No hay nada esperando tu decisión.
                             </p>
                         )}
                         {pendingReviews.map((review) => (
-                            <div key={review.id} className="px-5 py-4">
+                            <div key={review.id} className="px-5 py-5">
                                 <div className="flex items-start justify-between gap-4">
                                     <div>
-                                        <h3 className="text-sm font-medium text-zinc-900">
+                                        <h3 className="text-sm font-semibold text-zinc-900">
                                             {humanizeReviewKey(review.review_key)}
                                         </h3>
                                         <p className="mt-0.5 text-xs text-zinc-500">
-                                            Solicitada: {new Date(review.requested_at).toLocaleString("es-MX")}
+                                            {formatDate(review.requested_at)}
                                         </p>
                                     </div>
                                     <Badge tone="amber">Pendiente</Badge>
                                 </div>
-                                <div className="mt-3 flex gap-2">
+
+                                {/* Actions */}
+                                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                                    {/* Approve */}
                                     <form action={approveReview}>
                                         <input type="hidden" name="reviewId" value={review.id} />
                                         <button
-                                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
                                             type="submit"
                                         >
                                             <CheckCircle2 className="h-3.5 w-3.5" />
                                             Aprobar
                                         </button>
                                     </form>
-                                    <form action={rejectReview}>
+
+                                    {/* Request correction — with notes field */}
+                                    <form action={requestCorrection} className="flex flex-1 items-end gap-2">
                                         <input type="hidden" name="reviewId" value={review.id} />
-                                        <input type="hidden" name="notes" value="Requiere correcciones" />
+                                        <input type="hidden" name="originalFrom" value="" />
+                                        <input type="hidden" name="originalSubject" value={review.review_key} />
+                                        <div className="flex-1">
+                                            <input
+                                                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+                                                name="notes"
+                                                placeholder="Notas de corrección (ej: falta el voucher del banco)"
+                                                type="text"
+                                            />
+                                        </div>
                                         <button
-                                            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
                                             type="submit"
                                         >
-                                            <XCircle className="h-3.5 w-3.5" />
+                                            <MessageSquare className="h-3.5 w-3.5" />
                                             Pedir corrección
                                         </button>
                                     </form>
@@ -164,17 +190,21 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                     </div>
                 </section>
 
-                {/* Open exceptions */}
+                {/* Exceptions — problems detected by the system */}
                 <section className="rounded-xl border border-zinc-200 bg-white shadow-sm">
                     <div className="border-b border-zinc-100 px-5 py-4">
                         <h2 className="text-sm font-semibold text-zinc-900">
-                            Excepciones abiertas ({exceptions.length})
+                            Problemas detectados ({exceptions.length})
                         </h2>
+                        <p className="mt-0.5 text-xs text-zinc-500">
+                            El sistema encontró estos problemas automáticamente. Podés resolverlos o dejarlos para
+                            después.
+                        </p>
                     </div>
                     <div className="divide-y divide-zinc-100">
                         {exceptions.length === 0 && (
                             <p className="px-5 py-8 text-center text-sm text-zinc-400">
-                                Sin excepciones abiertas — todo en orden.
+                                Sin problemas detectados — todo en orden.
                             </p>
                         )}
                         {exceptions.map((ex) => (
@@ -185,11 +215,14 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                             {humanizeExceptionType(ex.exception_type)}
                                         </h3>
                                         <p className="mt-0.5 text-xs text-zinc-500">
-                                            Severidad: {ex.severity} · {new Date(ex.created_at).toLocaleString("es-MX")}
+                                            {formatDate(ex.created_at)}
+                                            {ex.severity === "high" || ex.severity === "critical"
+                                                ? " · Prioridad alta"
+                                                : ""}
                                         </p>
                                     </div>
                                     <Badge tone={ex.severity === "high" || ex.severity === "critical" ? "red" : "amber"}>
-                                        {ex.severity === "high" || ex.severity === "critical" ? "Alta" : "Media"}
+                                        {ex.severity === "high" || ex.severity === "critical" ? "Urgente" : "Revisar"}
                                     </Badge>
                                 </div>
                                 <form action={resolveException} className="mt-3">
@@ -199,7 +232,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                         type="submit"
                                     >
                                         <CheckCircle2 className="h-3.5 w-3.5" />
-                                        Marcar como resuelta
+                                        Ya lo resolví
                                     </button>
                                 </form>
                             </div>
@@ -207,30 +240,34 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                     </div>
                 </section>
 
-                {/* Completed reviews */}
+                {/* Completed */}
                 {completedReviews.length > 0 && (
                     <section className="rounded-xl border border-zinc-200 bg-white shadow-sm">
                         <div className="border-b border-zinc-100 px-5 py-4">
                             <h2 className="text-sm font-semibold text-zinc-900">
-                                Revisiones completadas ({completedReviews.length})
+                                Historial ({completedReviews.length})
                             </h2>
                         </div>
                         <div className="divide-y divide-zinc-100">
                             {completedReviews.map((review) => (
-                                <div key={review.id} className="px-5 py-4">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div>
-                                            <h3 className="text-sm font-medium text-zinc-900">
-                                                {humanizeReviewKey(review.review_key)}
-                                            </h3>
+                                <div key={review.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                                    <div>
+                                        <span className="text-sm text-zinc-700">
+                                            {humanizeReviewKey(review.review_key)}
+                                        </span>
+                                        {review.review_notes && (
                                             <p className="mt-0.5 text-xs text-zinc-500">
-                                                {review.review_notes ?? "Sin notas"}
+                                                Notas: {review.review_notes}
                                             </p>
-                                        </div>
-                                        <Badge tone={review.status === "approved" ? "green" : "neutral"}>
-                                            {review.status === "approved" ? "Aprobada" : review.status === "changes_requested" ? "Correcciones" : review.status}
-                                        </Badge>
+                                        )}
                                     </div>
+                                    <Badge tone={review.status === "approved" ? "green" : "neutral"}>
+                                        {review.status === "approved"
+                                            ? "Aprobada"
+                                            : review.status === "changes_requested"
+                                                ? "Corrección enviada"
+                                                : review.status}
+                                    </Badge>
                                 </div>
                             ))}
                         </div>
