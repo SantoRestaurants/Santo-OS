@@ -1,0 +1,9 @@
+{
+  "dry_run": true,
+  "folder_key": "corte_santo_root",
+  "filename": "corte-santo-2026-06-08.pdf",
+  "source_path": "services/drive_connector/fixtures/demo_document.txt",
+  "document_key": "corte_santo_pdf",
+  "document_type": "daily_sales_reconciliation",
+  "source_hash": "demo-source-hash"
+}

@@ -1,0 +1,12 @@
+{
+  "workflow_key": "xml_sat_validation",
+  "rfc_map": {
+    "allowed_rfcs": ["AAA010101AAA", "BBB010101BBB"]
+  },
+  "drive_folder_map": {
+    "valid_xmls": "drive-folder-xml-validados"
+  },
+  "trusted_source_exports": {
+    "mi_admin_xml": true
+  }
+}

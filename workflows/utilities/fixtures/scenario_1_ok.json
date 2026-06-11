@@ -1,0 +1,21 @@
+{
+  "workflow_key": "utility_receipts_matching",
+  "phase": "P0",
+  "dry_run": true,
+  "source_channel": "agent_mail",
+  "payload": {
+    "provider": "cfe",
+    "amount": 2450.0,
+    "due_date": "2026-06-15",
+    "service_number": "123456789012",
+    "documents": [
+      {
+        "document_key": "cfe_receipt_202606",
+        "filename": "recibo_cfe_junio.pdf",
+        "source_system": "agent_mail",
+        "source_uri": "email://msg-util-001/recibo_cfe.pdf",
+        "source_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  }
+}

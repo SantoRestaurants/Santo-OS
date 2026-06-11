@@ -15,6 +15,7 @@ Environment variables:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import sys
@@ -27,6 +28,7 @@ import httpx
 
 from services.agent_mail.intake import intake_email
 from services.ai.classifier import classify_email, summarize_email
+from services.drive_connector.connector import save_document
 
 logger = logging.getLogger("agent_mail.poller")
 
@@ -262,6 +264,7 @@ def poll_and_classify(
     supabase: SupabaseWriter | None = None,
     after: str | None = None,
     dry_run: bool = True,
+    drive_config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Poll new messages, classify them, optionally write to Supabase.
@@ -399,11 +402,14 @@ def poll_and_classify(
                     )
 
                     if public_url:
+                        document_key = f"email_att_{message_id}_{att_id}"
+                        source_hash = hashlib.sha256(content).hexdigest()
                         supabase.insert_document({
-                            "document_key": f"email_att_{message_id}_{att_id}",
+                            "document_key": document_key,
                             "document_type": "email_attachment",
                             "source_system": "agent_mail",
                             "source_uri": public_url,
+                            "source_hash": source_hash,
                             "status": "registered",
                             "metadata": {
                                 "original_filename": filename,
@@ -412,6 +418,37 @@ def poll_and_classify(
                                 "attachment_id": att_id,
                             },
                         })
+                        if drive_config is not None:
+                            workflow_key = result.get("command", {}).get("workflow_key", "")
+                            folder_key = drive_config.get("workflow_folder_map", {}).get(
+                                workflow_key, ""
+                            )
+                            drive_result = save_document(
+                                {
+                                    "dry_run": False,
+                                    "folder_key": folder_key,
+                                    "filename": filename,
+                                    "content_bytes": content,
+                                    "content_type": content_type,
+                                    "document_key": document_key,
+                                    "document_type": "email_attachment",
+                                    "source_hash": source_hash,
+                                },
+                                drive_config,
+                            )
+                            for event in drive_result.get("events", []):
+                                supabase.insert_event(event)
+                            if drive_result.get("document"):
+                                supabase.insert_document(drive_result["document"])
+                                logger.info(
+                                    "Stored attachment in Drive: %s",
+                                    drive_result["document"].get("source_uri"),
+                                )
+                            elif drive_result["status"] == "requires_review":
+                                logger.warning(
+                                    "Drive attachment write requires review: %s",
+                                    drive_result["requires_review_reason"],
+                                )
                         logger.info("Stored attachment: %s → %s", filename, public_url)
                 except Exception:
                     logger.exception("Failed to download/store attachment %s", att_id)
@@ -421,7 +458,6 @@ def poll_and_classify(
                 workflow_key = result["command"]["workflow_key"]
                 workflow_id = supabase.get_workflow_id(workflow_key)
                 if workflow_id:
-                    import hashlib
                     idem_key = hashlib.sha256(
                         f"agent_mail:{email_record['provider_message_id']}".encode()
                     ).hexdigest()[:32]
@@ -490,6 +526,8 @@ def main(argv: list[str] | None = None) -> int:
 
     client = AgentMailClient(api_key=api_key, inbox_id=inbox_id)
     routing_config = _load_config(args.config)
+    drive_config_path = _env("GOOGLE_DRIVE_CONNECTOR_CONFIG")
+    drive_config = _load_config(drive_config_path) if drive_config_path else None
 
     dry_run = not args.write
     supabase = None
@@ -509,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 results = poll_and_classify(
                     client, routing_config, supabase,
+                    drive_config=drive_config,
                     after=last_check, dry_run=dry_run,
                 )
                 if results:
@@ -520,6 +559,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         results = poll_and_classify(
             client, routing_config, supabase,
+            drive_config=drive_config,
             after=args.after, dry_run=dry_run,
         )
         print(json.dumps(results, indent=2, default=str))

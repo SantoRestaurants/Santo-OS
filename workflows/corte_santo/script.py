@@ -18,11 +18,11 @@ REQUIRED_CONFIG_KEYS = (
     "thresholds",
 )
 
-# Default reconciliation thresholds (can be overridden in config)
-DEFAULT_THRESHOLDS = {
-    "cash_tolerance": 500,
-    "deposit_tolerance": 200,
-}
+REQUIRED_RECONCILIATION_THRESHOLD_KEYS = (
+    "cash_tolerance",
+    "deposit_tolerance",
+    "high_severity_multiplier",
+)
 
 
 def _json_dumps(data: dict[str, Any]) -> str:
@@ -147,8 +147,7 @@ def reconcile(
         sales_total: Total reported sales for the day.
         bank_deposit: Amount deposited at the bank.
         cash_count: Cash counted at close.
-        config: Optional config with 'thresholds' key containing
-                'cash_tolerance' and 'deposit_tolerance'.
+        config: Confirmed config with a 'thresholds' object.
 
     Returns:
         dict with:
@@ -158,23 +157,90 @@ def reconcile(
     """
     config = config or {}
     thresholds_config = config.get("thresholds", {})
-
-    # Use config thresholds or defaults
-    if _has_unconfirmed_value(thresholds_config):
+    if not isinstance(thresholds_config, dict):
         thresholds_config = {}
 
-    cash_tolerance = float(
-        thresholds_config.get("cash_tolerance", DEFAULT_THRESHOLDS["cash_tolerance"])
-    )
-    deposit_tolerance = float(
-        thresholds_config.get("deposit_tolerance", DEFAULT_THRESHOLDS["deposit_tolerance"])
-    )
-
-    # Calculate differences
     total_accounted = bank_deposit + cash_count
     overall_difference = abs(sales_total - total_accounted)
     cash_difference = abs(cash_count - (sales_total - bank_deposit))
     deposit_difference = abs(bank_deposit - (sales_total - cash_count))
+
+    missing_thresholds = [
+        key
+        for key in REQUIRED_RECONCILIATION_THRESHOLD_KEYS
+        if _has_unconfirmed_value(thresholds_config.get(key))
+    ]
+    if missing_thresholds:
+        return {
+            "status": "requires_review",
+            "summary": {
+                "sales_total": sales_total,
+                "bank_deposit": bank_deposit,
+                "cash_count": cash_count,
+                "total_accounted": total_accounted,
+                "overall_difference": overall_difference,
+                "thresholds": None,
+            },
+            "exceptions": [
+                {
+                    "exception_key": "missing_reconciliation_config",
+                    "exception_type": "missing_config",
+                    "severity": "medium",
+                    "status": "requires_review",
+                    "details": {"missing": [f"thresholds.{key}" for key in missing_thresholds]},
+                }
+            ],
+            "reconciled_at": _now(),
+        }
+
+    try:
+        cash_tolerance = float(thresholds_config["cash_tolerance"])
+        deposit_tolerance = float(thresholds_config["deposit_tolerance"])
+        high_severity_multiplier = float(thresholds_config["high_severity_multiplier"])
+    except (TypeError, ValueError):
+        return {
+            "status": "requires_review",
+            "summary": {
+                "sales_total": sales_total,
+                "bank_deposit": bank_deposit,
+                "cash_count": cash_count,
+                "total_accounted": total_accounted,
+                "overall_difference": overall_difference,
+                "thresholds": None,
+            },
+            "exceptions": [
+                {
+                    "exception_key": "invalid_reconciliation_config",
+                    "exception_type": "missing_config",
+                    "severity": "medium",
+                    "status": "requires_review",
+                    "details": {"reason": "Reconciliation thresholds must be numeric."},
+                }
+            ],
+            "reconciled_at": _now(),
+        }
+    if cash_tolerance < 0 or deposit_tolerance < 0 or high_severity_multiplier <= 0:
+        return {
+            "status": "requires_review",
+            "summary": {
+                "sales_total": sales_total,
+                "bank_deposit": bank_deposit,
+                "cash_count": cash_count,
+                "total_accounted": total_accounted,
+                "overall_difference": overall_difference,
+                "thresholds": None,
+            },
+            "exceptions": [
+                {
+                    "exception_key": "invalid_reconciliation_config",
+                    "exception_type": "missing_config",
+                    "severity": "medium",
+                    "status": "requires_review",
+                    "details": {"reason": "Reconciliation thresholds must be positive."},
+                }
+            ],
+            "reconciled_at": _now(),
+        }
 
     exceptions: list[dict[str, Any]] = []
 
@@ -182,7 +248,7 @@ def reconcile(
         exceptions.append({
             "exception_key": "cash_discrepancy",
             "exception_type": "reconciliation_discrepancy",
-            "severity": "high" if cash_difference > cash_tolerance * 2 else "medium",
+            "severity": "high" if cash_difference > cash_tolerance * high_severity_multiplier else "medium",
             "status": "requires_review",
             "details": {
                 "type": "cash",
@@ -197,7 +263,7 @@ def reconcile(
         exceptions.append({
             "exception_key": "deposit_discrepancy",
             "exception_type": "reconciliation_discrepancy",
-            "severity": "high" if deposit_difference > deposit_tolerance * 2 else "medium",
+            "severity": "high" if deposit_difference > deposit_tolerance * high_severity_multiplier else "medium",
             "status": "requires_review",
             "details": {
                 "type": "deposit",
@@ -230,6 +296,7 @@ def reconcile(
             "thresholds": {
                 "cash_tolerance": cash_tolerance,
                 "deposit_tolerance": deposit_tolerance,
+                "high_severity_multiplier": high_severity_multiplier,
             },
         },
         "exceptions": exceptions,
@@ -281,13 +348,24 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
     document_review_needed = any(record["status"] == "requires_review" for record in document_records)
     missing = missing_config + missing_payload
 
-    status = "requires_review" if missing or document_review_needed else "waiting_for_input"
+    # Check for missing mandatory attachments
+    provided_doc_types = {doc.get("document_type") for doc in documents if isinstance(doc, dict)}
+    mandatory_attachments = config.get("mandatory_attachments", [])
+    if not isinstance(mandatory_attachments, list):
+        mandatory_attachments = []
+    missing_attachments = [
+        doc_type
+        for doc_type in mandatory_attachments
+        if doc_type not in provided_doc_types
+    ]
+
+    status = "requires_review" if missing or document_review_needed or missing_attachments else "waiting_for_input"
     exceptions = []
     tasks = [
         {
             "task_key": "register_corte_evidence",
             "title": "Register Corte Santo evidence",
-            "status": "requires_review" if document_review_needed else "completed",
+            "status": "requires_review" if document_review_needed or missing_attachments else "completed",
             "metadata": {"document_count": len(document_records)},
         },
         {
@@ -320,6 +398,42 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
             }
         )
 
+    if missing_attachments:
+        exceptions.append(
+            {
+                "exception_key": "missing_mandatory_attachments",
+                "exception_type": "missing_documents",
+                "severity": "high",
+                "status": "requires_review",
+                "details": {"missing": missing_attachments},
+            }
+        )
+
+    sales_total = payload.get("sales_total")
+    bank_deposit = payload.get("bank_deposit")
+    cash_count = payload.get("cash_count")
+
+    recon_snapshot = None
+    if status != "requires_review" and sales_total is not None:
+        recon_res = reconcile(
+            sales_total=float(sales_total),
+            bank_deposit=float(bank_deposit or 0),
+            cash_count=float(cash_count or 0),
+            config=config,
+        )
+        status = recon_res["status"]
+        recon_snapshot = recon_res.get("summary")
+
+        recon_exceptions = recon_res.get("exceptions", [])
+        exceptions.extend(recon_exceptions)
+
+        tasks.append({
+            "task_key": "corte_reconciliation",
+            "title": "Reconcile daily sales figures",
+            "status": "requires_review" if recon_res["status"] == "requires_review" else "completed",
+            "metadata": recon_res["summary"],
+        })
+
     result = {
         "status": status,
         "workflow_key": WORKFLOW_KEY,
@@ -333,7 +447,9 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
             "idempotency_key": idempotency_key,
             "input_payload": payload,
             "config_snapshot": config,
-            "requires_review_reason": ", ".join(missing) if missing else None,
+            "requires_review_reason": ", ".join(missing) if missing else (
+                "reconciliation_discrepancy" if status == "requires_review" else None
+            ),
         },
         "documents": document_records,
         "tasks": tasks,
@@ -347,16 +463,16 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
             _event(
                 "workflow_run.requires_review" if status == "requires_review" else "workflow_run.intake_ready",
                 "warning" if status == "requires_review" else "info",
-                {"workflow_key": WORKFLOW_KEY, "missing": missing},
+                {"workflow_key": WORKFLOW_KEY, "missing": missing, "reconciliation": recon_snapshot},
             ),
         ],
         "watchdog_log": [
             _watchdog(
                 "requires_review" if status == "requires_review" else "ok",
                 "warning" if status == "requires_review" else "info",
-                "Corte Santo intake requires review."
+                "Corte Santo reconciliation or intake requires review."
                 if status == "requires_review"
-                else "Corte Santo intake records are ready for persistence.",
+                else "Corte Santo intake/reconciliation completed successfully.",
             )
         ],
         "dry_run": dry_run,

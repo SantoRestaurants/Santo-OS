@@ -1,0 +1,18 @@
+{
+  "workflow_key": "xml_sat_validation",
+  "phase": "P0",
+  "dry_run": true,
+  "source_channel": "dashboard",
+  "payload": {
+    "documents": [
+      {
+        "document_key": "valid_cfdi_1",
+        "filename": "factura_valid.xml",
+        "source_system": "dashboard_upload",
+        "source_uri": "upload://factura_valid.xml",
+        "source_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "xml_text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><cfdi:Comprobante xmlns:cfdi=\"http://www.sat.gob.mx/cfd/4\" xmlns:tfd=\"http://www.sat.gob.mx/TimbreFiscalDigital\" Version=\"4.0\" Fecha=\"2026-06-08T10:30:00\" Total=\"2500.00\"><cfdi:Emisor Rfc=\"AAA010101AAA\" Nombre=\"PROVEEDOR ALIMENTOS\"/><cfdi:Receptor Rfc=\"BBB010101BBB\" Nombre=\"SANTO RESTAURANTES\"/><cfdi:Complemento><tfd:TimbreFiscalDigital UUID=\"a2e8c281-7dc8-4bfa-9f8d-71b3e8c56e01\"/></cfdi:Complemento></cfdi:Comprobante>"
+      }
+    ]
+  }
+}

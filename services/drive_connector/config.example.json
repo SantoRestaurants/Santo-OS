@@ -1,0 +1,25 @@
+{
+  "confirmed": false,
+  "workflow_folder_map": {
+    "corte_santo_daily_sales_reconciliation": "corte_santo_root",
+    "xml_sat_validation": "xml_sat_root",
+    "utility_receipts_matching": "utilities_root"
+  },
+  "folder_map": {
+    "corte_santo_root": {
+      "folder_id": "[CONFIRM]",
+      "drive_url": "[CONFIRM]",
+      "confirmation_status": "requires_review"
+    },
+    "xml_sat_root": {
+      "folder_id": "[CONFIRM]",
+      "drive_url": "[CONFIRM]",
+      "confirmation_status": "requires_review"
+    },
+    "utilities_root": {
+      "folder_id": "[CONFIRM]",
+      "drive_url": "[CONFIRM]",
+      "confirmation_status": "requires_review"
+    }
+  }
+}

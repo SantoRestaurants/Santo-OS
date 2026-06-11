@@ -1,32 +1,20 @@
-import { ArrowLeft, CheckCircle2, MessageSquare, ShieldCheck, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquare, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { Badge } from "@/components/ui/Badge";
+import { HelpTooltip } from "@/components/ui/HelpTooltip";
 import { approveReview, requestCorrection, resolveException } from "./actions";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-
-function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
-    const tones: Record<string, string> = {
-        neutral: "border-zinc-300 bg-zinc-100 text-zinc-900",
-        green: "border-emerald-300 bg-emerald-100 text-emerald-900",
-        amber: "border-amber-300 bg-amber-100 text-amber-950",
-        red: "border-red-300 bg-red-100 text-red-950",
-    };
-    return (
-        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}>
-            {children}
-        </span>
-    );
-}
 
 function humanizeReviewKey(k: string) {
     const map: Record<string, string> = {
         review_corte_intake_config: "Revisar configuración del Corte",
         confirm_agent_mail_routing: "Confirmar reglas de email",
-        demo_review_corte_intake: "Revisar intake del Corte",
-        demo_confirm_agent_mail_setup: "Confirmar setup de email",
+        review_xml_sat_validation: "Revisar Validación XML SAT",
+        review_utility_receipts: "Revisar Recibos de Servicios",
     };
     return map[k] ?? k.replace(/_/g, " ");
 }
@@ -82,22 +70,28 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
     const completedReviews = reviews.filter((r) => r.status !== "requested" && r.status !== "requires_review");
 
     return (
-        <main className="min-h-screen bg-zinc-50">
+        <main className="min-h-screen">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
                 {/* Header */}
-                <header className="flex items-center justify-between">
+                <header className="flex items-center justify-between pl-10 lg:pl-0">
                     <div>
-                        <div className="flex items-center gap-2 text-xs font-medium text-zinc-700">
+                        <div className="flex items-center gap-2 text-xs font-medium text-stone-700">
                             <ShieldCheck className="h-3.5 w-3.5" />
                             Santo AI OS
                         </div>
-                        <h1 className="mt-1 text-2xl font-bold text-zinc-900">Revisiones</h1>
-                        <p className="mt-1 text-sm text-zinc-600">
+                        <div className="mt-1 flex items-center gap-2">
+                            <h1 className="text-2xl font-bold text-stone-900">Revisiones</h1>
+                            <HelpTooltip
+                                text="Aquí se muestran las operaciones que necesitan tu decisión. El sistema NUNCA completa algo automáticamente si hay dudas — siempre te pide revisar primero."
+                                position="right"
+                            />
+                        </div>
+                        <p className="mt-1 text-sm text-stone-600">
                             Operaciones que necesitan tu aprobación o corrección.
                         </p>
                     </div>
                     <Link
-                        className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
+                        className="flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 shadow-sm hover:bg-stone-50"
                         href="/"
                     >
                         <ArrowLeft className="h-3 w-3" />
@@ -120,29 +114,35 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                 )}
 
                 {/* Pending reviews */}
-                <section className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-                    <div className="border-b border-zinc-100 px-5 py-4">
-                        <h2 className="text-sm font-semibold text-zinc-900">
-                            Esperando tu decisión ({pendingReviews.length})
-                        </h2>
-                        <p className="mt-0.5 text-xs text-zinc-700">
+                <section data-tour="pending-reviews" className="rounded-xl border border-stone-200 bg-white shadow-sm">
+                    <div className="border-b border-stone-100 px-5 py-4">
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-sm font-semibold text-stone-900">
+                                Esperando tu decisión ({pendingReviews.length})
+                            </h2>
+                            <HelpTooltip
+                                text="Estas operaciones no pueden avanzar hasta que las apruebes o pidas corrección. El sistema se detiene aquí intencionalmente para que tú tengas el control."
+                                position="right"
+                            />
+                        </div>
+                        <p className="mt-0.5 text-xs text-stone-600">
                             Estas operaciones no pueden avanzar hasta que las apruebes o pidas corrección.
                         </p>
                     </div>
-                    <div className="divide-y divide-zinc-100">
+                    <div className="divide-y divide-stone-100">
                         {pendingReviews.length === 0 && (
-                            <p className="px-5 py-8 text-center text-sm text-zinc-600">
+                            <p className="px-5 py-8 text-center text-sm text-stone-600">
                                 No hay nada esperando tu decisión.
                             </p>
                         )}
-                        {pendingReviews.map((review) => (
+                        {pendingReviews.map((review, index) => (
                             <div key={review.id} className="px-5 py-5">
                                 <div className="flex items-start justify-between gap-4">
                                     <div>
-                                        <h3 className="text-sm font-semibold text-zinc-900">
+                                        <h3 className="text-sm font-semibold text-stone-900">
                                             {humanizeReviewKey(review.review_key)}
                                         </h3>
-                                        <p className="mt-0.5 text-xs text-zinc-700">
+                                        <p className="mt-0.5 text-xs text-stone-600">
                                             {formatDate(review.requested_at)}
                                         </p>
                                     </div>
@@ -152,7 +152,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                 {/* Actions */}
                                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                                     {/* Approve */}
-                                    <form action={approveReview}>
+                                    <form action={approveReview} data-tour={index === 0 ? "approve-action" : undefined}>
                                         <input type="hidden" name="reviewId" value={review.id} />
                                         <button
                                             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
@@ -164,20 +164,20 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                     </form>
 
                                     {/* Request correction — with notes field */}
-                                    <form action={requestCorrection} className="flex flex-1 items-end gap-2">
+                                    <form action={requestCorrection} className="flex flex-1 items-end gap-2" data-tour={index === 0 ? "correction-action" : undefined}>
                                         <input type="hidden" name="reviewId" value={review.id} />
                                         <input type="hidden" name="originalFrom" value="" />
                                         <input type="hidden" name="originalSubject" value={review.review_key} />
                                         <div className="flex-1">
                                             <input
-                                                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-800 placeholder:text-zinc-600 focus:border-zinc-400 focus:outline-none"
+                                                className="w-full rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-800 placeholder:text-stone-500 focus:border-stone-400 focus:outline-none"
                                                 name="notes"
                                                 placeholder="Notas de corrección (ej: falta el voucher del banco)"
                                                 type="text"
                                             />
                                         </div>
                                         <button
-                                            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-4 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50"
                                             type="submit"
                                         >
                                             <MessageSquare className="h-3.5 w-3.5" />
@@ -191,19 +191,25 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                 </section>
 
                 {/* Exceptions — problems detected by the system */}
-                <section className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-                    <div className="border-b border-zinc-100 px-5 py-4">
-                        <h2 className="text-sm font-semibold text-zinc-900">
-                            Problemas detectados ({exceptions.length})
-                        </h2>
-                        <p className="mt-0.5 text-xs text-zinc-700">
-                            El sistema encontró estos problemas automáticamente. Podés resolverlos o dejarlos para
+                <section data-tour="exceptions-detected" className="rounded-xl border border-stone-200 bg-white shadow-sm">
+                    <div className="border-b border-stone-100 px-5 py-4">
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-sm font-semibold text-stone-900">
+                                Problemas detectados ({exceptions.length})
+                            </h2>
+                            <HelpTooltip
+                                text="El sistema detecta estos problemas automáticamente al procesar operaciones. Puedes resolverlos cuando los hayas atendido, o dejarlos para después."
+                                position="right"
+                            />
+                        </div>
+                        <p className="mt-0.5 text-xs text-stone-600">
+                            El sistema encontró estos problemas automáticamente. Puedes resolverlos o dejarlos para
                             después.
                         </p>
                     </div>
-                    <div className="divide-y divide-zinc-100">
+                    <div className="divide-y divide-stone-100">
                         {exceptions.length === 0 && (
-                            <p className="px-5 py-8 text-center text-sm text-zinc-600">
+                            <p className="px-5 py-8 text-center text-sm text-stone-600">
                                 Sin problemas detectados — todo en orden.
                             </p>
                         )}
@@ -211,10 +217,10 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                             <div key={ex.id} className="px-5 py-4">
                                 <div className="flex items-start justify-between gap-4">
                                     <div>
-                                        <h3 className="text-sm font-medium text-zinc-900">
+                                        <h3 className="text-sm font-medium text-stone-900">
                                             {humanizeExceptionType(ex.exception_type)}
                                         </h3>
-                                        <p className="mt-0.5 text-xs text-zinc-700">
+                                        <p className="mt-0.5 text-xs text-stone-600">
                                             {formatDate(ex.created_at)}
                                             {ex.severity === "high" || ex.severity === "critical"
                                                 ? " · Prioridad alta"
@@ -228,7 +234,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                 <form action={resolveException} className="mt-3">
                                     <input type="hidden" name="exceptionId" value={ex.id} />
                                     <button
-                                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50"
                                         type="submit"
                                     >
                                         <CheckCircle2 className="h-3.5 w-3.5" />
@@ -242,21 +248,21 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
 
                 {/* Completed */}
                 {completedReviews.length > 0 && (
-                    <section className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-                        <div className="border-b border-zinc-100 px-5 py-4">
-                            <h2 className="text-sm font-semibold text-zinc-900">
+                    <section data-tour="history" className="rounded-xl border border-stone-200 bg-white shadow-sm">
+                        <div className="border-b border-stone-100 px-5 py-4">
+                            <h2 className="text-sm font-semibold text-stone-900">
                                 Historial ({completedReviews.length})
                             </h2>
                         </div>
-                        <div className="divide-y divide-zinc-100">
+                        <div className="divide-y divide-stone-100">
                             {completedReviews.map((review) => (
                                 <div key={review.id} className="flex items-center justify-between gap-4 px-5 py-3">
                                     <div>
-                                        <span className="text-sm text-zinc-700">
+                                        <span className="text-sm text-stone-700">
                                             {humanizeReviewKey(review.review_key)}
                                         </span>
                                         {review.review_notes && (
-                                            <p className="mt-0.5 text-xs text-zinc-700">
+                                            <p className="mt-0.5 text-xs text-stone-600">
                                                 Notas: {review.review_notes}
                                             </p>
                                         )}

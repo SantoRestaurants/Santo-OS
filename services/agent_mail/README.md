@@ -2,64 +2,40 @@
 
 P0 Agent Mail intake service for Santo AI OS.
 
-## What it does
+## What It Does
 
-1. Polls the inbox `santoos@agentmail.to` for new messages
-2. Classifies each email based on subject prefix:
-   - `[CORTE]` → Corte Santo workflow
-   - `[XML]` → XML SAT validation
-   - `[UTILIDADES]` → Utility receipts
-3. Unclassified or ambiguous emails → `requires_review` (never guesses)
-4. Optionally writes results to Supabase (email_messages + events)
+1. Polls the inbox `santoos@agentmail.to` for new messages.
+2. Classifies email using confirmed subject-prefix rules.
+3. Sends ambiguous email to `requires_review`.
+4. Optionally writes email, document, workflow, review, and event records to Supabase.
+5. Optionally mirrors classified attachments to confirmed Google Drive folders.
 
-## Usage
+## Dry Run
 
-### Dry run (just classify, don't write)
-
-```bash
-export AGENTMAIL_API_KEY="am_us_..."
+```powershell
+$env:AGENTMAIL_API_KEY="[runtime secret]"
 python -m services.agent_mail.poller --config services/agent_mail/config.json
 ```
 
-### Write to Supabase
+## Write To Supabase And Drive
 
-```bash
-export AGENTMAIL_API_KEY="am_us_..."
-export SUPABASE_URL="https://xxx.supabase.co"
-export SUPABASE_SERVICE_KEY="eyJ..."
+```powershell
+$env:AGENTMAIL_API_KEY="[runtime secret]"
+$env:SUPABASE_URL="https://[project].supabase.co"
+$env:SUPABASE_SERVICE_KEY="[runtime secret]"
+$env:GOOGLE_DRIVE_ACCESS_TOKEN="[runtime secret]"
+$env:GOOGLE_DRIVE_CONNECTOR_CONFIG="services/drive_connector/config.local.json"
 python -m services.agent_mail.poller --config services/agent_mail/config.json --write
 ```
 
-### Watch mode (poll every 30s)
-
-```bash
-python -m services.agent_mail.poller --config services/agent_mail/config.json --write --watch
-```
-
-## Configuration
-
-`config.json` defines the routing rules:
-
-```json
-{
-  "confirmed": true,
-  "subject_prefixes": {
-    "[CORTE]": "corte_santo_daily_sales_reconciliation",
-    "[XML]": "xml_sat_validation",
-    "[UTILIDADES]": "utility_receipts_matching"
-  },
-  "ignored_subject_prefixes": ["[FYI]", "[AUTO]", "[NOREPLY]"]
-}
-```
+Drive is optional. If `GOOGLE_DRIVE_CONNECTOR_CONFIG` is not set, Agent Mail
+continues to store document metadata and Supabase Storage evidence only. If the
+Drive config, target folder, or credential is missing, the Drive write returns
+`requires_review`.
 
 ## Architecture
 
-- `intake.py` — Pure classification logic (no I/O, testable)
-- `poller.py` — AgentMail API client + Supabase writer + polling loop
-- `config.json` — Routing rules (confirmed, not hardcoded in code)
-
-## Inbox
-
-- Address: `santoos@agentmail.to`
-- Provider: AgentMail (API-first, no OAuth/Gmail complexity)
-- For production: will be swapped to a real Santo domain inbox
+- `intake.py`: pure classification logic.
+- `poller.py`: Agent Mail API, Supabase persistence, and optional Drive handoff.
+- `config.json`: confirmed routing rules.
+- `../drive_connector/`: confirmed-folder Drive write boundary.

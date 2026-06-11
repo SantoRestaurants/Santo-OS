@@ -35,7 +35,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
   return (
     <main className="flex min-h-screen items-center justify-center bg-stone-50 px-4">
       <section className="w-full max-w-md rounded-lg border border-stone-200 bg-white p-6">
-        <p className="text-sm font-medium text-stone-500">Santo AI OS · P0</p>
+        <p className="text-sm font-medium text-stone-700">Santo AI OS · P0</p>
         <h1 className="mt-2 text-2xl font-semibold text-stone-950">Ingresar al panel</h1>
         <p className="mt-2 text-sm text-stone-600">
           Acceso con email y contraseña. El rol operativo se lee desde app_metadata.

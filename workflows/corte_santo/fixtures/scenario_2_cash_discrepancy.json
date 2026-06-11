@@ -1,0 +1,23 @@
+{
+  "workflow_key": "corte_santo_daily_sales_reconciliation",
+  "phase": "P0",
+  "dry_run": true,
+  "source_channel": "dashboard",
+  "payload": {
+    "business_date": "2026-06-08",
+    "restaurant_key": "santo_unidad_1",
+    "sales_total": 5450.0,
+    "bank_deposit": 5000.0,
+    "cash_count": 370.0,
+    "documents": [
+      {
+        "document_key": "daily_sales_report",
+        "document_type": "daily_sales_report",
+        "filename": "corte-santo-2026-06-08.pdf",
+        "source_system": "dashboard_upload",
+        "source_uri": "upload://corte-santo-2026-06-08.pdf",
+        "source_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  }
+}

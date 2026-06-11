@@ -1,0 +1,66 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Resources 4 0 R /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Font << /F1 6 0 R >> >>
+endobj
+5 0 obj
+<< /Length 700 >>
+stream
+BT
+/F1 18 Tf
+50 750 Td
+(Reporte de Cierre Diario: Reconciliacion Corte Santo) Tj
+ET
+BT
+/F1 12 Tf
+50 710 Td
+(Fecha de Operacion: 2026-06-08) Tj
+0 -20 Td
+(Unidad / Restaurante: santo_unidad_1) Tj
+0 -25 Td
+(Ventas Totales del Cierre: $5450.00) Tj
+0 -20 Td
+(Deposito Bancario Declarado: $5000.00) Tj
+0 -20 Td
+(Efectivo Contado en Caja: $370.00) Tj
+0 -20 Td
+(Suma Declarada (Banco + Caja): $5370.00) Tj
+0 -20 Td
+(Diferencia de Cierre: $80.00) Tj
+0 -30 Td
+(Estatus de Reconciliacion: REQUIERE REVISION HUMANA) Tj
+0 -25 Td
+(Alertas y Discrepancias Detectadas:) Tj
+0 -15 Td
+( - [high] cash_discrepancy: reconciliation_discrepancy) Tj
+0 -15 Td
+( - [high] deposit_discrepancy: reconciliation_discrepancy) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000000 00000 n 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000195 00000 n 
+0000000238 00000 n 
+0000000989 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+{currentOffset}
+%%EOF

@@ -1,0 +1,10 @@
+{
+  "confirmed": true,
+  "folder_map": {
+    "corte_santo_root": {
+      "folder_id": "demo-folder-id",
+      "drive_url": "https://drive.google.com/drive/folders/demo-folder-id",
+      "confirmation_status": "confirmed"
+    }
+  }
+}

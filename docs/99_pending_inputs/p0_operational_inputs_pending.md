@@ -4,7 +4,8 @@ These are the confirmed missing inputs before later P0 PRs can safely finalize w
 
 ## Needed From Santo Team
 
-- Drive URLs, hierarchy and naming.
+- Drive URLs, hierarchy, naming, folder IDs, My Drive vs Shared Drive location,
+  and the Google identity that can write to each folder.
 - Corte thresholds, severities and mandatory attachments.
 - Reviewer map by exception type.
 - Restaurant/entity/RFC mappings and short codes.

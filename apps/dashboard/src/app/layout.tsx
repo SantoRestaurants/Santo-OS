@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AppShell } from "@/components/layout/AppShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SantoOS P0 Dashboard",
-  description: "Operational dashboard for Santo AI OS P0.",
+  title: "Santo AI OS — Panel de Operaciones",
+  description:
+    "Sistema operativo inteligente para la gestión de operaciones de Santo. Conciliación diaria, validación fiscal y trazabilidad completa.",
 };
 
 export default function RootLayout({
@@ -27,7 +29,9 @@ export default function RootLayout({
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-stone-50 text-stone-950">{children}</body>
+      <body className="min-h-full bg-stone-50 text-stone-950">
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }

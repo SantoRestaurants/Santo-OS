@@ -1,0 +1,21 @@
+{
+  "workflow_key": "utility_receipts_matching",
+  "phase": "P0",
+  "dry_run": true,
+  "source_channel": "agent_mail",
+  "payload": {
+    "provider": "agua",
+    "amount": 420.0,
+    "due_date": "2026-06-18",
+    "service_number": "",
+    "documents": [
+      {
+        "document_key": "siapa_receipt_202606",
+        "filename": "recibo_siapa_junio.pdf",
+        "source_system": "agent_mail",
+        "source_uri": "email://msg-util-003/recibo_siapa.pdf",
+        "source_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  }
+}

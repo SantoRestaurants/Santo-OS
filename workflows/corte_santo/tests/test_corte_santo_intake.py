@@ -83,8 +83,43 @@ def test_document_missing_hash_requires_review() -> None:
     assert result["exceptions"][0]["exception_type"] == "document_requires_review"
 
 
+def test_missing_mandatory_attachments_requires_review() -> None:
+    payload = {**BASE_INPUT["payload"], "documents": []}
+    result = corte_santo_script.run({**BASE_INPUT, "payload": payload}, CONFIRMED_CONFIG)
+
+    assert result["status"] == "requires_review"
+    assert result["exceptions"][0]["exception_type"] == "missing_documents"
+    assert "daily_sales_report" in result["exceptions"][0]["details"]["missing"]
+
+
 def test_idempotency_key_is_stable() -> None:
     first = corte_santo_script.run(BASE_INPUT, CONFIRMED_CONFIG)
     second = corte_santo_script.run(BASE_INPUT, CONFIRMED_CONFIG)
 
     assert first["idempotency_key"] == second["idempotency_key"]
+
+
+def test_reconcile_without_confirmed_thresholds_requires_review() -> None:
+    result = corte_santo_script.reconcile(1000, 800, 200, {})
+
+    assert result["status"] == "requires_review"
+    assert result["exceptions"][0]["exception_key"] == "missing_reconciliation_config"
+    assert result["summary"]["thresholds"] is None
+
+
+def test_reconcile_uses_only_confirmed_threshold_config() -> None:
+    result = corte_santo_script.reconcile(
+        1000,
+        700,
+        100,
+        {
+            "thresholds": {
+                "cash_tolerance": 50,
+                "deposit_tolerance": 50,
+                "high_severity_multiplier": 3,
+            }
+        },
+    )
+
+    assert result["status"] == "requires_review"
+    assert result["exceptions"][0]["severity"] == "high"

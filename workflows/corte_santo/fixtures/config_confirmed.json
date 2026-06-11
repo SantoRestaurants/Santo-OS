@@ -1,0 +1,20 @@
+{
+  "workflow_key": "corte_santo_daily_sales_reconciliation",
+  "restaurant_map": {
+    "santo_unidad_1": {
+      "display_name": "Santo Unidad Centro"
+    }
+  },
+  "drive_folder_map": {
+    "santo_unidad_1": "drive-folder-corte-centro"
+  },
+  "mandatory_attachments": ["daily_sales_report"],
+  "reviewer_map": {
+    "default": "admin_ops"
+  },
+  "thresholds": {
+    "cash_tolerance": 0.0,
+    "deposit_tolerance": 0.0,
+    "high_severity_multiplier": 3.0
+  }
+}

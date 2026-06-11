@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-06-01.
+Last updated: 2026-06-08.
 
 ## Repository Status
 
@@ -75,6 +75,23 @@ Last updated: 2026-06-01.
   - Validates RFCs only against provided config.
   - Missing RFC map, Drive folder map, trusted source exports or XML text returns `requires_review`.
   - No SAT/FIEL/government portal automation is implemented.
+- P0 meeting demo and Drive connector have been implemented:
+  - Dashboard demo now presents Corte Santo, XML SAT and Utilities as one P0
+    operating model.
+  - The demo shows Agent Mail intake, workflow records, Drive evidence,
+    exceptions and human review as one traceable flow.
+  - `services/drive_connector/` provides a configurable Google Drive upload
+    boundary with `dry_run`, confirmed-folder enforcement, Shared Drive
+    support and audit event output.
+  - Agent Mail can hand classified attachments to the Drive connector when
+    `GOOGLE_DRIVE_CONNECTOR_CONFIG` is configured.
+  - Unknown folders, unconfirmed folder maps and missing credentials return
+    `requires_review`.
+  - Live Drive writing still depends on confirmed folder IDs/permissions and
+    runtime credentials from Santo.
+  - Meeting guide exists at `docs/03_execution/p0_alonso_demo.md`.
+  - Corte reconciliation no longer contains invented fallback tolerances;
+    missing threshold or severity configuration returns `requires_review`.
 
 ## Processed Context
 
@@ -98,7 +115,8 @@ Recommended smallest safe slice:
 
 1. Rotate the exposed Supabase service-role key.
 2. Install/configure Supabase CLI or provide a running local Supabase/Postgres for migration execution validation.
-3. Confirm Drive URLs/hierarchy/naming.
+3. Confirm Drive URLs, folder IDs, hierarchy, naming, permissions and the
+   Google identity used by SantoOS.
 4. Confirm Corte thresholds, severities, mandatory attachments and reviewer map.
 5. Confirm restaurant/entity/RFC mappings and short codes.
 6. Confirm Agent Mail routing convention.
@@ -114,7 +132,10 @@ Recommended smallest safe slice:
 - Dashboard has live Supabase query wrappers but no deployed Supabase env/session yet.
 - No dashboard component tests yet.
 - No Corte final reconciliation checks yet.
-- No Utility receipts workflow yet; PR 9 should wait for template/folders/Sheets scope.
+- Utility receipts thin workflow exists, but final template rules, folder mapping
+  and Sheets scope remain pending.
+- Drive connector is not activated against Santo's real folders yet because
+  folder IDs, permissions and runtime credentials remain pending.
 
 ## Verification
 
@@ -144,3 +165,7 @@ Recommended smallest safe slice:
   - `python -m pytest` passes.
   - Smoke test with `config.example.json` returns `requires_review`.
   - Confirmed-config tests validate generated CFDI metadata locally.
+- Drive connector verification:
+  - Confirmed demo config produces a proposed Drive document and audit event
+    in `dry_run`.
+  - Unconfirmed folders and missing credentials return `requires_review`.
