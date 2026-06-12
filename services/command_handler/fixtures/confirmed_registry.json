@@ -4,8 +4,17 @@
     "display_name": "Corte Santo - Daily Sales Reconciliation",
     "confirmation_status": "confirmed",
     "default_config": {
+      "payment_forms": [
+        "amex",
+        "banorte_debito",
+        "banorte_credito",
+        "efectivo",
+        "transferencia",
+        "uber_eats",
+        "rappi"
+      ],
       "thresholds": {
-        "cash_difference_medium": 0
+        "reconciliation_tolerance": 0
       },
       "reviewer_map": {
         "default": "admin_ops"

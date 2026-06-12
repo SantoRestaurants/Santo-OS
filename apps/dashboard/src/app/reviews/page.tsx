@@ -80,14 +80,14 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                             Santo AI OS
                         </div>
                         <div className="mt-1 flex items-center gap-2">
-                            <h1 className="text-2xl font-bold text-stone-900">Revisiones</h1>
+                            <h1 className="text-2xl font-bold text-stone-900">Mis pendientes</h1>
                             <HelpTooltip
-                                text="Aquí se muestran las operaciones que necesitan tu decisión. El sistema NUNCA completa algo automáticamente si hay dudas — siempre te pide revisar primero."
+                                text="Aquí están los cortes que necesitan tu decisión. El sistema nunca cierra algo solo si hay dudas: primero te pregunta a ti."
                                 position="right"
                             />
                         </div>
                         <p className="mt-1 text-sm text-stone-600">
-                            Operaciones que necesitan tu aprobación o corrección.
+                            Cortes que necesitan tu aprobación o una corrección.
                         </p>
                     </div>
                     <Link
@@ -95,7 +95,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                         href="/"
                     >
                         <ArrowLeft className="h-3 w-3" />
-                        Panel
+                        Inicio
                     </Link>
                 </header>
 

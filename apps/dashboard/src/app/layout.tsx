@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Santo AI OS — Panel de Operaciones",
+  title: "Santo — Panel de Cortes",
   description:
-    "Sistema operativo inteligente para la gestión de operaciones de Santo. Conciliación diaria, validación fiscal y trazabilidad completa.",
+    "Panel para revisar y aprobar los cortes diarios de Santo.",
 };
 
 export default function RootLayout({

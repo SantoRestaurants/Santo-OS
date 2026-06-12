@@ -4,5 +4,29 @@
   "drive_folder_map": "[CONFIRM]",
   "mandatory_attachments": "[CONFIRM]",
   "reviewer_map": "[CONFIRM]",
-  "thresholds": "[CONFIRM]"
+  "payment_forms": "[CONFIRM]",
+  "thresholds": "[CONFIRM]",
+  "excel_layout": {
+    "_comment": "Optional. Overrides the default corte Excel layout used by Option B extraction. If omitted, the shipped default (Cierre Ter/Pla + Cierre Sistema anchors, Consumo/Propina rows) is used. Any column header not present in column_label_map becomes a requires_review warning.",
+    "terminal_anchor": "Cierre Ter/Pla",
+    "sistema_anchor": "Cierre Sistema",
+    "consumo_label": "Consumo",
+    "propina_label": "Propina",
+    "column_label_map": {
+      "amex": "amex",
+      "bancos": "bancos",
+      "t debito": "bancos",
+      "t credito": "bancos",
+      "total bancos": null,
+      "efectivo": "efectivo",
+      "efectivo real": "efectivo",
+      "efectivo sistema": "efectivo",
+      "transferencia": "transferencia",
+      "uber eats": "plataformas",
+      "rappi": "plataformas",
+      "paypal": "paypal",
+      "global": null,
+      "total": null
+    }
+  }
 }

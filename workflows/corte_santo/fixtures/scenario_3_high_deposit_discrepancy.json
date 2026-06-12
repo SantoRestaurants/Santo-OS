@@ -4,19 +4,93 @@
   "dry_run": true,
   "source_channel": "dashboard",
   "payload": {
-    "business_date": "2026-06-08",
-    "restaurant_key": "santo_unidad_1",
-    "sales_total": 5450.0,
-    "bank_deposit": 4600.0,
-    "cash_count": 450.0,
+    "business_date": "2026-04-14",
+    "restaurant_key": "santo",
+    "legal_entity_key": "santo_core",
+    "cierre_terminal": {
+      "amex": {
+        "consumo": 2488.0,
+        "propina": 373.2
+      },
+      "bancos": {
+        "consumo": 30718.0,
+        "propina": 3904.27
+      },
+      "efectivo": {
+        "consumo": 670.0,
+        "propina": 670.0
+      },
+      "transferencia": {
+        "consumo": 0.0,
+        "propina": 0.0
+      },
+      "plataformas": {
+        "consumo": 2180.0,
+        "propina": 0.0
+      }
+    },
+    "cierre_sistema": {
+      "amex": {
+        "consumo": 2488.0,
+        "propina": 373.2
+      },
+      "bancos": {
+        "consumo": 28235.0,
+        "propina": 3904.27
+      },
+      "efectivo": {
+        "consumo": 670.0,
+        "propina": 670.0
+      },
+      "transferencia": {
+        "consumo": 0.0,
+        "propina": 0.0
+      },
+      "plataformas": {
+        "consumo": 2180.0,
+        "propina": 0.0
+      }
+    },
+    "vta_por_dia": [
+      {
+        "dia": "Martes",
+        "fecha": "2026-04-14",
+        "meta_vta": 64359.05,
+        "venta_real": 34058.0
+      }
+    ],
+    "vta_meta_mes": {
+      "meta_vta": 3480000.0
+    },
+    "saldos": {
+      "prov_aguinaldos": 28149.06,
+      "saldo_banorte": 689091.85,
+      "prov_utilidades": 250712.59
+    },
+    "falta_por_entrar": {
+      "cobros_amex": 14908.55,
+      "cobros_uber": 2720.0,
+      "cobros_rappi": 4890.0,
+      "cobros_paypal": 0.0,
+      "cobros_banorte": 6052.5,
+      "cxc": 11891.5
+    },
     "documents": [
       {
-        "document_key": "daily_sales_report",
-        "document_type": "daily_sales_report",
-        "filename": "corte-santo-2026-06-08.pdf",
+        "document_key": "corte_excel",
+        "document_type": "corte_excel",
+        "filename": "SANTO CORTE 14 ABRIL 2026.xlsx",
         "source_system": "dashboard_upload",
-        "source_uri": "upload://corte-santo-2026-06-08.pdf",
+        "source_uri": "upload://santo-corte-2026-04-14.xlsx",
         "source_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "document_key": "wansoft_system_close",
+        "document_type": "wansoft_system_close",
+        "filename": "REPORTE GLOBAL WANSOFT 14 ABRIL 2026.pdf",
+        "source_system": "dashboard_upload",
+        "source_uri": "upload://wansoft-2026-04-14.pdf",
+        "source_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00"
       }
     ]
   }

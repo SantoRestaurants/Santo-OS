@@ -1,28 +1,21 @@
 "use client";
 
 import {
-  AlertTriangle,
-  FileText,
-  FolderOpen,
   HelpCircle,
   Home,
   Menu,
-  Settings,
   ShieldCheck,
   Sparkles,
-  Terminal,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Badge } from "@/components/ui/Badge";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
-  disabled?: boolean;
   dataTour?: string;
 }
 
@@ -34,41 +27,10 @@ const NAV_ITEMS: NavItem[] = [
     dataTour: "nav-home",
   },
   {
-    label: "Revisiones",
+    label: "Mis pendientes",
     href: "/reviews",
     icon: <ShieldCheck className="h-4 w-4" />,
     dataTour: "nav-reviews",
-  },
-  {
-    label: "Consola Sandbox",
-    href: "/sandbox",
-    icon: <Terminal className="h-4 w-4" />,
-    dataTour: "nav-sandbox",
-  },
-  {
-    label: "Corte Santo",
-    href: "/corte-santo",
-    icon: <FileText className="h-4 w-4" />,
-    disabled: true,
-    dataTour: "nav-corte",
-  },
-  {
-    label: "Excepciones",
-    href: "/exceptions",
-    icon: <AlertTriangle className="h-4 w-4" />,
-    disabled: true,
-  },
-  {
-    label: "Documentos",
-    href: "/documents",
-    icon: <FolderOpen className="h-4 w-4" />,
-    disabled: true,
-  },
-  {
-    label: "Configuración",
-    href: "/settings",
-    icon: <Settings className="h-4 w-4" />,
-    disabled: true,
   },
 ];
 
@@ -104,9 +66,8 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside
         data-tour="sidebar"
-        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-stone-200 bg-white transition-transform duration-200 lg:relative lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-stone-200 bg-white transition-transform duration-200 lg:relative lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         {/* Brand header */}
         <div className="flex items-center justify-between border-b border-stone-100 px-4 py-4">
@@ -118,7 +79,7 @@ export function Sidebar() {
               <p className="text-sm font-semibold text-stone-950">
                 Santo AI OS
               </p>
-              <p className="text-[10px] text-stone-600">Panel de operaciones</p>
+              <p className="text-[10px] text-stone-600">Panel de cortes</p>
             </div>
           </div>
           <button
@@ -134,32 +95,16 @@ export function Sidebar() {
         <nav className="flex-1 space-y-1 px-3 py-4">
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href;
-            if (item.disabled) {
-              return (
-                <div
-                  key={item.href}
-                  data-tour={item.dataTour}
-                  className="flex items-center justify-between rounded-xl px-3 py-2.5 text-stone-500"
-                >
-                  <div className="flex items-center gap-3">
-                    {item.icon}
-                    <span className="text-xs font-medium">{item.label}</span>
-                  </div>
-                  <Badge tone="neutral">Próximamente</Badge>
-                </div>
-              );
-            }
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 data-tour={item.dataTour}
                 onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium transition ${
-                  isActive
-                    ? "bg-stone-950 text-white"
-                    : "text-stone-700 hover:bg-stone-100"
-                }`}
+                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive
+                  ? "bg-stone-950 text-white"
+                  : "text-stone-700 hover:bg-stone-100"
+                  }`}
               >
                 {item.icon}
                 {item.label}

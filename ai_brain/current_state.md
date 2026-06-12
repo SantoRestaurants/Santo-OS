@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-06-08.
+Last updated: 2026-06-11.
 
 ## Repository Status
 
@@ -92,6 +92,42 @@ Last updated: 2026-06-08.
   - Meeting guide exists at `docs/03_execution/p0_alonso_demo.md`.
   - Corte reconciliation no longer contains invented fallback tolerances;
     missing threshold or severity configuration returns `requires_review`.
+- Corte Santo workflow redesigned to match the client's real process and output
+  (ADR-0009):
+  - `reconcile` now compares `cierre_terminal` ("Cierre Ter/Pla") against
+    `cierre_sistema` ("Cierre Sistema") by confirmed `payment_forms`
+    (Amex, Banorte debit/credit, efectivo, transferencia, Uber Eats, Rappi,
+    PayPal), rolling forms up into report groups and flagging any group or
+    Total Real vs Total Sistema difference above
+    `thresholds.reconciliation_tolerance`.
+  - `build_revision_document` produces the structured `REVISION` report per unit
+    (VTA POR DIA, VTA AL DIA, VTA META DEL MES, SALDOS, INGRESOS/GASTOS
+    ADICIONALES, FALTA POR ENTRAR EN LA CUENTA, AJUSTES DEL DIA), matching the
+    client format provided in `00_INBOX_SANTO_RAW`.
+  - Config requirements changed: `payment_forms` is now required and
+    `thresholds` uses `reconciliation_tolerance`; `config.example.json`,
+    fixtures, tests and command-handler registry fixtures were updated.
+  - The dashboard Corte Santo PDF generator now renders the REVISION format from
+    `workflow_run.revision_document`; the previous placeholder PDF and its
+    broken `startxref`/`{streamContent}` assembly were fixed via a shared
+    `assembleSimplePdf` helper.
+  - Exact thresholds, severities, full per-unit roster and reviewer routing
+    still require Santo confirmation.
+- Corte Santo Excel extraction (Option B) added (ADR-0010):
+  - `workflows/corte_santo/corte_excel_parser.py` reads the corte workbook
+    read-only (`data_only`, openpyxl) and extracts Cierre Ter/Pla and Cierre
+    Sistema by mapping column headers to reconciliation groups via config
+    (`excel_layout`, with a shipped default).
+  - `script.run` auto-extracts figures when structured `cierre_terminal`/
+    `cierre_sistema` are absent and a `corte_excel`/`daily_sales_report`
+    document carries a `source_path`.
+  - Any unmapped column, missing file or missing openpyxl raises
+    `extraction_requires_review` and forces `requires_review`; money is never
+    silently dropped.
+  - `payment_forms` standardized on report groups (amex, bancos, efectivo,
+    transferencia, plataformas); config, fixtures and tests updated.
+  - Confirmed P0 inputs so far: reconciliation tolerance = 0; only the SANTO
+    unit is active.
 
 ## Processed Context
 
@@ -131,7 +167,9 @@ Recommended smallest safe slice:
 - No live Agent Mail polling/integration yet.
 - Dashboard has live Supabase query wrappers but no deployed Supabase env/session yet.
 - No dashboard component tests yet.
-- No Corte final reconciliation checks yet.
+- Corte reconciliation now compares Cierre Ter/Pla vs Cierre Sistema by payment
+  form and builds the REVISION document, but exact thresholds, severities, the
+  full per-unit roster and reviewer routing remain pending Santo confirmation.
 - Utility receipts thin workflow exists, but final template rules, folder mapping
   and Sheets scope remain pending.
 - Drive connector is not activated against Santo's real folders yet because

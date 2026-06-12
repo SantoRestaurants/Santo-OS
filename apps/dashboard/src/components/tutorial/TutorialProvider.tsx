@@ -31,7 +31,7 @@ interface TutorialContextValue {
 }
 
 const TutorialContext = createContext<TutorialContextValue>({
-  startTour: () => {},
+  startTour: () => { },
   isActive: false,
 });
 
@@ -116,28 +116,28 @@ function WelcomeModal({
           Bienvenido a Santo AI OS
         </h2>
         <p className="mt-3 text-center text-sm leading-6 text-stone-600">
-          Este es el sistema operativo inteligente de Santo. Automatiza la
-          conciliación diaria, valida documentos fiscales y mantiene trazabilidad
-          completa de cada operación — con revisión humana siempre que hay dudas.
+          Este panel te ayuda con los cortes diarios: te muestra los que llegaron
+          y te avisa cuáles necesitan tu revisión. Te hacemos un recorrido rápido
+          de un minuto.
         </p>
 
         {/* What we'll show */}
         <div className="mt-6 rounded-xl border border-stone-100 bg-stone-50 p-4">
           <p className="text-xs font-semibold text-stone-700">
-            En el tour te mostraremos:
+            Te vamos a mostrar:
           </p>
           <ul className="mt-2 space-y-1.5 text-xs text-stone-600">
             <li className="flex items-start gap-2">
-              <span className="mt-0.5 text-emerald-500">●</span>
-              Cómo funciona el flujo completo de operaciones
+              <span className="mt-0.5 text-amber-500">●</span>
+              Dónde ver lo que necesita tu revisión
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-sky-500">●</span>
-              Qué hace cada sección del dashboard
+              Cómo ver los cortes recientes
             </li>
             <li className="flex items-start gap-2">
-              <span className="mt-0.5 text-amber-500">●</span>
-              Qué falta confirmar para activar la operación real
+              <span className="mt-0.5 text-emerald-500">●</span>
+              Cómo aprobar o pedir una corrección
             </li>
           </ul>
         </div>
@@ -149,7 +149,7 @@ function WelcomeModal({
             className="w-full rounded-xl bg-stone-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
             type="button"
           >
-            🚀 Iniciar Tour Guiado
+            Empezar recorrido
           </button>
           <button
             onClick={onSkip}
@@ -198,7 +198,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener("santo:restart-tour", handleRestart);
     return () =>
       window.removeEventListener("santo:restart-tour", handleRestart);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startTour = useCallback((tourId: string) => {

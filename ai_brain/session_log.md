@@ -62,3 +62,33 @@
   - Operational Addendum as configuration only.
   - Agent Mail ambiguity -> `requires_review`.
   - No hardcoded Drive, thresholds, reviewers, restaurant/RFC/routing/source/template/exception rules.
+
+## 2026-06-11
+
+- Reviewed two client source PDFs from `00_INBOX_SANTO_RAW`: the `REVISION` report (the document actually stored in Drive) and the full Corte Santo workflow walkthrough.
+- Found the existing Corte Santo reconciliation modeled the wrong process (`sales_total ≈ bank_deposit + cash_count`) and the dashboard emitted a placeholder PDF with a broken `startxref`.
+- Redesigned the Corte Santo workflow (ADR-0009):
+  - Rewrote `reconcile` to compare `cierre_terminal` vs `cierre_sistema` by confirmed `payment_forms`, with group rollups (Amex/Bancos/Efectivo/Transferencia/Plataformas) and Total Real vs Total Sistema check against `thresholds.reconciliation_tolerance`.
+  - Added `build_revision_document` producing the client REVISION format per unit.
+  - Updated `config.example.json`, `config_confirmed.json`, all fixtures, `skill.md`, tests and command-handler registry fixtures.
+  - Rewrote the dashboard Corte Santo PDF generator to render the REVISION format and fixed the `startxref`/`{streamContent}` PDF assembly bugs via a shared `assembleSimplePdf` helper.
+- Verified: `python -m pytest` (48 passed) and `npx tsc --noEmit` on the dashboard pass.
+- Added ADR-0009 and updated `ai_brain/current_state.md`.
+
+## 2026-06-11 (Option B: corte Excel extraction)
+
+- Confirmed P0 inputs from user: reconciliation tolerance = 0, only SANTO unit active.
+- Implemented Option B (ADR-0010): `workflows/corte_santo/corte_excel_parser.py` extracts Cierre Ter/Pla and Cierre Sistema from the corte Excel via openpyxl, config-driven (`excel_layout`), read-only/`data_only`.
+- Wired extraction into `script.run`: auto-extracts when structured figures are absent and a `corte_excel`/`daily_sales_report` document has a `source_path`; unmapped columns / missing file / missing openpyxl -> `extraction_requires_review` -> `requires_review`.
+- Standardized `payment_forms` on report groups (amex, bancos, efectivo, transferencia, plataformas) across config, fixtures and tests.
+- Added `santo_corte_sample.xlsx` fixture + generator, `scenario_5_from_excel.json`, and `test_corte_excel_parser.py`.
+- Updated `config.example.json` (excel_layout), `skill.md`, dashboard sandbox doc mapping, ADR-0010, current_state and pending inputs.
+- Verified: `python -m pytest` 53 passed; dashboard `tsc --noEmit` clean; CLI run on the Excel fixture extracts and reconciles to `ready_for_approval` (Total Real = Total Sistema = 38,520.47).
+
+## 2026-06-11 (Dashboard simplification for non-technical users)
+
+- Simplified the dashboard home for a non-technical admin: removed the 4 technical metric tiles and the operations/exceptions/agent-mail grid; replaced with a single "lo que necesita tu revisión" hero (links to /reviews) plus a plain-language "Cortes recientes" list. Statuses and reasons are now humanized (e.g. "El corte cuadró. Falta tu aprobación.", "Las cuentas no cuadran.").
+- Trimmed the sidebar to just "Inicio" and "Mis pendientes"; removed the "Próximamente" disabled items and the technical Sandbox link from the main nav.
+- Rewrote the guided tour (home + reviews) and welcome modal in plain Spanish aimed at the corte reviewer; removed jargon (Agent Mail, workflows, Supabase, P0).
+- Renamed page title/brand subtitle to "Panel de cortes".
+- Verified: `tsc --noEmit` clean and `npm run build` succeeds. Remaining lint warnings are all in pre-existing untouched files (route.ts, sandbox/page.tsx, TutorialProvider memoization rule).

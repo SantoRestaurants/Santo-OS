@@ -4,6 +4,7 @@
     "display_name": "Corte Santo - Daily Sales Reconciliation",
     "confirmation_status": "requires_review",
     "default_config": {
+      "payment_forms": "[CONFIRM]",
       "thresholds": "[CONFIRM]",
       "reviewer_map": "[CONFIRM]"
     }

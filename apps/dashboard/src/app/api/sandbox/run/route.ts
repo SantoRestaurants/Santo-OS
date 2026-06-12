@@ -14,53 +14,9 @@ function getWorkspaceRoot() {
   return current;
 }
 
-function generateCorteSantoPdf(payload: any, status: string, exceptions: any[]): Buffer {
-  const businessDate = payload.business_date || "2026-06-08";
-  const restaurantKey = payload.restaurant_key || "santo_unidad_1";
-  const salesTotal = typeof payload.sales_total === "number" ? payload.sales_total : 5450.0;
-  const bankDeposit = typeof payload.bank_deposit === "number" ? payload.bank_deposit : 5000.0;
-  const cashCount = typeof payload.cash_count === "number" ? payload.cash_count : 450.0;
-  const diff = Math.abs(salesTotal - (bankDeposit + cashCount));
-
-  const title = `Reporte de Cierre Diario: Reconciliacion Corte Santo`;
-  const cleanStr = (str: string) => String(str).replace(/[()]/g, "");
-
-  const lines: string[] = [
-    "BT",
-    "/F1 18 Tf",
-    "50 750 Td",
-    `(${cleanStr(title)}) Tj`,
-    "ET",
-    "BT",
-    "/F1 12 Tf",
-    "50 710 Td",
-    `(Fecha de Operacion: ${cleanStr(businessDate)}) Tj`,
-    "0 -20 Td",
-    `(Unidad / Restaurante: ${cleanStr(restaurantKey)}) Tj`,
-    "0 -25 Td",
-    `(Ventas Totales del Cierre: $${salesTotal.toFixed(2)}) Tj`,
-    "0 -20 Td",
-    `(Deposito Bancario Declarado: $${bankDeposit.toFixed(2)}) Tj`,
-    "0 -20 Td",
-    `(Efectivo Contado en Caja: $${cashCount.toFixed(2)}) Tj`,
-    "0 -20 Td",
-    `(Suma Declarada (Banco + Caja): $${(bankDeposit + cashCount).toFixed(2)}) Tj`,
-    "0 -20 Td",
-    `(Diferencia de Cierre: $${diff.toFixed(2)}) Tj`,
-    "0 -30 Td",
-    `(Estatus de Reconciliacion: ${cleanStr(status === "requires_review" ? "REQUIERE REVISION HUMANA" : "CONCILIADO OK")}) Tj`,
-  ];
-
-  if (exceptions && exceptions.length > 0) {
-    lines.push("0 -25 Td", `(Alertas y Discrepancias Detectadas:) Tj`);
-    for (const exc of exceptions) {
-      const reason = exc.details?.reason || exc.exception_type || "";
-      lines.push("0 -15 Td", `( - [${cleanStr(exc.severity || "medium")}] ${cleanStr(exc.exception_key || "alerta")}: ${cleanStr(reason)}) Tj`);
-    }
-  }
-
-  lines.push("ET");
-
+// Assemble a minimal single-page PDF from text lines (Helvetica), computing a
+// correct xref table and startxref offset.
+function assembleSimplePdf(lines: string[]): Buffer {
   const streamContent = lines.join("\n");
   const streamObject = `5 0 obj\n<< /Length ${streamContent.length} >>\nstream\n${streamContent}\nendstream\nendobj`;
 
@@ -68,7 +24,7 @@ function generateCorteSantoPdf(payload: any, status: string, exceptions: any[]):
     "%PDF-1.4",
     "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj",
     "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj",
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources 4 0 R /Contents 5 0 R >>\nendobj",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 5 0 R >>\nendobj",
     "4 0 obj\n<< /Font << /F1 6 0 R >> >>\nendobj",
     streamObject,
     "6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj",
@@ -86,19 +42,76 @@ function generateCorteSantoPdf(payload: any, status: string, exceptions: any[]):
   }
 
   const bodyBuffer = Buffer.concat(bodyBufferParts);
+  const xrefOffset = bodyBuffer.length;
 
   let xref = `xref\n0 ${pdfParts.length + 1}\n0000000000 65535 f \n`;
   for (let i = 0; i < offsets.length; i++) {
     xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
   }
 
-  const trailer = `trailer\n<< /Size ${pdfParts.length + 1} /Root 1 0 R >>\nstartxref\n{currentOffset}\n%%EOF`;
+  const trailer = `trailer\n<< /Size ${pdfParts.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
 
-  return Buffer.concat([
-    bodyBuffer,
-    Buffer.from(xref),
-    Buffer.from(trailer)
-  ]);
+  return Buffer.concat([bodyBuffer, Buffer.from(xref), Buffer.from(trailer)]);
+}
+
+// Render the client "REVISION" report (Corte Santo) from the structured
+// revision_document produced by the Python workflow. Falls back to the raw
+// payload when the workflow did not build a document (e.g. intake-only runs).
+function generateCorteSantoPdf(workflowRun: any, status: string, exceptions: any[]): Buffer {
+  const cleanStr = (str: any) => String(str ?? "").replace(/[()\\]/g, "");
+  const money = (n: any) => `$${Number(n ?? 0).toFixed(2)}`;
+  const rev = workflowRun?.revision_document;
+
+  const lines: string[] = ["BT", "/F1 16 Tf", "50 760 Td", "(REVISION) Tj", "ET"];
+  let y = 760;
+  const push = (text: string, size = 11, dy = 18) => {
+    y -= dy;
+    lines.push("BT", `/F1 ${size} Tf`, `50 ${y} Td`, `(${cleanStr(text)}) Tj`, "ET");
+  };
+
+  if (rev) {
+    push(`Unidad: ${rev.unidad}`, 13, 24);
+    push(`Fecha de Operacion: ${rev.business_date}`);
+    push(`Formato de Corte: ${rev.formato_corte}`);
+
+    push("VTA AL DIA", 12, 24);
+    const vd = rev.vta_al_dia || {};
+    push(`Meta de Vta: ${money(vd.meta_vta)}   Venta Real: ${money(vd.venta_real)}`);
+    push(`Diferencia: ${money(vd.diferencia)}   %Diferencia: ${vd.pct_diferencia ?? "-"}%`);
+
+    push("VTA META DEL MES", 12, 24);
+    const vm = rev.vta_meta_mes || {};
+    push(`Meta: ${money(vm.meta_vta)}   Real: ${money(vm.venta_real)}   Diferencia: ${money(vm.diferencia)}`);
+
+    push("SALDOS", 12, 24);
+    const s = rev.saldos || {};
+    push(`Prov. Aguinaldos: ${money(s.prov_aguinaldos)}`);
+    push(`Saldo Banorte: ${money(s.saldo_banorte)}`);
+    push(`Prov. Utilidades: ${money(s.prov_utilidades)}`);
+    push(`TOTAL: ${money(s.total)}`);
+
+    push("FALTA POR ENTRAR EN LA CUENTA", 12, 24);
+    for (const [k, v] of Object.entries(rev.falta_por_entrar || {})) {
+      push(`${k}: ${money(v)}`, 11, 15);
+    }
+
+    const totals = rev.reconciliation_totals || {};
+    push("RECONCILIACION (Total Real vs Total Sistema)", 12, 24);
+    push(`Total Real: ${money(totals.total_real)}   Total Sistema: ${money(totals.total_sistema)}   Diferencia: ${money(totals.difference)}`);
+  } else {
+    push(`Estatus: ${status === "requires_review" ? "REQUIERE REVISION HUMANA" : status}`, 12, 24);
+    push("Reconciliacion no ejecutada (intake incompleto o config pendiente).");
+  }
+
+  if (exceptions && exceptions.length > 0) {
+    push("Alertas y Discrepancias Detectadas:", 12, 24);
+    for (const exc of exceptions) {
+      const reason = exc.details?.reason || exc.exception_type || "";
+      push(`- [${exc.severity || "medium"}] ${exc.exception_key || "alerta"}: ${reason}`, 10, 14);
+    }
+  }
+
+  return assembleSimplePdf(lines);
 }
 
 function generateBankDepositCsv(payload: any): Buffer {
@@ -168,44 +181,7 @@ function generateUtilityReceiptPdf(payload: any): Buffer {
     "ET"
   ];
 
-  const streamContent = lines.join("\n");
-  const streamObject = `5 0 obj\n<< /Length ${streamContent.length} >>\nstream\n{streamContent}\nendstream\nendobj`;
-
-  const pdfParts: string[] = [
-    "%PDF-1.4",
-    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj",
-    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj",
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources 4 0 R /Contents 5 0 R >>\nendobj",
-    "4 0 obj\n<< /Font << /F1 6 0 R >> >>\nendobj",
-    streamObject,
-    "6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj",
-  ];
-
-  const offsets: number[] = [];
-  let currentOffset = 0;
-  const bodyBufferParts: Buffer[] = [];
-
-  for (const part of pdfParts) {
-    const partBuf = Buffer.from(part + "\n");
-    offsets.push(currentOffset);
-    bodyBufferParts.push(partBuf);
-    currentOffset += partBuf.length;
-  }
-
-  const bodyBuffer = Buffer.concat(bodyBufferParts);
-
-  let xref = `xref\n0 ${pdfParts.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 0; i < offsets.length; i++) {
-    xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  }
-
-  const trailer = `trailer\n<< /Size ${pdfParts.length + 1} /Root 1 0 R >>\nstartxref\n{currentOffset}\n%%EOF`;
-
-  return Buffer.concat([
-    bodyBuffer,
-    Buffer.from(xref),
-    Buffer.from(trailer)
-  ]);
+  return assembleSimplePdf(lines);
 }
 
 export async function POST(req: NextRequest) {
@@ -275,7 +251,7 @@ export async function POST(req: NextRequest) {
     const exceptionsVal = workflowResult.exceptions || [];
 
     if (workflow === "corte_santo") {
-      const dynamicCortePdf = generateCorteSantoPdf(payloadVal, statusVal, exceptionsVal);
+      const dynamicCortePdf = generateCorteSantoPdf(workflowResult.workflow_run || {}, statusVal, exceptionsVal);
       const dynamicCortePdfPath = path.join(rootDir, "apps", "dashboard", "public", "fixtures", "corte-santo-2026-06-08.pdf");
       writeFileSync(dynamicCortePdfPath, dynamicCortePdf);
 
@@ -311,7 +287,7 @@ export async function POST(req: NextRequest) {
         let localFilename = doc.metadata?.original_filename || doc.document_key || "";
         let mockFilename = "";
 
-        if (localFilename.includes("corte-santo") || doc.document_type === "daily_sales_report") {
+        if (localFilename.includes("corte-santo") || doc.document_type === "daily_sales_report" || doc.document_type === "corte_excel") {
           mockFilename = "corte-santo-2026-06-08.pdf";
         } else if (localFilename.includes("deposito") || localFilename.includes("banorte")) {
           mockFilename = "deposito-banorte-2026-06-08.csv";

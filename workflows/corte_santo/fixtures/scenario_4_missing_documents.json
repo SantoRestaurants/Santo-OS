@@ -4,11 +4,21 @@
   "dry_run": true,
   "source_channel": "dashboard",
   "payload": {
-    "business_date": "2026-06-08",
-    "restaurant_key": "santo_unidad_1",
-    "sales_total": 5450.0,
-    "bank_deposit": 5000.0,
-    "cash_count": 450.0,
+    "business_date": "2026-04-14",
+    "restaurant_key": "santo",
+    "legal_entity_key": "santo_core",
+    "cierre_terminal": {
+      "amex": {
+        "consumo": 2488.0,
+        "propina": 373.2
+      }
+    },
+    "cierre_sistema": {
+      "amex": {
+        "consumo": 2488.0,
+        "propina": 373.2
+      }
+    },
     "documents": []
   }
 }
