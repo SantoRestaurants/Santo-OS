@@ -63,31 +63,38 @@ const SCENARIOS: Record<WorkflowType, Scenario[]> = {
   corte_santo: [
     {
       id: "scenario_1_ok",
-      name: "01. Reconciliación Exitosa",
-      description: "Las ventas coinciden perfectamente con el efectivo y depósito bancario. No hay descuadres.",
-      expectedResult: "Estatus: waiting_for_input (Intake exitoso, sin excepciones).",
+      name: "01. Corte que cuadra",
+      description: "El cierre de terminales/plataformas coincide exactamente con el cierre del sistema (Wansoft) en todas las formas de pago.",
+      expectedResult: "Estatus: ready_for_approval (Total Real = Total Sistema, sin excepciones).",
       type: "success",
     },
     {
       id: "scenario_2_cash_discrepancy",
-      name: "02. Descuadre de Caja (Medio)",
-      description: "El conteo de efectivo tiene una diferencia de $80. Al ser la tolerancia de $0, esto genera excepción por descuadre de caja.",
-      expectedResult: "Estatus: requires_review. Excepción por descuadre de caja.",
+      name: "02. Diferencia en Efectivo",
+      description: "El efectivo del cierre real no coincide con el del sistema. Con tolerancia $0, cualquier diferencia genera excepción.",
+      expectedResult: "Estatus: requires_review. Excepción por diferencia en la forma de pago Efectivo.",
       type: "warning",
     },
     {
       id: "scenario_3_high_deposit_discrepancy",
-      name: "03. Descuadre de Depósito (Alto)",
-      description: "El depósito bancario difiere por $400. Al ser la tolerancia de $0, esto genera una excepción inmediata de severidad alta.",
-      expectedResult: "Estatus: requires_review. Excepción de severidad alta por descuadre bancario.",
+      name: "03. Diferencia en Bancos",
+      description: "El monto de Bancos (Banorte débito/crédito) del cierre real difiere del sistema. Con tolerancia $0 se marca de inmediato.",
+      expectedResult: "Estatus: requires_review. Excepción por diferencia en Bancos y en el Total Real vs Sistema.",
       type: "error",
     },
     {
       id: "scenario_4_missing_documents",
-      name: "04. Falta Reporte de Ventas",
-      description: "Falta el archivo adjunto obligatorio para el corte diario.",
+      name: "04. Faltan documentos del corte",
+      description: "Falta algún adjunto obligatorio del corte (Excel del corte o reporte global de Wansoft).",
       expectedResult: "Estatus: requires_review. Excepción por falta de documentos obligatorios.",
       type: "error",
+    },
+    {
+      id: "scenario_5_from_excel",
+      name: "05. Lectura automática del Excel",
+      description: "El sistema lee las cifras de Cierre Ter/Pla y Cierre Sistema directamente del Excel del corte y reconcilia.",
+      expectedResult: "Estatus: ready_for_approval. Cifras extraídas del Excel y conciliadas.",
+      type: "success",
     },
   ],
   xml_sat: [
@@ -148,29 +155,34 @@ const WORKFLOW_EXPLANATIONS: Record<WorkflowType, WorkflowStepExplanation[]> = {
   corte_santo: [
     {
       title: "1. Intake / Recepción",
-      desc: "Recepción de emails con el reporte diario de ventas POS y el voucher de depósito.",
-      detail: "Valida la estructura del payload enviado y detecta si los adjuntos obligatorios están incluidos en el mensaje."
+      desc: "Recepción del corte: Excel del corte, reporte global de Wansoft y comprobantes de terminales.",
+      detail: "Valida la estructura del envío y detecta si los adjuntos obligatorios están incluidos.",
     },
     {
       title: "2. Verificación de Configuración",
-      desc: "Cruza el identificador del restaurante y comprueba las tolerancias cargadas en base de datos.",
-      detail: "Si las tolerancias o el restaurante no existen en Supabase, el workflow detiene la ejecución automática y pasa a revisión manual."
+      desc: "Cruza el identificador de la unidad y las formas de pago y tolerancia cargadas en base de datos.",
+      detail: "Si la unidad, las formas de pago o la tolerancia no están confirmadas, el workflow se detiene y pasa a revisión manual.",
     },
     {
-      title: "3. Reconciliación de Conteo de Caja",
-      desc: "Valida el efectivo reportado contra la diferencia aritmética: Ventas POS menos Depósito Bancario.",
-      detail: "Se evalúa contra 'cash_tolerance' ($0.00). Si hay cualquier diferencia, se gatilla una excepción tipo 'cash_discrepancy'."
+      title: "3. Lectura del Excel (automática)",
+      desc: "Extrae del Excel del corte las cifras de Cierre Ter/Pla y Cierre Sistema por forma de pago.",
+      detail: "Si encuentra una columna que no puede mapear con seguridad, no inventa: deja la corrida en revisión.",
     },
     {
-      title: "4. Reconciliación de Depósito",
-      desc: "Valida el depósito bancario reportado contra la diferencia aritmética: Ventas POS menos Conteo de Caja.",
-      detail: "Se evalúa contra 'deposit_tolerance' ($0.00). Al ser la tolerancia de $0, cualquier diferencia se califica como excepción de severidad alta."
+      title: "4. Reconciliación por forma de pago",
+      desc: "Compara, forma por forma, el cierre real (terminales/plataformas) contra el del sistema (Wansoft).",
+      detail: "Con tolerancia $0, cualquier diferencia por grupo (Amex, Bancos, Efectivo, Transferencia, Plataformas) gatilla una excepción.",
     },
     {
-      title: "5. Emisión de Registro y Evidencia",
-      desc: "Prepara la subida de reportes a Google Drive y emite el estatus final de la corrida.",
-      detail: "Si hay diferencias, el estatus es 'requires_review'. Si no hay descuadres y la configuración es válida, el estado es 'waiting_for_input' para aprobación final."
-    }
+      title: "5. Total Real vs Total Sistema",
+      desc: "Verifica que el Total Real sea idéntico al Total Sistema.",
+      detail: "Si no coinciden, se marca la corrida como requires_review para que una persona investigue el origen.",
+    },
+    {
+      title: "6. Reporte REVISION y evidencia",
+      desc: "Arma el reporte REVISION en el formato del cliente y prepara la subida a Google Drive.",
+      detail: "Si todo cuadra, el estado es ready_for_approval para la aprobación final; si no, queda en requires_review.",
+    },
   ],
   xml_sat: [
     {
@@ -223,7 +235,7 @@ export default function SandboxPage() {
 
   // Google Drive connection settings
   const [driveEnabled, setDriveEnabled] = useState(false);
-  const [driveFolderId, setDriveFolderId] = useState("");
+  const [driveFolderId, setDriveFolderId] = useState("1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL");
   const [driveAccessToken, setDriveAccessToken] = useState("");
 
   const activeScenarios = SCENARIOS[selectedWorkflow];
@@ -316,11 +328,10 @@ export default function SandboxPage() {
                     <button
                       key={wf.id}
                       onClick={() => handleWorkflowChange(wf.id)}
-                      className={`flex w-full items-start gap-3 rounded-xl p-3 text-left transition ${
-                        isSelected
-                          ? "bg-stone-950 text-white shadow-md"
-                          : "bg-white text-stone-700 border border-stone-200 hover:bg-stone-50"
-                      }`}
+                      className={`flex w-full items-start gap-3 rounded-xl p-3 text-left transition ${isSelected
+                        ? "bg-stone-950 text-white shadow-md"
+                        : "bg-white text-stone-700 border border-stone-200 hover:bg-stone-50"
+                        }`}
                       type="button"
                     >
                       <Icon className={`mt-0.5 h-4 w-4 ${isSelected ? "text-emerald-400" : "text-stone-600"}`} />
@@ -353,11 +364,10 @@ export default function SandboxPage() {
                         setExecutionResult(null);
                         setErrorMsg(null);
                       }}
-                      className={`flex w-full flex-col rounded-xl border p-3 text-left transition ${
-                        isSelected
-                          ? "border-stone-950 bg-stone-50/80 shadow-sm"
-                          : "border-stone-200 bg-white hover:bg-stone-50/50"
-                      }`}
+                      className={`flex w-full flex-col rounded-xl border p-3 text-left transition ${isSelected
+                        ? "border-stone-950 bg-stone-50/80 shadow-sm"
+                        : "border-stone-200 bg-white hover:bg-stone-50/50"
+                        }`}
                       type="button"
                     >
                       <div className="flex items-center gap-2">
@@ -469,11 +479,10 @@ export default function SandboxPage() {
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition ${
-                      isActive
-                        ? "border-stone-950 text-stone-950"
-                        : "border-transparent text-stone-500 hover:text-stone-700"
-                    }`}
+                    className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition ${isActive
+                      ? "border-stone-950 text-stone-950"
+                      : "border-transparent text-stone-500 hover:text-stone-700"
+                      }`}
                     type="button"
                   >
                     {labels[tab]}
@@ -548,11 +557,10 @@ export default function SandboxPage() {
                     <div className="space-y-6">
                       {/* Summary Banner */}
                       <div
-                        className={`rounded-2xl border p-5 flex items-start gap-4 ${
-                          executionResult.result.status === "requires_review"
-                            ? "bg-amber-50/70 border-amber-200"
-                            : "bg-emerald-50/70 border-emerald-200"
-                        }`}
+                        className={`rounded-2xl border p-5 flex items-start gap-4 ${executionResult.result.status === "requires_review"
+                          ? "bg-amber-50/70 border-amber-200"
+                          : "bg-emerald-50/70 border-emerald-200"
+                          }`}
                       >
                         {executionResult.result.status === "requires_review" ? (
                           <AlertTriangle className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
@@ -573,10 +581,9 @@ export default function SandboxPage() {
                           </div>
                           <p className="mt-1.5 text-xs leading-5 text-stone-600">
                             {executionResult.result.status === "requires_review"
-                              ? `El script finalizó con un estado pendiente de aprobación debido a: ${
-                                  executionResult.result.workflow_run.requires_review_reason ||
-                                  "excepciones de descuadre en los datos"
-                                }.`
+                              ? `El script finalizó con un estado pendiente de aprobación debido a: ${executionResult.result.workflow_run.requires_review_reason ||
+                              "excepciones de descuadre en los datos"
+                              }.`
                               : "El script se ejecutó sin detectar discrepancias críticas o configuraciones faltantes."}
                           </p>
                         </div>
