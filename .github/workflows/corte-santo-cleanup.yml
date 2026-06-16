@@ -26,9 +26,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install httpx
 
+      - name: Validate secrets
+        run: |
+          if [ -z "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] && [ -z "${{ secrets.SUPABASE_URL }}" ]; then
+            echo "ERROR: Missing secret NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "ERROR: Missing secret SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+
       - name: Clean Supabase workflow_runs and email_messages
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
         run: |
@@ -36,7 +48,11 @@ jobs:
           import os, sys, json, re
           import httpx
 
-          supabase_url = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
+          supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL", "")
+          if not supabase_url.startswith(("http://", "https://")):
+              print(f"ERROR: Invalid Supabase URL: {supabase_url!r}")
+              print("Make sure NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL secret is set to a valid URL")
+              sys.exit(1)
           key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
           headers = {"apikey": key, "Authorization": f"Bearer {key}"}
 
