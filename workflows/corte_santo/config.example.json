@@ -2,6 +2,12 @@
   "workflow_key": "corte_santo_daily_sales_reconciliation",
   "restaurant_map": "[CONFIRM]",
   "drive_folder_map": "[CONFIRM]",
+  "drive_runtime": {
+    "_comment": "Preferred production mode: configure one stable Drive root/folder. Workbooks and bank uploads are discovered inside it; file IDs are optional overrides.",
+    "root_folder_id": "[CONFIRM]",
+    "workbooks_folder_id": "[CONFIRM_OPTIONAL]",
+    "bank_upload_folder_id": "[CONFIRM_OPTIONAL]"
+  },
   "mandatory_attachments": "[CONFIRM]",
   "reviewer_map": "[CONFIRM]",
   "payment_forms": "[CONFIRM]",

@@ -199,6 +199,17 @@ resume in a fresh conversation.
   `429 Too Many Requests`. The vision extractor now retries transient Gemini
   failures and spaces batch requests, but production should use paid Gemini or
   another stable vision provider before declaring the workflow fully automated.
+- Corte Santo Drive discovery now uses a stable configured folder instead of
+  requiring the operator to know individual workbook file IDs. Confirmed root
+  folder for the current E2E track:
+  `1CkIvNSE1B2SzCyzWOWtSd0j11np-ZJsM`. The runtime discovers Ingresos and
+  Forecast by filename/month signals inside that folder tree. The bank watcher
+  accepts flexible AMEX/Banorte filenames and can sample file contents when the
+  name is generic.
+- Local verification could not list the new Drive folder because the current
+  shell did not have `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET` and
+  `GOOGLE_DRIVE_REFRESH_TOKEN` loaded. Vercel/local runtime must have those
+  env vars and the folder must be shared with that Google identity.
 
 ## Processed Context
 

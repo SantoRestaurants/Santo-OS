@@ -8,6 +8,11 @@
   "drive_folder_map": {
     "santo": "1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL"
   },
+  "drive_runtime": {
+    "root_folder_id": "1CkIvNSE1B2SzCyzWOWtSd0j11np-ZJsM",
+    "workbooks_folder_id": "1CkIvNSE1B2SzCyzWOWtSd0j11np-ZJsM",
+    "bank_upload_folder_id": "1CkIvNSE1B2SzCyzWOWtSd0j11np-ZJsM"
+  },
   "mandatory_attachments": [
     "corte_excel"
   ],

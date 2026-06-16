@@ -2,15 +2,59 @@
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Any
 
 
-def classify_bank_file(filename: str) -> str | None:
-    normalized = filename.upper()
-    if "AMEX" in normalized and normalized.endswith((".XLS", ".XLSX", ".CSV")):
+BANK_EXTENSIONS = (".CSV", ".XLS", ".XLSX")
+
+
+def _normalize(text: str) -> str:
+    value = str(text or "").strip().upper()
+    value = "".join(
+        ch for ch in unicodedata.normalize("NFD", value) if unicodedata.category(ch) != "Mn"
+    )
+    return " ".join(value.replace("_", " ").replace("-", " ").split())
+
+
+def _extension(name: str) -> str:
+    upper = name.upper()
+    for ext in BANK_EXTENSIONS:
+        if upper.endswith(ext):
+            return ext
+    return ""
+
+
+def classify_bank_file(
+    filename: str,
+    mime_type: str | None = None,
+    content_sample: bytes | str | None = None,
+) -> str | None:
+    normalized = _normalize(filename)
+    ext = _extension(filename)
+    if not ext:
+        return None
+
+    if any(token in normalized for token in ("AMEX", "AMERICAN EXPRESS")):
         return "amex_statement"
-    if "BANORTE" in normalized and normalized.endswith((".CSV", ".XLS", ".XLSX")):
+    if any(token in normalized for token in ("BANORTE", "BANCO", "ESTADO DE CUENTA", "MOVIMIENTOS")):
         return "banorte_statement"
+    if ext == ".CSV":
+        # In this workflow the bank export supplied by the supervisor is the
+        # Banorte statement. AMEX is normally an XLS/XLSX export and is still
+        # caught above when named explicitly.
+        return "banorte_statement"
+    if content_sample is not None:
+        text = (
+            content_sample.decode("latin-1", errors="ignore")
+            if isinstance(content_sample, bytes)
+            else str(content_sample)
+        )
+        sample = _normalize(text)
+        if any(token in sample for token in ("AMERICAN EXPRESS", "FECHA DE PAGO", "MONTO DEL PAGO")):
+            return "amex_statement"
+        if any(token in sample for token in ("BANORTE", "DESCRIPCION", "DEPOSITOS", "RETIROS", "SALDO")):
+            return "banorte_statement"
     return None
 
 
@@ -25,7 +69,11 @@ def detect_bank_stage_trigger(
     for item in files:
         if not isinstance(item, dict):
             continue
-        document_type = classify_bank_file(str(item.get("name", "")))
+        document_type = classify_bank_file(
+            str(item.get("name", "")),
+            item.get("mimeType"),
+            item.get("content_sample"),
+        )
         if not document_type:
             continue
         if document_type in documents:
@@ -79,8 +127,18 @@ def poll_bank_folder_once(
     restaurant_key: str,
     business_date: str,
 ) -> dict[str, Any]:
+    files = client.list_files(folder_id=folder_id)
+    for item in files:
+        if not isinstance(item, dict) or classify_bank_file(str(item.get("name", "")), item.get("mimeType")):
+            continue
+        if not str(item.get("name", "")).upper().endswith(BANK_EXTENSIONS) or not item.get("id"):
+            continue
+        try:
+            item["content_sample"] = client.download(str(item["id"]))[:20000]
+        except Exception:
+            item["content_sample_error"] = "download_failed"
     return detect_bank_stage_trigger(
-        client.list_files(folder_id=folder_id),
+        files,
         restaurant_key=restaurant_key,
         business_date=business_date,
     )

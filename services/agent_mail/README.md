@@ -28,8 +28,7 @@ $env:GOOGLE_DRIVE_CLIENT_SECRET="[runtime secret]"
 $env:GOOGLE_DRIVE_REFRESH_TOKEN="[runtime secret]"
 $env:GOOGLE_DRIVE_CONNECTOR_CONFIG="services/drive_connector/config.local.json"
 $env:GEMINI_API_KEY="[runtime secret]"
-$env:CORTE_SANTO_INGRESOS_FILE_ID="[confirmed Drive file id]"
-$env:CORTE_SANTO_FORECAST_FILE_ID="[confirmed Drive file id]"
+$env:CORTE_SANTO_DRIVE_FOLDER_ID="[confirmed Corte Santo Drive folder id]"
 python -m services.agent_mail.poller --config services/agent_mail/config.json --write
 ```
 
@@ -40,12 +39,17 @@ Drive config, target folder, or credential is missing, the Drive write returns
 
 When `corte_santo_automation.enabled=true`, classified `[CORTE]` emails also
 run the Corte Santo initial stage: attachments are downloaded, the Corte Excel
-is reconciled, Ingresos/Forecast are updated, and the supervisor notification is
-prepared/sent depending on dry-run mode.
+is reconciled, Ingresos/Forecast are discovered from the confirmed Drive folder,
+updated, and the supervisor notification is prepared/sent depending on dry-run
+mode. Explicit `CORTE_SANTO_INGRESOS_FILE_ID` and
+`CORTE_SANTO_FORECAST_FILE_ID` values are still supported, but production should
+prefer `CORTE_SANTO_DRIVE_FOLDER_ID` or `CORTE_SANTO_WORKBOOKS_FOLDER_ID`.
 
 Vision extraction uses Gemini in the confirmed test config. The Corte Excel
 reconciles automatically, and Gemini reads the supporting photos needed for
-detailed Ingresos channels such as debit, credit and tips.
+detailed Ingresos channels such as debit, credit and tips. The bank-stage Drive
+watcher can detect AMEX/Banorte uploads by filename signals or, when needed, by
+sampling file content; the supervisor does not need exact filenames.
 
 ## Architecture
 
