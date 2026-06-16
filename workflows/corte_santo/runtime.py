@@ -27,14 +27,8 @@ def _income_channels(payload: dict[str, Any], workflow_result: dict[str, Any]) -
     canonical = workflow_result.get("workflow_run", {}).get("canonical_evidence", {})
     register = canonical.get("income_register", {}) if isinstance(canonical, dict) else {}
     return {
-        "amex": register.get("amex"),
-        "debito": register.get("debito"),
-        "credito": register.get("credito"),
-        "efectivo": register.get("efectivo"),
-        "paypal": register.get("paypal"),
-        "uber": register.get("uber"),
-        "rappi": register.get("rappi"),
-        "propinas": register.get("propinas"),
+        k: (register.get(k) if register.get(k) is not None else 0.0)
+        for k in ["amex", "debito", "credito", "efectivo", "paypal", "uber", "rappi", "propinas"]
     }
 
 
@@ -185,7 +179,11 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
     amex_doc = by_type.get("amex_statement", {})
     banorte = bank_parser.parse_banorte_csv(str(banorte_doc.get("source_path", "")), config)
     amex = bank_reconciliation.parse_amex_xls(str(amex_doc.get("source_path", "")))
-    income_channels = payload.get("income_channels", {})
+    income_channels = dict(payload.get("income_channels", {}))
+    layout_columns = (config.get("ingresos_layout") or {}).get("columns", {})
+    for key in layout_columns:
+        if income_channels.get(key) is None:
+            income_channels[key] = 0.0
     bank_result = bank_reconciliation.reconcile_bank_stage(
         payload.get("expected_collections", []),
         banorte,
