@@ -160,8 +160,7 @@ def _call_gemini(cfg: dict[str, Any], prompt: str, media_type: str, b64: str) ->
     url = f"{cfg['endpoint'].rstrip('/')}/{cfg['model']}:generateContent"
     response = httpx.post(
         url,
-        params={"key": cfg["api_key"]},
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", "x-goog-api-key": cfg["api_key"]},
         json={
             "contents": [
                 {
