@@ -210,6 +210,12 @@ resume in a fresh conversation.
   shell did not have `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET` and
   `GOOGLE_DRIVE_REFRESH_TOKEN` loaded. Vercel/local runtime must have those
   env vars and the folder must be shared with that Google identity.
+- A Vercel Cron entrypoint now exists at `/api/cron/santo` with one configured
+  cron (`*/15 * * * *`) that defaults to Agent Mail intake and can manually run
+  the bank watcher through `services.scheduler.corte_santo_cron`. The endpoint
+  requires `CRON_SECRET`. Live writes require `SANTO_CRON_WRITE=true`; otherwise
+  the scheduler runs dry. Full bank-stage automation still requires persisting
+  the stage-1 expected-collections/resume payload in Supabase.
 
 ## Processed Context
 
@@ -241,9 +247,12 @@ Activate and validate the Corte two-stage runtime in production:
 ## Not Started
 
 - Supabase migration has not been applied to a live/local database yet.
-- Two-stage Corte production runtime contracts exist, but they are not deployed
-  or connected to live Agent Mail/Drive/Supabase events yet.
-- No live Agent Mail polling/integration yet.
+- Two-stage Corte production runtime contracts exist and have a Vercel cron
+  HTTP trigger, but full bank-stage resume still needs the persisted stage-1
+  ledger in Supabase.
+- Live Agent Mail polling can now be invoked by the Vercel cron endpoint once
+  the production deployment has `CRON_SECRET`, Drive OAuth env vars and
+  `SANTO_CRON_WRITE=true` if live Supabase writes are desired.
 - Dashboard has live Supabase query wrappers but no deployed Supabase env/session yet.
 - No dashboard component tests yet.
 - Corte reconciliation now compares Cierre Ter/Pla vs Cierre Sistema by payment
