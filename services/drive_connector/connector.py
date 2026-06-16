@@ -20,6 +20,8 @@ from typing import Any
 import httpx
 
 DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
+DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 
 def _now() -> str:
@@ -108,12 +110,144 @@ class DriveClient:
         response.raise_for_status()
         return response.json()
 
+    def list_files(self, *, folder_id: str) -> list[dict[str, Any]]:
+        response = self.http.get(
+            DRIVE_FILES_URL,
+            params={
+                "q": f"'{folder_id}' in parents and trashed = false",
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+                "fields": "files(id,name,mimeType,modifiedTime,webViewLink,appProperties)",
+            },
+        )
+        response.raise_for_status()
+        return response.json().get("files", [])
+
+    def download(self, file_id: str) -> bytes:
+        response = self.http.get(
+            f"{DRIVE_FILES_URL}/{file_id}",
+            params={"alt": "media", "supportsAllDrives": "true"},
+        )
+        response.raise_for_status()
+        return response.content
+
+    def update(self, *, file_id: str, content: bytes, content_type: str) -> dict[str, Any]:
+        response = self.http.patch(
+            f"https://www.googleapis.com/upload/drive/v3/files/{file_id}",
+            params={"uploadType": "media", "supportsAllDrives": "true", "fields": "id,name,mimeType,webViewLink"},
+            content=content,
+            headers={"Content-Type": content_type},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+def resolve_drive_access_token(
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> tuple[str | None, str | None]:
+    """Return a usable Drive access token or a review reason.
+
+    Production should use the OAuth refresh-token flow. A direct access token is
+    still accepted for short-lived local demos and tests.
+    """
+    access_token = os.environ.get("GOOGLE_DRIVE_ACCESS_TOKEN", "").strip()
+    if access_token:
+        return access_token, None
+
+    client_id = os.environ.get("GOOGLE_DRIVE_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET", "").strip()
+    refresh_token = os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN", "").strip()
+    missing = [
+        name
+        for name, value in (
+            ("GOOGLE_DRIVE_CLIENT_ID", client_id),
+            ("GOOGLE_DRIVE_CLIENT_SECRET", client_secret),
+            ("GOOGLE_DRIVE_REFRESH_TOKEN", refresh_token),
+        )
+        if not value
+    ]
+    if missing:
+        return None, "google_drive_credentials_missing"
+
+    try:
+        with httpx.Client(timeout=30.0, transport=transport) as http:
+            response = http.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
+            )
+            response.raise_for_status()
+            refreshed = response.json().get("access_token")
+    except httpx.HTTPError:
+        return None, "google_drive_token_refresh_failed"
+
+    if not isinstance(refreshed, str) or not refreshed:
+        return None, "google_drive_token_refresh_missing_access_token"
+    return refreshed, None
+
+
+def build_drive_client(
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> tuple[DriveClient | None, str | None]:
+    access_token, reason = resolve_drive_access_token(transport=transport)
+    if reason:
+        return None, reason
+    return DriveClient(str(access_token), transport=transport), None
+
+
+def replace_document_content(
+    request: dict[str, Any],
+    *,
+    client: DriveClient | None = None,
+    transport: httpx.BaseTransport | None = None,
+) -> dict[str, Any]:
+    """Replace a confirmed existing Drive workbook after local verification."""
+    dry_run = bool(request.get("dry_run", True))
+    file_id = request.get("drive_file_id")
+    source_path = Path(str(request.get("source_path", "")))
+    if _has_unconfirmed_value(file_id) or not source_path.is_file():
+        return {
+            "status": "requires_review",
+            "requires_review_reason": "drive_file_id_or_verified_source_missing",
+            "events": [],
+        }
+    if dry_run:
+        return {
+            "status": "ready_for_update",
+            "drive_file_id": file_id,
+            "source_path": str(source_path),
+            "events": [_event("drive.document.update_proposed", "info", {"drive_file_id": file_id})],
+        }
+    drive = client
+    if drive is None:
+        drive, credential_error = build_drive_client(transport=transport)
+        if credential_error:
+            return {"status": "requires_review", "requires_review_reason": credential_error, "events": []}
+    updated = drive.update(
+        file_id=str(file_id),
+        content=source_path.read_bytes(),
+        content_type=request.get("content_type") or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    return {
+        "status": "updated",
+        "drive_file_id": file_id,
+        "drive_response": updated,
+        "events": [_event("drive.document.updated", "info", {"drive_file_id": file_id})],
+    }
+
 
 def save_document(
     request: dict[str, Any],
     config: dict[str, Any] | None = None,
     *,
     client: DriveClient | None = None,
+    transport: httpx.BaseTransport | None = None,
 ) -> dict[str, Any]:
     """Save a document to a confirmed Drive folder or propose the operation."""
     config = config or {}
@@ -185,11 +319,14 @@ def save_document(
             "dry_run": True,
         }
 
-    access_token = os.environ.get("GOOGLE_DRIVE_ACCESS_TOKEN", "")
-    if client is None and not access_token:
+    drive = client
+    credential_error = None
+    if drive is None:
+        drive, credential_error = build_drive_client(transport=transport)
+    if credential_error:
         return {
             "status": "requires_review",
-            "requires_review_reason": "google_drive_access_token_missing",
+            "requires_review_reason": credential_error,
             "document": None,
             "events": [
                 _event(
@@ -201,7 +338,6 @@ def save_document(
             "dry_run": False,
         }
 
-    drive = client or DriveClient(access_token)
     uploaded = drive.upload(
         filename=filename,
         content=content_bytes if has_content_bytes else path.read_bytes(),

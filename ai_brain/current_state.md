@@ -1,6 +1,14 @@
 # Current State
 
-Last updated: 2026-06-11.
+Last updated: 2026-06-12.
+
+## Active Handoff
+
+For the in-flight Corte Santo full-workflow effort (payment-form reconciliation,
+Excel + vision extraction, bank statement parsing, dashboard simplification,
+Vercel/Supabase deploy, validated against the real 2026-06-04 test set), see
+`ai_brain/handoff_corte_santo_full_workflow.md`. That file is the fastest way to
+resume in a fresh conversation.
 
 ## Repository Status
 
@@ -128,6 +136,58 @@ Last updated: 2026-06-11.
     transferencia, plataformas); config, fixtures and tests updated.
   - Confirmed P0 inputs so far: reconciliation tolerance = 0; only the SANTO
     unit is active.
+- Corte Santo canonical evidence layer added (ADR-0012), based on the 35-page
+  `Corte Santo.pdf` operating procedure:
+  - Vision extraction and Banorte statement parsing are now called by the
+    primary `script.run` path when their evidence is supplied.
+  - Reconciliation values are separated from monthly Ingresos registration
+    values.
+  - The Corte template's repeated cash amount is no longer counted as a cash
+    tip, preventing cash from being doubled.
+  - Dish courtesy is added to cash only for the Ingresos registration view.
+  - AMEX/bank photo totals and the lower-tip rule produce traceable checks and
+    `requires_review` on mismatches.
+  - The supplemental Total Sistema block now supplies Transferencia/Uber/Rappi
+    system totals; the real 2026-06-04 Corte Excel reconciles at exactly
+    75,685.10 vs 75,685.10 with difference 0.
+  - Operating requirements and the full-automation completion gate are tracked
+    in `docs/04_workflows/corte_santo_operating_procedure.md`.
+- Corte Santo two-stage automation contracts added (ADR-0013):
+  - Stage 1 writes Ingresos in yellow and Forecast, updates verified Drive
+    workbooks, notifies the supervisor and waits for AMEX/Banorte.
+  - A Drive watcher emits `workflow.resume` only when both bank files exist.
+  - Stage 2 matches expected collections, updates REVISION, marks Ingresos blue,
+    updates Drive and notifies the supervisor.
+  - Missing inputs, reviewed stages and failed live deliveries cannot become
+    `completed`.
+  - Confirmed supervisor recipient: `developer@santorestaurants.com`.
+  - Supplied Corte/REVISION Drive folder ID:
+    `1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL`; its role as bank watcher folder is
+    still pending confirmation.
+  - The supplied Forecast is confirmed as the June projection template. Its 30
+    projection amounts were correct but its date cells were stale May dates;
+    the writer can now safely rebase a confirmed complete projection series to
+    the Corte month before writing Venta Real.
+
+## Corte Santo E2E Test: 2026-06-04
+
+- Sent a real Agent Mail message with the six operating attachments.
+- Agent Mail received and classified it as `[CORTE]`.
+- Reconciliation passed exactly: Total Real = Total Sistema = 75,685.10.
+- Controlled Ingresos copy was written yellow for June 4.
+- Forecast projections were preserved, dates rebased to June, Venta Real
+  75,685.10 written for June 4, and monthly subtotal formulas verified.
+- Real AMEX `.xls` and Banorte `.csv` parsed successfully.
+- Bank stage validated with one AMEX match and 118,694.79 remaining as
+  legitimate pending AMEX collections.
+- Controlled Ingresos copy was changed from yellow to blue.
+- Initial and final supervisor notifications were sent to
+  `developer@santorestaurants.com`.
+- The connected Drive identity is `dantecastelaou@gmail.com`. Google returns
+  `404 File not found` for the supplied folder, so it has not been shared with
+  that identity and the watcher could not autonomously observe the bank
+  uploads. Live Drive workbook replacement and Supabase resume persistence
+  remain unverified.
 
 ## Processed Context
 
@@ -145,25 +205,22 @@ Original raw files remain in `00_INBOX_SANTO_RAW/`.
 
 ## Next Recommended Step
 
-Pause for confirmed operational inputs before PR 7 / PR 9 / production hardening.
+Activate and validate the Corte two-stage runtime in production:
 
-Recommended smallest safe slice:
-
-1. Rotate the exposed Supabase service-role key.
-2. Install/configure Supabase CLI or provide a running local Supabase/Postgres for migration execution validation.
-3. Confirm Drive URLs, folder IDs, hierarchy, naming, permissions and the
-   Google identity used by SantoOS.
-4. Confirm Corte thresholds, severities, mandatory attachments and reviewer map.
-5. Confirm restaurant/entity/RFC mappings and short codes.
-6. Confirm Agent Mail routing convention.
-7. Provide at least one real anonymized/sanitized MiAdminXML export fixture.
-8. Confirm Utilities template/folders/Sheets scope before PR 9.
-9. Keep new workflow creation behind the Workflow Registry DRY/MECE gate.
+1. Confirm supervisor email, active Ingresos/Forecast Drive file IDs and the
+   AMEX/Banorte watcher folder ID.
+2. Configure stable Drive, Agent Mail and Supabase runtime credentials.
+3. Persist the expected-collections ledger and resume payload against the
+   original Supabase workflow run.
+4. Deploy the initial-stage intake runner and Drive watcher.
+5. Execute one real end-to-end daily email through the bank-upload stage and
+   verify workbook contents, REVISION, notifications and Supabase audit records.
 
 ## Not Started
 
 - Supabase migration has not been applied to a live/local database yet.
-- No production workflow scripts yet.
+- Two-stage Corte production runtime contracts exist, but they are not deployed
+  or connected to live Agent Mail/Drive/Supabase events yet.
 - No live Agent Mail polling/integration yet.
 - Dashboard has live Supabase query wrappers but no deployed Supabase env/session yet.
 - No dashboard component tests yet.
@@ -172,8 +229,12 @@ Recommended smallest safe slice:
   full per-unit roster and reviewer routing remain pending Santo confirmation.
 - Utility receipts thin workflow exists, but final template rules, folder mapping
   and Sheets scope remain pending.
-- Drive connector is not activated against Santo's real folders yet because
-  folder IDs, permissions and runtime credentials remain pending.
+- Drive connector now supports durable Google OAuth refresh-token credentials.
+  The Vercel app connector returned `403 Forbidden`, but the local Vercel CLI is
+  authenticated. `vercel env ls` for the linked `apps/dashboard` project does
+  not show `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET` or
+  `GOOGLE_DRIVE_REFRESH_TOKEN`, so the Drive OAuth env vars still need to be
+  added to that exact project/environment before live watcher verification.
 
 ## Verification
 
@@ -195,10 +256,13 @@ Recommended smallest safe slice:
   - Confirmed routing smoke test classifies `[CORTE]` and emits a `workflow.intake` command.
   - Pending routing smoke test returns `requires_review`.
 - Corte Santo intake verification:
-  - `python -m pytest` passes.
+  - `python -m pytest workflows/corte_santo/` passes with 27 tests.
   - Smoke test with `config.example.json` returns `requires_review`.
   - Dashboard `npm run lint`, `npm run build` and `npm audit --audit-level=moderate` pass.
   - Secret-pattern search found no real Supabase JWT/project URL material outside ignored build/dependency folders.
+- The repo now constrains Python to `>=3.11,<3.14`; the previously selected
+  Python 3.14 alpha runtime emitted native numpy/openpyxl shutdown crashes even
+  after passing tests.
 - XML SAT verification:
   - `python -m pytest` passes.
   - Smoke test with `config.example.json` returns `requires_review`.
@@ -207,3 +271,12 @@ Recommended smallest safe slice:
   - Confirmed demo config produces a proposed Drive document and audit event
     in `dry_run`.
   - Unconfirmed folders and missing credentials return `requires_review`.
+  - OAuth refresh-token credentials are exchanged for a fresh access token in
+    tests; live Drive credentials have not been printed or persisted in repo.
+- Corte two-stage verification:
+  - Controlled workbook tests verify yellow-to-blue Ingresos updates and
+    Forecast formula updates.
+  - AMEX named-column parsing and transaction-based Banorte matching pass.
+  - The Drive watcher waits for both bank files and rejects duplicates.
+  - Runtime delivery gates prevent success notifications on reviewed stages and
+    downgrade failed Drive updates to `requires_review`.

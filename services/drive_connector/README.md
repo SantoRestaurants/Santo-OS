@@ -15,8 +15,12 @@ keeping Supabase/Postgres as the source of truth.
 
 1. Copy `config.example.json` outside the repository or replace placeholders
    only after Alonso confirms the Drive hierarchy.
-2. Set `GOOGLE_DRIVE_ACCESS_TOKEN` in the runtime secret store.
-3. Grant the Google identity access to the target folders or Shared Drive.
+2. Set durable OAuth credentials in the runtime secret store:
+   - `GOOGLE_DRIVE_CLIENT_ID`
+   - `GOOGLE_DRIVE_CLIENT_SECRET`
+   - `GOOGLE_DRIVE_REFRESH_TOKEN`
+3. `GOOGLE_DRIVE_ACCESS_TOKEN` is accepted only as a short-lived local fallback.
+4. Grant the Google identity access to the target folders or Shared Drive.
 
 ## Demo
 

@@ -34,6 +34,15 @@ DEFAULT_LAYOUT: dict[str, Any] = {
     "sistema_anchor": "Cierre Sistema",
     "consumo_label": "Consumo",
     "propina_label": "Propina",
+    # In the client's corte template these columns repeat the cash amount on
+    # the row labelled "Propina", but that repeated value is the comparison
+    # amount/global, not a cash tip. Counting it as propina doubles cash.
+    "propina_is_global_labels": ["efectivo real", "efectivo sistema"],
+    # The client template keeps Transferencia/Uber/Rappi system comparison
+    # values in a supplemental block below the main Cierre Sistema table.
+    "supplemental_system_anchor": "Total Sistema",
+    "supplemental_header_anchor": "Total Real",
+    "supplemental_value_row_offset": 1,
     # Maps a normalized column header to a reconciliation group, or to null to
     # explicitly ignore aggregate/total columns so they are not double counted.
     "column_label_map": {
@@ -112,6 +121,9 @@ def _parse_block(
 
     anchor_row, anchor_col = anchor
     column_label_map = layout.get("column_label_map", {})
+    propina_is_global_labels = {
+        _normalize(label) for label in layout.get("propina_is_global_labels", [])
+    }
     max_columns = int(layout.get("max_columns", 12))
 
     # Header labels live in the same row as the anchor, to the right of it.
@@ -138,6 +150,8 @@ def _parse_block(
             continue
         consumo = _to_amount(rows[consumo_row][col] if col < len(rows[consumo_row]) else None)
         propina = _to_amount(rows[propina_row][col] if col < len(rows[propina_row]) else None)
+        if label in propina_is_global_labels:
+            propina = 0.0
         bucket = groups.setdefault(group, {"consumo": 0.0, "propina": 0.0})
         bucket["consumo"] = round(bucket["consumo"] + consumo, 2)
         bucket["propina"] = round(bucket["propina"] + propina, 2)
@@ -153,7 +167,32 @@ def parse_corte_workbook(rows: list[list[Any]], config: dict[str, Any] | None = 
     terminal, terminal_warnings = _parse_block(rows, _normalize(layout["terminal_anchor"]), layout)
     sistema, sistema_warnings = _parse_block(rows, _normalize(layout["sistema_anchor"]), layout)
 
-    warnings = terminal_warnings + sistema_warnings
+    supplemental_warnings: list[str] = []
+    supplemental_anchor = _find_anchor(rows, _normalize(layout["supplemental_system_anchor"]))
+    supplemental_headers = _find_anchor(rows, _normalize(layout["supplemental_header_anchor"]))
+    if supplemental_anchor and supplemental_headers:
+        value_row = supplemental_anchor[0] + int(layout.get("supplemental_value_row_offset", 1))
+        header_row = rows[supplemental_headers[0]]
+        column_label_map = layout.get("column_label_map", {})
+        for col in range(supplemental_headers[1] + 1, len(header_row)):
+            label = _normalize(header_row[col])
+            if not label:
+                continue
+            if label not in column_label_map:
+                supplemental_warnings.append(f"unmapped_supplemental_column:{label}")
+                continue
+            group = column_label_map[label]
+            if group is None:
+                continue
+            value = _to_amount(
+                rows[value_row][col]
+                if value_row < len(rows) and col < len(rows[value_row])
+                else None
+            )
+            bucket = sistema.setdefault(group, {"consumo": 0.0, "propina": 0.0})
+            bucket["consumo"] = round(bucket["consumo"] + value, 2)
+
+    warnings = terminal_warnings + sistema_warnings + supplemental_warnings
     return {
         "cierre_terminal": terminal,
         "cierre_sistema": sistema,

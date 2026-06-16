@@ -92,3 +92,77 @@
 - Rewrote the guided tour (home + reviews) and welcome modal in plain Spanish aimed at the corte reviewer; removed jargon (Agent Mail, workflows, Supabase, P0).
 - Renamed page title/brand subtitle to "Panel de cortes".
 - Verified: `tsc --noEmit` clean and `npm run build` succeeds. Remaining lint warnings are all in pre-existing untouched files (route.ts, sandbox/page.tsx, TutorialProvider memoization rule).
+
+## 2026-06-12 (Vision extraction, deploy, dashboard simplification)
+
+- Simplified dashboard for non-technical users (home, sidebar, tour) and updated sandbox scenarios to the payment-form model; prefilled Drive folder.
+- Pushed to main (signed as SantoRestaurants so Vercel Hobby would deploy); fixed Vercel root directory (apps/dashboard, Next.js) and loaded Supabase env vars; cleared old test data from Supabase (all operational tables at 0).
+- Built corte ingestion components: `vision_extractor.py` (multi-provider: anthropic + gemini, confidence gate -> requires_review) and `bank_statement_parser.py` (Banorte rules). Config extended; ADR-0011 added.
+- Validated with the client's real 2026-06-04 test set: Gemini gemini-2.5-flash read all 4 photos (incl. handwritten cash detail); key figures match the client's filled income Excel. Banorte CSV parsed cleanly. Confirmed the cortesía+efectivo rule (5,058.50 + 80 = 5,138.50).
+- Wrote `ai_brain/handoff_corte_santo_full_workflow.md` capturing full context to resume in a new conversation.
+- SECURITY: Supabase service_role, Google OAuth refresh_token, and Gemini API key were pasted in chat during the session and must be rotated. None were committed to the repo.
+- Tests: `python -m pytest workflows/corte_santo/` 23 passing; dashboard tsc/build clean.
+
+## 2026-06-12 (PDF operating procedure + canonical evidence)
+
+- Added the supplied 35-page `Corte Santo.pdf` to
+  `docs/04_workflows/source/` and converted it into the persistent operating
+  requirements and full-automation gate.
+- Added ADR-0012 and `evidence_builder.py`; `script.run` now calls configured
+  vision extraction and Banorte parsing and emits traceable canonical evidence.
+- Separated zero-tolerance reconciliation values from monthly Ingresos values:
+  tips are separate and courtesy is added to cash only for Ingresos.
+- Fixed the Corte Excel parser so the repeated cash comparison amount is not
+  counted as a cash tip.
+- Added parsing of the supplemental Total Sistema block for
+  Transferencia/Uber/Rappi. The real 2026-06-04 Corte Excel now reconciles at
+  75,685.10 vs 75,685.10, difference 0.
+- Replaced the real Supabase project URL in the handoff with a placeholder so
+  the secret-pattern safety test passes.
+- Corte Santo tests: 27 passing.
+
+## 2026-06-12 (Corte Santo two-stage runtime)
+
+- Added ADR-0013 and executable two-stage Corte orchestration.
+- Stage 1 writes configured Ingresos cells in yellow and Forecast, updates
+  verified Drive workbooks, notifies the supervisor and waits for bank files.
+- Added a Drive watcher that resumes only after both AMEX and Banorte are
+  present and rejects duplicate bank documents.
+- Stage 2 parses AMEX `.xls` and Banorte, matches expected collections, keeps
+  legitimate pending collections in REVISION, marks Ingresos blue and sends the
+  final notification.
+- Hardened delivery gates: reviewed stages never send success messages, and
+  failed or missing Drive updates cannot remain completed.
+
+## 2026-06-13 (Corte Santo real E2E test)
+
+- Sent the real June 4 Corte evidence set through Agent Mail; it was received
+  and classified as `[CORTE]`.
+- Confirmed exact reconciliation at 75,685.10.
+- Added safe recognition of formula-derived Ingresos dates.
+- Confirmed the Forecast file is the June projection template; added configured
+  month rebasing for a complete stale-date projection series while preserving
+  projection amounts.
+- Wrote verified test copies: Ingresos yellow, Forecast June 4 Venta Real, then
+  Ingresos blue after AMEX/Banorte validation.
+- Sent both supervisor notifications to `developer@santorestaurants.com`.
+- Full suite: 80 tests pass.
+- Remaining production blocker: the connected Drive identity lists the supplied
+  folder as empty, so the watcher and live Drive replacement were not verified.
+
+## 2026-06-16 (Drive OAuth refresh-token runtime)
+
+- Added durable Google Drive OAuth refresh-token support to
+  `services/drive_connector/connector.py`.
+- The connector now accepts `GOOGLE_DRIVE_CLIENT_ID`,
+  `GOOGLE_DRIVE_CLIENT_SECRET` and `GOOGLE_DRIVE_REFRESH_TOKEN`, exchanges them
+  for a fresh access token, and keeps the old `GOOGLE_DRIVE_ACCESS_TOKEN` only
+  as a short-lived local fallback.
+- Updated `.env.example`, Drive connector README and tests.
+- The Vercel app connector returned `403 Forbidden`, but the local Vercel CLI is
+  authenticated. `vercel env ls` for the linked dashboard project does not show
+  the new Google Drive OAuth env vars, so they still need to be added to that
+  exact Vercel project/environment.
+- Verification: `python -m pytest` reports 82 passing tests. The system Python
+  3.14 alpha still emits the known openpyxl/numpy native stack trace after the
+  suite exits successfully.

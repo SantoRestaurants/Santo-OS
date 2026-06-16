@@ -6,6 +6,68 @@
   "reviewer_map": "[CONFIRM]",
   "payment_forms": "[CONFIRM]",
   "thresholds": "[CONFIRM]",
+  "evidence_rules": {
+    "_comment": "Confirmed rules from the Corte Santo operating procedure. Evidence mismatches above tolerance require review.",
+    "evidence_tolerance": 0
+  },
+  "supervisor_email": "[CONFIRM]",
+  "ingresos_layout": {
+    "_comment": "Confirmed SANTO monthly Ingresos template mapping. Yellow = loaded from corte; blue = bank validated.",
+    "date_column": 2,
+    "columns": {
+      "amex": "C",
+      "debito": "D",
+      "credito": "E",
+      "efectivo": "F",
+      "paypal": "H",
+      "uber": "J",
+      "rappi": "L",
+      "propinas": "R"
+    },
+    "stage_colors": {
+      "corte_loaded": "FFFFFF00",
+      "bank_validated": "FF00B0F0"
+    }
+  },
+  "forecast_layout": {
+    "date_column": 3,
+    "venta_real_column": "E",
+    "total_month_label_column": "C",
+    "total_month_label": "TOTAL MES",
+    "subtotal_columns": ["D", "E", "F"],
+    "data_start_row": 4,
+    "data_end_row": 34,
+    "allow_projection_month_rebase": true
+  },
+  "vision_extraction": {
+    "_comment": "Reads corte photos (tira, bancarias, AMEX, detalle de efectivo). The API key is read from the env var named below, never stored here. Low confidence or missing key -> requires_review.",
+    "provider": "anthropic",
+    "endpoint": "https://api.anthropic.com/v1/messages",
+    "model": "[CONFIRM]",
+    "api_key_env": "CORTE_VISION_API_KEY",
+    "confidence_threshold": 0.95
+  },
+  "bank_keywords": {
+    "_comment": "Keyword rules to classify Banorte statement rows. 'REST SANTO' => Banorte settlement; SPEI from AMERICAN EXPRESS => amex; UBR PAGOS/UBER => uber; domiciliacion/Spotify => additional expense.",
+    "banorte_settlement": [
+      "REST SANTO"
+    ],
+    "amex_spei": [
+      "AMERICAN EXPRESS"
+    ],
+    "uber_spei": [
+      "UBR PAGOS",
+      "UBER"
+    ],
+    "rappi_spei": [
+      "RAPPI"
+    ],
+    "domiciliacion": [
+      "DOMICILIACION",
+      "SPOTIFY",
+      "DOMICILIADO"
+    ]
+  },
   "excel_layout": {
     "_comment": "Optional. Overrides the default corte Excel layout used by Option B extraction. If omitted, the shipped default (Cierre Ter/Pla + Cierre Sistema anchors, Consumo/Propina rows) is used. Any column header not present in column_label_map becomes a requires_review warning.",
     "terminal_anchor": "Cierre Ter/Pla",

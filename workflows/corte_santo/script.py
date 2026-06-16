@@ -21,6 +21,17 @@ def _load_excel_parser():
     spec.loader.exec_module(module)
     return module
 
+
+def _load_sibling_module(module_name: str):
+    """Load a sibling workflow module without requiring package installation."""
+    module_path = Path(__file__).resolve().parent / f"{module_name}.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:  # pragma: no cover - import guard
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 WORKFLOW_KEY = "corte_santo_daily_sales_reconciliation"
 
 REQUIRED_CONFIG_KEYS = (
@@ -670,11 +681,81 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
 
     reconciliation: dict[str, Any] | None = None
     revision_document: dict[str, Any] | None = None
+    canonical_evidence: dict[str, Any] | None = None
 
     if not intake_blocked and not extraction_warnings and has_closing:
+        vision_documents = payload.get("vision_extractions")
+        if not isinstance(vision_documents, list):
+            image_documents = [
+                {
+                    "document_type": doc.get("document_type"),
+                    "image_path": doc.get("source_path"),
+                }
+                for doc in documents
+                if isinstance(doc, dict)
+                and doc.get("document_type") in ("tira", "bancarias", "amex", "detalle_efectivo")
+                and doc.get("source_path")
+            ]
+            if image_documents:
+                vision_module = _load_sibling_module("vision_extractor")
+                if vision_module is not None:
+                    vision_batch = vision_module.extract_documents(image_documents, config)
+                    vision_documents = vision_batch.get("documents", [])
+
+        bank_statement = payload.get("bank_statement")
+        if not isinstance(bank_statement, dict):
+            bank_doc = next(
+                (
+                    doc
+                    for doc in documents
+                    if isinstance(doc, dict)
+                    and doc.get("document_type") in ("banorte_statement", "bank_statement_banorte")
+                    and doc.get("source_path")
+                ),
+                None,
+            )
+            if bank_doc is not None:
+                bank_module = _load_sibling_module("bank_statement_parser")
+                if bank_module is not None:
+                    bank_statement = bank_module.parse_banorte_csv(bank_doc["source_path"], config)
+
+        evidence_module = _load_sibling_module("evidence_builder")
+        if evidence_module is not None:
+            canonical_evidence = evidence_module.build_canonical_evidence(
+                cierre_terminal,
+                cierre_sistema,
+                vision_documents=vision_documents,
+                bank_statement=bank_statement,
+                config=config,
+            )
+            canonical_inputs = canonical_evidence["reconciliation_inputs"]
+            cierre_terminal = canonical_inputs["cierre_terminal"]
+            cierre_sistema = canonical_inputs["cierre_sistema"]
+            tasks.append(
+                {
+                    "task_key": "build_canonical_evidence",
+                    "title": "Build traceable Corte Santo evidence package",
+                    "status": "requires_review"
+                    if canonical_evidence["status"] == "requires_review"
+                    else "completed",
+                    "metadata": {
+                        "checks": canonical_evidence["checks"],
+                        "income_register": canonical_evidence["income_register"],
+                    },
+                }
+            )
+            exceptions.extend(canonical_evidence["exceptions"])
+
         reconciliation = reconcile(cierre_terminal, cierre_sistema, config)
         status = reconciliation["status"]
         exceptions.extend(reconciliation.get("exceptions", []))
+        if canonical_evidence and canonical_evidence["status"] == "requires_review":
+            status = "requires_review"
+            reconciliation = {
+                **reconciliation,
+                "status": "requires_review",
+                "evidence_status": "requires_review",
+            }
 
         tasks.append(
             {
@@ -723,6 +804,7 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
             "config_snapshot": config,
             "requires_review_reason": requires_review_reason,
             "reconciliation": reconciliation,
+            "canonical_evidence": canonical_evidence,
             "revision_document": revision_document,
         },
         "documents": document_records,

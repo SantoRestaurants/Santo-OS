@@ -51,6 +51,8 @@ def test_parse_workbook_rows_maps_groups() -> None:
     assert result["cierre_terminal"]["amex"] == {"consumo": 2488.0, "propina": 373.2}
     assert result["cierre_terminal"]["bancos"]["consumo"] == 28235.0
     assert result["cierre_sistema"]["bancos"]["consumo"] == 28235.0
+    assert result["cierre_terminal"]["efectivo"]["propina"] == 0.0
+    assert result["cierre_sistema"]["efectivo"]["propina"] == 0.0
 
 
 def test_unmapped_column_produces_warning() -> None:
@@ -62,6 +64,25 @@ def test_unmapped_column_produces_warning() -> None:
     result = parser.parse_corte_workbook(rows, {})
 
     assert any(w.startswith("unmapped_column:") for w in result["warnings"])
+
+
+def test_supplemental_system_block_maps_platforms() -> None:
+    rows = [
+        ["Cierre Ter/Pla", "Uber Eats", "Rappi"],
+        ["Consumo", 1300.0, 880.0],
+        ["Propina", 0.0, 0.0],
+        [None, None, None],
+        ["Cierre Sistema", "Amex"],
+        ["Consumo", 0.0],
+        ["Propina", 0.0],
+        ["Total Real", "Uber Eats", "Rappi"],
+        ["Total Sistema", None, None],
+        [None, 1300.0, 880.0],
+    ]
+    result = parser.parse_corte_workbook(rows, {})
+
+    assert result["warnings"] == []
+    assert result["cierre_sistema"]["plataformas"]["consumo"] == 2180.0
 
 
 def test_parse_real_xlsx_fixture() -> None:
@@ -93,6 +114,56 @@ def test_run_extracts_from_excel_and_reconciles() -> None:
     recon = result["workflow_run"]["reconciliation"]
     assert recon["totals"]["total_real"] == recon["totals"]["total_sistema"]
     assert any(t["task_key"] == "extract_corte_excel" for t in result["tasks"])
+
+
+def test_run_builds_canonical_evidence_from_supplied_extractions() -> None:
+    payload = {
+        "business_date": "2026-04-14",
+        "restaurant_key": "santo",
+        "vision_extractions": [
+            {
+                "document_type": "amex",
+                "status": "extracted",
+                "values": {"total": 2861.2, "propina": 373.2},
+            },
+            {
+                "document_type": "bancarias",
+                "status": "extracted",
+                "values": {
+                    "total": 32139.27,
+                    "propina_debito": 1366.64,
+                    "propina_credito": 2537.63,
+                },
+            },
+            {
+                "document_type": "tira",
+                "status": "extracted",
+                "values": {"propina_total": 4300.0},
+            },
+            {
+                "document_type": "detalle_efectivo",
+                "status": "extracted",
+                "values": {"cortesia_direccion": 80.0},
+            },
+        ],
+        "documents": [
+            {
+                "document_key": "corte_excel",
+                "document_type": "corte_excel",
+                "source_system": "agent_mail",
+                "source_uri": "email://msg/corte.xlsx",
+                "source_path": str(FIXTURE_XLSX),
+                "source_hash": "hash-xlsx",
+            }
+        ],
+    }
+    result = script.run({"dry_run": True, "payload": payload}, CONFIG)
+
+    evidence = result["workflow_run"]["canonical_evidence"]
+    assert evidence["status"] == "ready"
+    assert evidence["selected_tips"] == 4277.47
+    assert evidence["income_register"]["efectivo"] == 750.0
+    assert any(task["task_key"] == "build_canonical_evidence" for task in result["tasks"])
 
 
 def test_run_missing_file_requires_review() -> None:

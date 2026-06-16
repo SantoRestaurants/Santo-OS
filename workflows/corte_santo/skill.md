@@ -2,6 +2,10 @@
 
 P0 primary workflow: Corte Santo - Daily Sales Reconciliation.
 
+The step-by-step operating source is interpreted in
+`docs/04_workflows/corte_santo_operating_procedure.md`. Read it before changing
+workflow behavior.
+
 ## Scope
 
 This module covers daily reconciliation for one restaurant/unit and date:
@@ -18,6 +22,12 @@ This module covers daily reconciliation for one restaurant/unit and date:
 - Compare grand totals: `Total Real` must equal `Total Sistema` within the
   confirmed tolerance.
 - Build the structured `REVISION` report document the client stores in Drive.
+- Build a canonical evidence package that keeps reconciliation values separate
+  from monthly Ingresos registration values.
+- Execute the two-stage flow through `runtime.py`: Stage 1 writes Ingresos in
+  yellow and Forecast, updates Drive, notifies the supervisor and waits for
+  bank files; Stage 2 matches AMEX/Banorte, updates REVISION, marks Ingresos in
+  blue, updates Drive and sends the final notification.
 - Prepare workflow_run, document, task, exception, event and watchdog records.
 - Return `requires_review` when config or required inputs are missing, when any
   document lacks a `source_hash`, when the Excel parser cannot confidently map a
@@ -68,4 +78,6 @@ REVISION document.
 
 AI must not autonomously execute bank, SAT, payroll, legal, fiscal or
 government-portal actions. Uncertainty never becomes `completed`; missing config
-or inputs return `requires_review`.
+or inputs return `requires_review`. Reviewed stages do not send success
+notifications or update Drive, and a failed live Drive update cannot remain
+`completed`.

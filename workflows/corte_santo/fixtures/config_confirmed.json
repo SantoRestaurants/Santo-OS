@@ -6,7 +6,7 @@
     }
   },
   "drive_folder_map": {
-    "santo": "drive-folder-reporte-ingresos-santo"
+    "santo": "1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL"
   },
   "mandatory_attachments": [
     "corte_excel",
@@ -25,5 +25,36 @@
   ],
   "thresholds": {
     "reconciliation_tolerance": 0.0
+  },
+  "evidence_rules": {
+    "evidence_tolerance": 0.0
+  },
+  "supervisor_email": "developer@santorestaurants.com",
+  "ingresos_layout": {
+    "date_column": 2,
+    "columns": {
+      "amex": "C",
+      "debito": "D",
+      "credito": "E",
+      "efectivo": "F",
+      "paypal": "H",
+      "uber": "J",
+      "rappi": "L",
+      "propinas": "R"
+    },
+    "stage_colors": {
+      "corte_loaded": "FFFFFF00",
+      "bank_validated": "FF00B0F0"
+    }
+  },
+  "forecast_layout": {
+    "date_column": 3,
+    "venta_real_column": "E",
+    "total_month_label_column": "C",
+    "total_month_label": "TOTAL MES",
+    "subtotal_columns": ["D", "E", "F"],
+    "data_start_row": 4,
+    "data_end_row": 34,
+    "allow_projection_month_rebase": true
   }
 }

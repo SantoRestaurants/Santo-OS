@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 ALLOWED_PHASES = {"P0"}
 ALLOWED_CHANNELS = {"dashboard", "agent_mail", "scheduler", "whatsapp_stub", "system"}
-ALLOWED_COMMAND_TYPES = {"workflow.run", "workflow.intake", "workflow.status"}
+ALLOWED_COMMAND_TYPES = {"workflow.run", "workflow.intake", "workflow.resume", "workflow.status"}
 REQUIRES_REVIEW = "requires_review"
 
 
