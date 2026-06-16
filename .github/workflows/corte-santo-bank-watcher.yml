@@ -13,6 +13,7 @@ on:
 jobs:
   bank-watcher:
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 15
     steps:
       - name: Checkout repo
