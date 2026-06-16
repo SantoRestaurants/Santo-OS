@@ -251,6 +251,30 @@ def run_bank_watcher_once(
             "watcher_result": watcher,
         }
 
+    # Re-download workbooks from Drive; stage-1 local paths are not valid here.
+    drive_file_ids = stage1.get("drive_file_ids") or {}
+    workbook_paths: dict[str, str] = {}
+    workbook_outputs: dict[str, str] = {}
+    drive_workbooks_dir = temp_root / "drive_workbooks"
+    outputs_dir = temp_root / "outputs"
+    drive_workbooks_dir.mkdir(parents=True, exist_ok=True)
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    for key in ("ingresos", "forecast"):
+        file_id = drive_file_ids.get(key) if isinstance(drive_file_ids, dict) else None
+        if not file_id:
+            continue
+        local_path = drive_workbooks_dir / f"{key}.xlsx"
+        try:
+            local_path.write_bytes(drive.download(file_id))
+            workbook_paths[key] = str(local_path)
+            workbook_outputs[key] = str(outputs_dir / f"{key}-bank-validated.xlsx")
+        except Exception as exc:
+            return {
+                "status": "requires_review",
+                "requires_review_reason": f"workbook_download_failed:{key}:{type(exc).__name__}",
+                "watcher_result": watcher,
+            }
+
     # Build resume request and run bank stage
     config = _load_json(config_path)
 
@@ -269,8 +293,8 @@ def run_bank_watcher_once(
             "income_channels": _safe(stage1.get("income_channels"), {}),
             "expected_collections": _safe(stage1.get("expected_collections"), []),
             "revision_document": _safe(stage1.get("revision_document"), {}),
-            "workbook_paths": _safe(stage1.get("workbook_paths"), {}),
-            "workbook_outputs": _safe(stage1.get("workbook_outputs"), {}),
+            "workbook_paths": workbook_paths or _safe(stage1.get("workbook_paths"), {}),
+            "workbook_outputs": workbook_outputs or _safe(stage1.get("workbook_outputs"), {}),
             "drive_file_ids": _safe(stage1.get("drive_file_ids"), {}),
         },
     }
