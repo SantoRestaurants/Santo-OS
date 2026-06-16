@@ -119,7 +119,11 @@ class SupabaseWriter:
 
     def upsert_email_message(self, record: dict[str, Any]) -> dict[str, Any] | None:
         """Upsert into email_messages. Returns the record on success."""
-        resp = self.http.post("/rest/v1/email_messages", json=record)
+        resp = self.http.post(
+            "/rest/v1/email_messages",
+            params={"on_conflict": "provider,provider_message_id"},
+            json=record,
+        )
         if resp.status_code >= 400:
             logger.error("Failed to write email_message: %s %s", resp.status_code, resp.text)
             return None
@@ -220,7 +224,11 @@ class SupabaseWriter:
 
     def upsert_workflow_run(self, run: dict[str, Any]) -> str | None:
         """Upsert a workflow_run. Returns the run ID."""
-        resp = self.http.post("/rest/v1/workflow_runs", json=run)
+        resp = self.http.post(
+            "/rest/v1/workflow_runs",
+            params={"on_conflict": "workflow_id,idempotency_key"},
+            json=run,
+        )
         if resp.status_code >= 400:
             logger.error("Failed to write workflow_run: %s %s", resp.status_code, resp.text)
             return None
