@@ -113,6 +113,14 @@ def _build_prompt(document_type: str) -> str:
             "y total general.\n"
             "- No extraigas solo el ticket mas grande si hay otro ticket visible.\n"
         )
+    elif document_type == "tira":
+        extra_rules = (
+            "- 'cortesia_platillos' es el monto total de cortesias/descuentos en "
+            "platillos/comida que aparece en la tira. Suele llamarse 'Cortesia Platillos', "
+            "'Cortesias' o similar. Es un descuento en comida, no en bebidas ni efectivo.\n"
+            "- Si la tira tiene 'cortesia_platillos' y 'efectivo' por separado, "
+            "reporta cada uno en su campo sin sumarlos.\n"
+        )
     return (
         "Eres un extractor de datos financieros para el corte diario de un "
         "restaurante (SANTO). Lee la imagen y devuelve EXCLUSIVAMENTE un objeto "

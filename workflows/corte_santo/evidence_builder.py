@@ -181,7 +181,10 @@ def build_canonical_evidence(
     if courtesy is None:
         courtesy = _amount(detail_values.get("cortesia"))
     if courtesy is None:
-        courtesy = _amount(tira_values.get("cortesia_platillos"))
+        for key in ("cortesia_platillos", "cortesias", "cortesia_platillo", "cortesia"):
+            courtesy = _amount(tira_values.get(key))
+            if courtesy is not None:
+                break
     if courtesy is None:
         courtesy = 0.0
     income_cash = round(cash_base + courtesy, 2)
