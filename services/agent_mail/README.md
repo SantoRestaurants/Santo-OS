@@ -21,10 +21,16 @@ python -m services.agent_mail.poller --config services/agent_mail/config.json
 
 ```powershell
 $env:AGENTMAIL_API_KEY="[runtime secret]"
-$env:SUPABASE_URL="https://[project].supabase.co"
-$env:SUPABASE_SERVICE_KEY="[runtime secret]"
-$env:GOOGLE_DRIVE_ACCESS_TOKEN="[runtime secret]"
+$env:NEXT_PUBLIC_SUPABASE_URL="https://[project].supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY="[runtime secret]"
+$env:GOOGLE_DRIVE_CLIENT_ID="[runtime secret]"
+$env:GOOGLE_DRIVE_CLIENT_SECRET="[runtime secret]"
+$env:GOOGLE_DRIVE_REFRESH_TOKEN="[runtime secret]"
 $env:GOOGLE_DRIVE_CONNECTOR_CONFIG="services/drive_connector/config.local.json"
+$env:ANTHROPIC_API_KEY="[runtime secret]"
+$env:CORTE_VISION_MODEL="[confirmed model]"
+$env:CORTE_SANTO_INGRESOS_FILE_ID="[confirmed Drive file id]"
+$env:CORTE_SANTO_FORECAST_FILE_ID="[confirmed Drive file id]"
 python -m services.agent_mail.poller --config services/agent_mail/config.json --write
 ```
 
@@ -32,6 +38,11 @@ Drive is optional. If `GOOGLE_DRIVE_CONNECTOR_CONFIG` is not set, Agent Mail
 continues to store document metadata and Supabase Storage evidence only. If the
 Drive config, target folder, or credential is missing, the Drive write returns
 `requires_review`.
+
+When `corte_santo_automation.enabled=true`, classified `[CORTE]` emails also
+run the Corte Santo initial stage: attachments are downloaded, the Corte Excel
+is reconciled, Ingresos/Forecast are updated, and the supervisor notification is
+prepared/sent depending on dry-run mode.
 
 ## Architecture
 

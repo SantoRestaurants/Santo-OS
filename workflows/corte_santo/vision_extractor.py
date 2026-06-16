@@ -83,7 +83,7 @@ def _vision_config(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "provider": provider,
         "endpoint": vision.get("endpoint", default_endpoint),
-        "model": vision.get("model"),
+        "model": os.environ.get(vision.get("model_env", ""), "") or vision.get("model"),
         "anthropic_version": vision.get("anthropic_version", "2023-06-01"),
         "max_tokens": int(vision.get("max_tokens", 4096)),
         "confidence_threshold": float(vision.get("confidence_threshold", 0.95)),

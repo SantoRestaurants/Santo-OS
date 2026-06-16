@@ -9,8 +9,7 @@
     "santo": "1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL"
   },
   "mandatory_attachments": [
-    "corte_excel",
-    "wansoft_system_close"
+    "corte_excel"
   ],
   "reviewer_map": {
     "default": "admin_ops",
@@ -56,5 +55,13 @@
     "data_start_row": 4,
     "data_end_row": 34,
     "allow_projection_month_rebase": true
+  },
+  "vision_extraction": {
+    "provider": "anthropic",
+    "endpoint": "https://api.anthropic.com/v1/messages",
+    "model_env": "CORTE_VISION_MODEL",
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "confidence_threshold": 0.95,
+    "max_tokens": 4096
   }
 }

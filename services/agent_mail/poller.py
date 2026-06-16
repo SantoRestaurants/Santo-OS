@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 
 from services.agent_mail.intake import intake_email
+from services.agent_mail.corte_santo_automation import run_corte_initial_from_message
 from services.ai.classifier import classify_email, summarize_email
 from services.drive_connector.connector import save_document
 
@@ -79,6 +80,14 @@ class AgentMailClient:
             f"/inboxes/{self.inbox_id}/messages/{message_id}/attachments/{attachment_id}"
         )
         resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "application/json" in content_type:
+            payload = resp.json()
+            download_url = payload.get("download_url") if isinstance(payload, dict) else None
+            if download_url:
+                download_resp = httpx.get(str(download_url), timeout=60.0)
+                download_resp.raise_for_status()
+                return download_resp.content
         return resp.content
 
 
@@ -346,6 +355,35 @@ def poll_and_classify(
             if summary:
                 result["email_message"]["raw_metadata"]["ai_summary"] = summary
 
+            automation = routing_config.get("corte_santo_automation")
+            automation_enabled = (
+                isinstance(automation, dict)
+                and automation.get("enabled") is True
+                and result.get("command", {}).get("workflow_key")
+                == "corte_santo_daily_sales_reconciliation"
+            )
+            if automation_enabled:
+                try:
+                    corte_result = run_corte_initial_from_message(
+                        client=client,
+                        source_message=msg,
+                        intake_result=result,
+                        routing_config=routing_config,
+                        dry_run=dry_run,
+                    )
+                except Exception as exc:
+                    logger.exception("Corte Santo automation failed")
+                    corte_result = {
+                        "status": "requires_review",
+                        "requires_review_reason": f"corte_automation_error:{type(exc).__name__}",
+                    }
+                result["corte_santo_initial_stage"] = corte_result
+                result["email_message"]["raw_metadata"]["corte_santo_initial_stage"] = {
+                    "status": corte_result.get("status"),
+                    "requires_review_reason": corte_result.get("requires_review_reason"),
+                    "artifact_dir": corte_result.get("artifact_dir"),
+                }
+
         result["_source_message_id"] = msg.get("message_id")
         result["_source_subject"] = msg.get("subject")
         result["_source_from"] = msg.get("from")
@@ -533,10 +571,13 @@ def main(argv: list[str] | None = None) -> int:
     supabase = None
 
     if not dry_run:
-        sb_url = _env("SUPABASE_URL")
-        sb_key = _env("SUPABASE_SERVICE_KEY")
+        sb_url = _env("SUPABASE_URL") or _env("NEXT_PUBLIC_SUPABASE_URL")
+        sb_key = _env("SUPABASE_SERVICE_KEY") or _env("SUPABASE_SERVICE_ROLE_KEY")
         if not sb_url or not sb_key:
-            logger.error("SUPABASE_URL and SUPABASE_SERVICE_KEY required for --write mode")
+            logger.error(
+                "Supabase URL and service key required for --write mode "
+                "(SUPABASE_URL/SUPABASE_SERVICE_KEY or dashboard env aliases)"
+            )
             return 1
         supabase = SupabaseWriter(url=sb_url, service_key=sb_key)
 

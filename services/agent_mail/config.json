@@ -5,12 +5,17 @@
     "inbox_address": "santoos@agentmail.to",
     "allowed_senders": [
         "developer@santorestaurants.com",
+        "dantecastelaou@gmail.com",
         "santoos@agentmail.to"
     ],
     "subject_prefixes": {
         "[CORTE]": "corte_santo_daily_sales_reconciliation",
         "[XML]": "xml_sat_validation",
         "[UTILIDADES]": "utility_receipts_matching"
+    },
+    "corte_santo_automation": {
+        "enabled": true,
+        "config_path": "workflows/corte_santo/fixtures/config_confirmed.json"
     },
     "ignored_subject_prefixes": [
         "[FYI]",
