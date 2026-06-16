@@ -62,7 +62,10 @@
     "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
     "model": "gemini-2.5-flash",
     "api_key_env": "GEMINI_API_KEY",
-    "confidence_threshold": 0.95,
-    "max_tokens": 4096
+    "confidence_threshold": 0.9,
+    "max_tokens": 4096,
+    "retry_attempts": 4,
+    "retry_backoff_seconds": 15,
+    "request_delay_seconds": 2
   }
 }

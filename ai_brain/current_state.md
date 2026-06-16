@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-06-12.
+Last updated: 2026-06-16.
 
 ## Active Handoff
 
@@ -174,6 +174,13 @@ resume in a fresh conversation.
 - Sent a real Agent Mail message with the six operating attachments.
 - Agent Mail received and classified it as `[CORTE]`.
 - Reconciliation passed exactly: Total Real = Total Sistema = 75,685.10.
+- The Bancarias photo is now treated as aggregate Banorte evidence
+  (`consumo`, `propina`, `total`) only. Debit/credit split is taken from the
+  Corte Excel `T Debito` and `T Credito` columns:
+  `debito = 5,130.25`, `credito = 52,061.90`.
+- The Bancarias vision prompt now sums all visible tickets in the photo. The
+  2026-06-04 photo validates against the Corte Excel at `57,192.15` with
+  difference `0.00`.
 - Controlled Ingresos copy was written yellow for June 4.
 - Forecast projections were preserved, dates rebased to June, Venta Real
   75,685.10 written for June 4, and monthly subtotal formulas verified.
@@ -188,6 +195,10 @@ resume in a fresh conversation.
   that identity and the watcher could not autonomously observe the bank
   uploads. Live Drive workbook replacement and Supabase resume persistence
   remain unverified.
+- Repeated local poller runs can exhaust Gemini free-tier quota and return
+  `429 Too Many Requests`. The vision extractor now retries transient Gemini
+  failures and spaces batch requests, but production should use paid Gemini or
+  another stable vision provider before declaring the workflow fully automated.
 
 ## Processed Context
 

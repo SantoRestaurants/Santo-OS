@@ -35,15 +35,15 @@ CONFIG = {
 
 def test_parse_workbook_rows_maps_groups() -> None:
     rows = [
-        ["Cierre Ter/Pla", "Amex", "Bancos", "Efectivo Real"],
-        ["Consumo", 2488.0, 28235.0, 670.0],
-        ["Propina", 373.2, 3904.27, 670.0],
+        ["Cierre Ter/Pla", "Amex", "T Debito", "T Credito", "Total Bancos", "Efectivo Real"],
+        ["Consumo", 2488.0, 4810.0, 23425.0, 28235.0, 670.0],
+        ["Propina", 373.2, 1366.64, 2537.63, 3904.27, 670.0],
         [None, None, None, None],
         [None, None, None, None],
         [None, None, None, None],
-        ["Cierre Sistema", "Amex", "Bancos", "Efectivo Sistema"],
-        ["Consumo", 2488.0, 28235.0, 670.0],
-        ["Propina", 373.2, 3904.27, 670.0],
+        ["Cierre Sistema", "Amex", "T Debito", "T Credito", "Total Bancos", "Efectivo Sistema"],
+        ["Consumo", 2488.0, 4810.0, 23425.0, 28235.0, 670.0],
+        ["Propina", 373.2, 1366.64, 2537.63, 3904.27, 670.0],
     ]
     result = parser.parse_corte_workbook(rows, {})
 
@@ -51,6 +51,13 @@ def test_parse_workbook_rows_maps_groups() -> None:
     assert result["cierre_terminal"]["amex"] == {"consumo": 2488.0, "propina": 373.2}
     assert result["cierre_terminal"]["bancos"]["consumo"] == 28235.0
     assert result["cierre_sistema"]["bancos"]["consumo"] == 28235.0
+    assert result["income_channels"]["debito"] == 6176.64
+    assert result["income_channels"]["credito"] == 25962.63
+    assert result["income_channel_details"]["debito"] == {
+        "consumo": 4810.0,
+        "propina": 1366.64,
+        "global": 6176.64,
+    }
     assert result["cierre_terminal"]["efectivo"]["propina"] == 0.0
     assert result["cierre_sistema"]["efectivo"]["propina"] == 0.0
 
@@ -120,6 +127,7 @@ def test_run_builds_canonical_evidence_from_supplied_extractions() -> None:
     payload = {
         "business_date": "2026-04-14",
         "restaurant_key": "santo",
+        "income_channels": {"debito": 6176.64, "credito": 25962.63},
         "vision_extractions": [
             {
                 "document_type": "amex",
@@ -130,9 +138,9 @@ def test_run_builds_canonical_evidence_from_supplied_extractions() -> None:
                 "document_type": "bancarias",
                 "status": "extracted",
                 "values": {
+                    "consumo": 28235.0,
+                    "propina": 3904.27,
                     "total": 32139.27,
-                    "propina_debito": 1366.64,
-                    "propina_credito": 2537.63,
                 },
             },
             {
@@ -163,6 +171,8 @@ def test_run_builds_canonical_evidence_from_supplied_extractions() -> None:
     assert evidence["status"] == "ready"
     assert evidence["selected_tips"] == 4277.47
     assert evidence["income_register"]["efectivo"] == 750.0
+    assert evidence["income_register"]["debito"] == 6176.64
+    assert evidence["income_register"]["credito"] == 25962.63
     assert any(task["task_key"] == "build_canonical_evidence" for task in result["tasks"])
 
 

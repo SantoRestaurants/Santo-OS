@@ -28,6 +28,7 @@ import base64
 import json
 import mimetypes
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -46,8 +47,8 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "fields": ["gran_total", "propina_total", "efectivo", "amex", "tarjeta_debito", "tarjeta_credito"],
     },
     "bancarias": {
-        "description": "Foto del cierre de lote de terminales bancarias (Banorte/Visa/MC).",
-        "fields": ["consumo_debito", "propina_debito", "consumo_credito", "propina_credito", "total"],
+        "description": "Foto del cierre de lote de terminales bancarias (Banorte/Visa/MC). Extrae solo los totales agregados visibles; el split debito/credito viene del Excel de corte.",
+        "fields": ["consumo", "propina", "total"],
     },
     "amex": {
         "description": "Foto o export del cierre de lote AMEX.",
@@ -87,6 +88,9 @@ def _vision_config(config: dict[str, Any]) -> dict[str, Any]:
         "anthropic_version": vision.get("anthropic_version", "2023-06-01"),
         "max_tokens": int(vision.get("max_tokens", 4096)),
         "confidence_threshold": float(vision.get("confidence_threshold", 0.95)),
+        "retry_attempts": int(vision.get("retry_attempts", 3)),
+        "retry_backoff_seconds": float(vision.get("retry_backoff_seconds", 10)),
+        "request_delay_seconds": float(vision.get("request_delay_seconds", 0)),
         "api_key": api_key,
     }
 
@@ -100,16 +104,27 @@ def _encode_image(path: Path) -> tuple[str, str]:
 def _build_prompt(document_type: str) -> str:
     schema = DOCUMENT_SCHEMAS.get(document_type, {})
     fields = schema.get("fields", [])
+    description = schema.get("description", "")
+    extra_rules = ""
+    if document_type == "bancarias":
+        extra_rules = (
+            "- La foto puede contener mas de un ticket/cierre bancario. "
+            "Debes sumar todos los tickets visibles: consumo total, propina total "
+            "y total general.\n"
+            "- No extraigas solo el ticket mas grande si hay otro ticket visible.\n"
+        )
     return (
         "Eres un extractor de datos financieros para el corte diario de un "
         "restaurante (SANTO). Lee la imagen y devuelve EXCLUSIVAMENTE un objeto "
         "JSON, sin texto adicional, con esta forma exacta:\n"
         '{"values": {<campo>: <numero|null>, ...}, "confidence": <0..1>, '
         '"notes": "<dudas o ilegibilidad>"}\n'
+        f"Descripcion del documento: {description}\n"
         f"Campos requeridos para el documento '{document_type}': {fields}.\n"
         "Reglas:\n"
         "- Devuelve numeros sin signo de moneda ni separador de miles (ej: 9909.45).\n"
         "- Si un campo no aparece o es ilegible, ponlo en null y baja la confianza.\n"
+        f"{extra_rules}"
         "- 'confidence' es tu certeza global de la lectura (1.0 = perfecta).\n"
         "- No inventes valores. Ante la duda, null y confidence baja."
     )
@@ -158,27 +173,42 @@ def _call_anthropic(cfg: dict[str, Any], prompt: str, media_type: str, b64: str)
 def _call_gemini(cfg: dict[str, Any], prompt: str, media_type: str, b64: str) -> dict[str, Any]:
     # Gemini generateContent endpoint: {endpoint}/{model}:generateContent?key=API_KEY
     url = f"{cfg['endpoint'].rstrip('/')}/{cfg['model']}:generateContent"
-    response = httpx.post(
-        url,
-        headers={"content-type": "application/json", "x-goog-api-key": cfg["api_key"]},
-        json={
-            "contents": [
-                {
-                    "parts": [
-                        {"inline_data": {"mime_type": media_type, "data": b64}},
-                        {"text": prompt},
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0,
-                "maxOutputTokens": cfg["max_tokens"],
-                "responseMimeType": "application/json",
-                "thinkingConfig": {"thinkingBudget": 0},
+    response = None
+    attempts = max(1, int(cfg.get("retry_attempts", 3)))
+    for attempt in range(attempts):
+        response = httpx.post(
+            url,
+            headers={"content-type": "application/json", "x-goog-api-key": cfg["api_key"]},
+            json={
+                "contents": [
+                    {
+                        "parts": [
+                            {"inline_data": {"mime_type": media_type, "data": b64}},
+                            {"text": prompt},
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0,
+                    "maxOutputTokens": cfg["max_tokens"],
+                    "responseMimeType": "application/json",
+                    "thinkingConfig": {"thinkingBudget": 0},
+                },
             },
-        },
-        timeout=120.0,
-    )
+            timeout=120.0,
+        )
+        if response.status_code not in (429, 500, 502, 503, 504) or attempt == attempts - 1:
+            break
+        retry_after = response.headers.get("retry-after")
+        try:
+            delay = float(retry_after) if retry_after else None
+        except ValueError:
+            delay = None
+        if delay is None:
+            delay = float(cfg.get("retry_backoff_seconds", 10)) * (attempt + 1)
+        time.sleep(delay)
+    if response is None:  # pragma: no cover - loop always assigns
+        raise ValueError("gemini_no_response")
     response.raise_for_status()
     payload = response.json()
     candidates = payload.get("candidates", [])
@@ -278,9 +308,13 @@ def extract_documents(images: list[dict[str, Any]], config: dict[str, Any] | Non
     requires review, the batch requires review.
     """
     results = []
-    for item in images:
+    cfg = _vision_config(config or {})
+    request_delay = float(cfg.get("request_delay_seconds", 0))
+    for index, item in enumerate(images):
         if not isinstance(item, dict):
             continue
+        if index > 0 and request_delay > 0:
+            time.sleep(request_delay)
         results.append(
             extract_document(
                 str(item.get("document_type", "")),

@@ -61,6 +61,18 @@ DEFAULT_LAYOUT: dict[str, Any] = {
         "global": None,
         "total": None,
     },
+    # Detailed channel map used for the monthly Ingresos workbook. These
+    # values come from the confirmed Corte Excel columns, not from bank photos.
+    "income_channel_map": {
+        "amex": "amex",
+        "t debito": "debito",
+        "t credito": "credito",
+        "efectivo sistema": "efectivo",
+        "transferencia": "transferencia",
+        "uber eats": "uber",
+        "rappi": "rappi",
+        "paypal": "paypal",
+    },
     "max_columns": 12,
 }
 
@@ -113,14 +125,15 @@ def _parse_block(
     rows: list[list[Any]],
     anchor_norm: str,
     layout: dict[str, Any],
-) -> tuple[dict[str, dict[str, float]], list[str]]:
+) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]], list[str]]:
     warnings: list[str] = []
     anchor = _find_anchor(rows, anchor_norm)
     if anchor is None:
-        return {}, [f"anchor_not_found:{anchor_norm}"]
+        return {}, {}, [f"anchor_not_found:{anchor_norm}"]
 
     anchor_row, anchor_col = anchor
     column_label_map = layout.get("column_label_map", {})
+    income_channel_map = layout.get("income_channel_map", {})
     propina_is_global_labels = {
         _normalize(label) for label in layout.get("propina_is_global_labels", [])
     }
@@ -138,9 +151,10 @@ def _parse_block(
     propina_row = _find_row_label(rows, anchor_row + 1, anchor_col, _normalize(layout["propina_label"]))
     if consumo_row is None or propina_row is None:
         warnings.append(f"rows_not_found:{anchor_norm}")
-        return {}, warnings
+        return {}, {}, warnings
 
     groups: dict[str, dict[str, float]] = {}
+    details: dict[str, dict[str, float]] = {}
     for col, label in header_cols:
         if label not in column_label_map:
             warnings.append(f"unmapped_column:{anchor_norm}:{label}")
@@ -156,7 +170,14 @@ def _parse_block(
         bucket["consumo"] = round(bucket["consumo"] + consumo, 2)
         bucket["propina"] = round(bucket["propina"] + propina, 2)
 
-    return groups, warnings
+        channel = income_channel_map.get(label)
+        if channel:
+            detail = details.setdefault(channel, {"consumo": 0.0, "propina": 0.0, "global": 0.0})
+            detail["consumo"] = round(detail["consumo"] + consumo, 2)
+            detail["propina"] = round(detail["propina"] + propina, 2)
+            detail["global"] = round(detail["consumo"] + detail["propina"], 2)
+
+    return groups, details, warnings
 
 
 def parse_corte_workbook(rows: list[list[Any]], config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -164,8 +185,12 @@ def parse_corte_workbook(rows: list[list[Any]], config: dict[str, Any] | None = 
     config = config or {}
     layout = {**DEFAULT_LAYOUT, **(config.get("excel_layout") or {})}
 
-    terminal, terminal_warnings = _parse_block(rows, _normalize(layout["terminal_anchor"]), layout)
-    sistema, sistema_warnings = _parse_block(rows, _normalize(layout["sistema_anchor"]), layout)
+    terminal, terminal_details, terminal_warnings = _parse_block(
+        rows, _normalize(layout["terminal_anchor"]), layout
+    )
+    sistema, sistema_details, sistema_warnings = _parse_block(
+        rows, _normalize(layout["sistema_anchor"]), layout
+    )
 
     supplemental_warnings: list[str] = []
     supplemental_anchor = _find_anchor(rows, _normalize(layout["supplemental_system_anchor"]))
@@ -191,11 +216,23 @@ def parse_corte_workbook(rows: list[list[Any]], config: dict[str, Any] | None = 
             )
             bucket = sistema.setdefault(group, {"consumo": 0.0, "propina": 0.0})
             bucket["consumo"] = round(bucket["consumo"] + value, 2)
+            channel = layout.get("income_channel_map", {}).get(label)
+            if channel:
+                detail = sistema_details.setdefault(
+                    channel, {"consumo": 0.0, "propina": 0.0, "global": 0.0}
+                )
+                detail["consumo"] = round(detail["consumo"] + value, 2)
+                detail["global"] = round(detail["consumo"] + detail["propina"], 2)
 
     warnings = terminal_warnings + sistema_warnings + supplemental_warnings
     return {
         "cierre_terminal": terminal,
         "cierre_sistema": sistema,
+        "terminal_channel_details": terminal_details,
+        "income_channel_details": sistema_details,
+        "income_channels": {
+            channel: values["global"] for channel, values in sistema_details.items()
+        },
         "warnings": warnings,
     }
 

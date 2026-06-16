@@ -42,6 +42,15 @@ def _sum_values(values: dict[str, Any], *keys: str) -> float | None:
     return round(sum(part or 0.0 for part in parts), 2)
 
 
+def _channel_amount(channels: Any, key: str) -> float | None:
+    if not isinstance(channels, dict):
+        return None
+    value = channels.get(key)
+    if isinstance(value, dict):
+        return _amount(value.get("global"))
+    return _amount(value)
+
+
 def _optional_group_global(groups: dict[str, Any], key: str) -> float | None:
     return _global(groups.get(key)) if isinstance(groups.get(key), dict) else None
 
@@ -72,6 +81,7 @@ def build_canonical_evidence(
     *,
     vision_documents: list[dict[str, Any]] | None = None,
     bank_statement: dict[str, Any] | None = None,
+    income_channels: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create canonical reconciliation and income-registration values."""
@@ -137,11 +147,15 @@ def build_canonical_evidence(
         amex_values = vision["amex"].get("values") or {}
 
     tira_tips = _amount(tira_values.get("propina_total"))
-    bank_tips_parts = [
-        _amount(amex_values.get("propina")),
-        _amount(bancarias_values.get("propina_debito")),
-        _amount(bancarias_values.get("propina_credito")),
-    ]
+    amex_tips = _amount(amex_values.get("propina"))
+    if amex_tips is None:
+        amex_tips = _amount(sistema.get("amex", {}).get("propina"))
+    bancarias_tips = _amount(bancarias_values.get("propina"))
+    if bancarias_tips is None:
+        bancarias_tips = _sum_values(bancarias_values, "propina_debito", "propina_credito")
+    if bancarias_tips is None:
+        bancarias_tips = _amount(sistema.get("bancos", {}).get("propina"))
+    bank_tips_parts = [amex_tips, bancarias_tips]
     bank_tips = None
     if all(value is not None for value in bank_tips_parts):
         bank_tips = round(sum(value or 0.0 for value in bank_tips_parts), 2)
@@ -168,17 +182,38 @@ def build_canonical_evidence(
         courtesy = 0.0
     income_cash = round(cash_base + courtesy, 2)
 
+    debit_channel = _channel_amount(income_channels, "debito")
+    if debit_channel is None:
+        debit_channel = _sum_values(bancarias_values, "consumo_debito", "propina_debito")
+    credit_channel = _channel_amount(income_channels, "credito")
+    if credit_channel is None:
+        credit_channel = _sum_values(bancarias_values, "consumo_credito", "propina_credito")
+    transferencia_channel = _channel_amount(income_channels, "transferencia")
+    if transferencia_channel is None:
+        transferencia_channel = _global(terminal.get("transferencia"))
+    paypal_channel = _channel_amount(income_channels, "paypal")
+    if paypal_channel is None:
+        paypal_channel = _optional_group_global(terminal, "paypal")
+    if paypal_channel is None:
+        paypal_channel = 0.0
+    uber_channel = _channel_amount(income_channels, "uber")
+    if uber_channel is None:
+        uber_channel = _optional_group_global(terminal, "uber")
+    rappi_channel = _channel_amount(income_channels, "rappi")
+    if rappi_channel is None:
+        rappi_channel = _optional_group_global(terminal, "rappi")
+
     income_register = {
         "amex": _global(sistema.get("amex")),
         "bancos": _global(sistema.get("bancos")),
-        "debito": _sum_values(bancarias_values, "consumo_debito", "propina_debito"),
-        "credito": _sum_values(bancarias_values, "consumo_credito", "propina_credito"),
+        "debito": debit_channel,
+        "credito": credit_channel,
         "efectivo": income_cash,
-        "transferencia": _global(terminal.get("transferencia")),
+        "transferencia": transferencia_channel,
         "plataformas": _global(terminal.get("plataformas")),
-        "paypal": _optional_group_global(terminal, "paypal"),
-        "uber": _optional_group_global(terminal, "uber"),
-        "rappi": _optional_group_global(terminal, "rappi"),
+        "paypal": paypal_channel,
+        "uber": uber_channel,
+        "rappi": rappi_channel,
         "propinas": selected_tips,
         "cortesia_direccion": courtesy,
     }
@@ -201,6 +236,7 @@ def build_canonical_evidence(
             "cierre_terminal": terminal,
             "cierre_sistema": sistema,
         },
+        "income_channels": income_channels if isinstance(income_channels, dict) else {},
         "income_register": income_register,
         "selected_tips": selected_tips,
         "checks": checks,

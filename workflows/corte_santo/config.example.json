@@ -40,12 +40,12 @@
     "allow_projection_month_rebase": true
   },
   "vision_extraction": {
-    "_comment": "Reads corte photos (tira, bancarias, AMEX, detalle de efectivo). The API key is read from the env var named below, never stored here. Low confidence or missing key -> requires_review.",
+    "_comment": "Reads corte photos (tira, bancarias, AMEX, detalle de efectivo). The API key is read from the env var named below, never stored here. Low confidence or missing key -> requires_review. Evidence totals are still validated against the Corte Excel with zero tolerance.",
     "provider": "anthropic",
     "endpoint": "https://api.anthropic.com/v1/messages",
     "model": "[CONFIRM]",
     "api_key_env": "CORTE_VISION_API_KEY",
-    "confidence_threshold": 0.95
+    "confidence_threshold": 0.9
   },
   "bank_keywords": {
     "_comment": "Keyword rules to classify Banorte statement rows. 'REST SANTO' => Banorte settlement; SPEI from AMERICAN EXPRESS => amex; UBR PAGOS/UBER => uber; domiciliacion/Spotify => additional expense.",
@@ -89,6 +89,16 @@
       "paypal": "paypal",
       "global": null,
       "total": null
+    },
+    "income_channel_map": {
+      "amex": "amex",
+      "t debito": "debito",
+      "t credito": "credito",
+      "efectivo sistema": "efectivo",
+      "transferencia": "transferencia",
+      "uber eats": "uber",
+      "rappi": "rappi",
+      "paypal": "paypal"
     }
   }
 }

@@ -209,13 +209,30 @@ def test_runtime_requires_drive_workbook_ids() -> None:
             "notification": {"to": "developer@santorestaurants.com", "subject": "Corte", "text": "Listo"},
         },
         {},
-        True,
+        False,
         required_drive_keys=("ingresos", "forecast"),
     )
 
     assert result["status"] == "requires_review"
     assert result["requires_review_reason"] == "drive_workbook_ids_missing"
     assert result["missing_drive_keys"] == ["ingresos", "forecast"]
+
+
+def test_runtime_dry_run_allows_missing_drive_workbook_ids() -> None:
+    result = runtime._deliver_and_update(
+        {
+            "status": "waiting_for_input",
+            "notification": {"to": "developer@santorestaurants.com", "subject": "Corte", "text": "Listo"},
+        },
+        {},
+        True,
+        required_drive_keys=("ingresos", "forecast"),
+    )
+
+    assert result["status"] == "waiting_for_input"
+    assert result["missing_drive_keys"] == ["ingresos", "forecast"]
+    assert result["drive_updates"] == []
+    assert result["notification_delivery"]["status"] == "ready_to_send"
 
 
 def test_runtime_downgrades_when_drive_update_fails(tmp_path: Path, monkeypatch) -> None:

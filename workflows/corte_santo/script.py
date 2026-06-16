@@ -648,6 +648,10 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                         **payload,
                         "cierre_terminal": cierre_terminal,
                         "cierre_sistema": cierre_sistema,
+                        "income_channels": payload.get("income_channels")
+                        or extracted.get("income_channels"),
+                        "income_channel_details": payload.get("income_channel_details")
+                        or extracted.get("income_channel_details"),
                     }
 
             tasks.append(
@@ -728,6 +732,7 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 cierre_sistema,
                 vision_documents=vision_documents,
                 bank_statement=bank_statement,
+                income_channels=payload.get("income_channels"),
                 config=config,
             )
             canonical_inputs = canonical_evidence["reconciliation_inputs"]

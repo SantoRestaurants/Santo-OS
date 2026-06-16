@@ -58,6 +58,14 @@ def _deliver_and_update(
         key for key in required_drive_keys if not isinstance(drive_file_ids, dict) or not drive_file_ids.get(key)
     ]
     if missing_drive_keys:
+        if dry_run:
+            result["missing_drive_keys"] = missing_drive_keys
+            result["drive_updates"] = []
+            result["notification_delivery"] = send_notification(
+                result.get("notification", {}),
+                dry_run=True,
+            )
+            return result
         result["status"] = "requires_review"
         result["requires_review_reason"] = "drive_workbook_ids_missing"
         result["missing_drive_keys"] = missing_drive_keys
