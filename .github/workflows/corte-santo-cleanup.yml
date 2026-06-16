@@ -1,0 +1,152 @@
+name: Corte Santo — Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      business_date:
+        description: "Business date to clean (default: all test dates)"
+        required: false
+        default: ""
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx
+
+      - name: Clean Supabase workflow_runs and email_messages
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+        run: |
+          cat > /tmp/cleanup.py << 'PYEOF'
+          import os, sys, json, re
+          import httpx
+
+          supabase_url = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
+          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+
+          target_date = os.environ.get("CLEANUP_DATE", "").strip()
+
+          # 1. Delete workflow_runs for target date or common test dates
+          dates = [target_date] if target_date else ["2026-06-03", "2026-06-04", "2026-06-05"]
+          for bd in dates:
+              if not bd:
+                  continue
+              r = httpx.get(
+                  f"{supabase_url}/rest/v1/workflow_runs",
+                  headers=headers,
+                  params={"business_date": f"eq.{bd}", "select": "id"},
+                  timeout=30.0,
+              )
+              ids = [x["id"] for x in r.json()] if isinstance(r.json(), list) else []
+              if not ids:
+                  continue
+              # Delete related records first
+              for table in ["reviews", "exceptions", "tasks", "documents", "events", "watchdog_log"]:
+                  for wid in ids:
+                      try:
+                          httpx.delete(
+                              f"{supabase_url}/rest/v1/{table}?workflow_run_id=eq.{wid}",
+                              headers=headers,
+                              timeout=30.0,
+                          )
+                      except Exception as e:
+                          print(f"warning deleting {table} for {wid}: {e}")
+              # Delete workflow_runs
+              for wid in ids:
+                  dr = httpx.delete(
+                      f"{supabase_url}/rest/v1/workflow_runs?id=eq.{wid}",
+                      headers=headers,
+                      timeout=30.0,
+                  )
+              print(f"Deleted {len(ids)} workflow_runs for {bd}")
+
+          # 2. Delete test/prueba email_messages
+          r = httpx.get(
+              f"{supabase_url}/rest/v1/email_messages",
+              headers=headers,
+              params={"select": "id,subject"},
+              timeout=30.0,
+          )
+          for em in r.json():
+              subj = str(em.get("subject", "")).upper()
+              if "PRUEBA" in subj or "TEST" in subj or "CORTE" in subj:
+                  httpx.delete(
+                      f"{supabase_url}/rest/v1/email_messages?id=eq.{em['id']}",
+                      headers=headers,
+                      timeout=30.0,
+                  )
+                  print(f"Deleted email: {em.get('subject', '')[:60]}")
+
+          # 3. Delete unread test emails from AgentMail inbox
+          am_key = os.environ.get("AGENTMAIL_API_KEY", "")
+          if am_key:
+              ar = httpx.get(
+                  "https://api.agentmail.to/v0/inboxes/santoos@agentmail.to/messages",
+                  headers={"Authorization": f"Bearer {am_key}"},
+                  params={"limit": 100},
+                  timeout=30.0,
+              )
+              for m in ar.json().get("messages", []):
+                  labels = m.get("labels", [])
+                  subj = str(m.get("subject", ""))
+                  if "unread" in labels and ("PRUEBA" in subj.upper() or "TEST" in subj.upper() or "CORTE" in subj.upper()):
+                      httpx.delete(
+                          f"https://api.agentmail.to/v0/inboxes/santoos@agentmail.to/messages/{m['message_id']}",
+                          headers={"Authorization": f"Bearer {am_key}"},
+                          timeout=30.0,
+                      )
+                      print(f"Deleted AgentMail message: {subj[:60]}")
+
+          print("Supabase + AgentMail cleanup done.")
+          PYEOF
+          export CLEANUP_DATE="${{ github.event.inputs.business_date }}"
+          python /tmp/cleanup.py
+
+      - name: Clean Drive bank upload folder
+        env:
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+        run: |
+          cat > /tmp/cleanup_drive.py << 'PYEOF'
+          import os, sys
+          sys.path.insert(0, ".")
+          from services.drive_connector.connector import build_drive_client
+
+          drive, reason = build_drive_client()
+          if reason or drive is None:
+              print(f"Drive error: {reason}")
+              sys.exit(1)
+
+          folder_id = "1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL"
+          files = drive.list_files(folder_id=folder_id)
+          for f in files:
+              name = f.get("name", "")
+              mime = f.get("mimeType", "")
+              if mime == "application/vnd.google-apps.folder":
+                  continue
+              if any(x in name.upper() for x in ["AMEX", "BANORTE", "BANCO", ".CSV", ".XLS"]):
+                  print(f"Trashing: {name}")
+                  drive.http.patch(
+                      f"https://www.googleapis.com/drive/v3/files/{f['id']}",
+                      json={"trashed": True},
+                  )
+          print("Drive bank folder cleaned.")
+          PYEOF
+          python /tmp/cleanup_drive.py
