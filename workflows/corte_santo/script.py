@@ -685,7 +685,9 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
 
     if not intake_blocked and not extraction_warnings and has_closing:
         vision_documents = payload.get("vision_extractions")
-        if not isinstance(vision_documents, list):
+        vision_config = config.get("vision_extraction") if isinstance(config, dict) else None
+        vision_enabled = isinstance(vision_config, dict) and vision_config.get("enabled") is True
+        if not isinstance(vision_documents, list) and vision_enabled:
             image_documents = [
                 {
                     "document_type": doc.get("document_type"),

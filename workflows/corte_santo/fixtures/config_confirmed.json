@@ -57,10 +57,11 @@
     "allow_projection_month_rebase": true
   },
   "vision_extraction": {
-    "provider": "anthropic",
-    "endpoint": "https://api.anthropic.com/v1/messages",
-    "model_env": "CORTE_VISION_MODEL",
-    "api_key_env": "ANTHROPIC_API_KEY",
+    "enabled": true,
+    "provider": "gemini",
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
+    "model": "gemini-2.5-flash",
+    "api_key_env": "GEMINI_API_KEY",
     "confidence_threshold": 0.95,
     "max_tokens": 4096
   }

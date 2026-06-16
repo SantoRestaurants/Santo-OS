@@ -16,6 +16,7 @@ def _load(name: str):
 
 bank = _load("bank_statement_parser")
 vision = _load("vision_extractor")
+script = _load("script")
 
 
 # --- bank statement parser ---------------------------------------------------
@@ -85,3 +86,52 @@ def test_vision_batch_status_aggregates() -> None:
     )
     assert out["status"] == "requires_review"
     assert out["documents"][0]["document_type"] == "tira"
+
+
+def test_corte_run_skips_vision_when_disabled(monkeypatch, tmp_path: Path) -> None:
+    called = []
+    monkeypatch.setattr(script, "_load_sibling_module", lambda name: called.append(name) or None)
+    input_payload = {
+        "dry_run": True,
+        "payload": {
+            "business_date": "2026-06-04",
+            "restaurant_key": "santo",
+            "documents": [
+                {
+                    "document_key": "tira",
+                    "document_type": "tira",
+                    "filename": "TIRA X.jpeg",
+                    "source_path": str(tmp_path / "tira.jpeg"),
+                    "source_hash": "hash",
+                }
+            ],
+            "cierre_terminal": {
+                "amex": {"consumo": 10, "propina": 0},
+                "bancos": {"consumo": 0, "propina": 0},
+                "efectivo": {"consumo": 0, "propina": 0},
+                "transferencia": {"consumo": 0, "propina": 0},
+                "plataformas": {"consumo": 0, "propina": 0},
+            },
+            "cierre_sistema": {
+                "amex": {"consumo": 10, "propina": 0},
+                "bancos": {"consumo": 0, "propina": 0},
+                "efectivo": {"consumo": 0, "propina": 0},
+                "transferencia": {"consumo": 0, "propina": 0},
+                "plataformas": {"consumo": 0, "propina": 0},
+            },
+        },
+    }
+    config = {
+        "restaurant_map": {"santo": {"display_name": "SANTO"}},
+        "drive_folder_map": {"santo": "folder"},
+        "mandatory_attachments": [],
+        "reviewer_map": {"default": "admin"},
+        "payment_forms": ["amex", "bancos", "efectivo", "transferencia", "plataformas"],
+        "thresholds": {"reconciliation_tolerance": 0},
+        "vision_extraction": {"enabled": False},
+    }
+
+    result = script.run(input_payload, config)
+
+    assert result["status"] == "ready_for_approval"
+    assert "vision_extractor" not in called
