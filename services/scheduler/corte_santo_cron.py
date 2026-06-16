@@ -15,6 +15,9 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import importlib.util
+from typing import Any
+
 from services.agent_mail.poller import (
     DEFAULT_INBOX_ID,
     AgentMailClient,
@@ -102,6 +105,53 @@ def _bank_folder_id(config: dict[str, Any]) -> str:
     )
 
 
+def _load_runtime():
+    path = Path(__file__).resolve().parents[2] / "workflows" / "corte_santo" / "runtime.py"
+    spec = importlib.util.spec_from_file_location("corte_santo_runtime", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("corte_santo_runtime_unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_stage1_run(
+    writer: SupabaseWriter,
+    supabase_url: str,
+    restaurant_key: str,
+    business_date: str,
+) -> dict[str, Any] | None:
+    """Fetch the most recent stage-1 Corte workflow_run output for this date."""
+    import httpx
+    service_key = _env("SUPABASE_SERVICE_KEY") or _env("SUPABASE_SERVICE_ROLE_KEY")
+    if not service_key:
+        return None
+    resp = httpx.get(
+        f"{supabase_url}/rest/v1/workflow_runs",
+        params={
+            "select": "id,output_payload,status",
+            "business_date": f"eq.{business_date}",
+            "source_channel": "eq.agent_mail",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        },
+        timeout=15.0,
+    )
+    if resp.status_code >= 400:
+        return None
+    data = resp.json()
+    if not isinstance(data, list) or not data:
+        return None
+    output = data[0].get("output_payload") or {}
+    if not isinstance(output, dict):
+        return None
+    return output
+
+
 def run_bank_watcher_once(
     *,
     config_path: str,
@@ -137,14 +187,98 @@ def run_bank_watcher_once(
     if watcher.get("status") != "triggered":
         return watcher
 
-    # Full bank-stage execution needs the original stage-1 ledger persisted in
-    # Supabase. Until that is wired, the scheduler exposes the resume command
-    # and refuses to pretend the workflow is complete.
-    return {
-        "status": "requires_review",
-        "requires_review_reason": "bank_resume_payload_persistence_missing",
-        "watcher_result": watcher,
+    # Read stage-1 output from Supabase to resume bank stage
+    supabase, reason = _supabase_writer(write=True)
+    if reason:
+        return {
+            "status": "requires_review",
+            "requires_review_reason": reason,
+            "watcher_result": watcher,
+        }
+    supabase_url = _env("SUPABASE_URL") or _env("NEXT_PUBLIC_SUPABASE_URL")
+    stage1 = _load_stage1_run(supabase, supabase_url, restaurant_key, effective_date)
+    if stage1 is None:
+        return {
+            "status": "requires_review",
+            "requires_review_reason": "stage1_workflow_run_not_found",
+            "watcher_result": watcher,
+        }
+
+    # Download bank files locally
+    drive, reason = build_drive_client()
+    if reason or drive is None:
+        return {
+            "status": "requires_review",
+            "requires_review_reason": reason or "google_drive_client_unavailable",
+            "watcher_result": watcher,
+        }
+    import tempfile, hashlib
+    from pathlib import Path
+
+    temp_root = Path(tempfile.gettempdir()) / "santoos-bank-watcher" / hashlib.sha256(
+        f"{restaurant_key}:{effective_date}".encode()
+    ).hexdigest()[:16]
+    temp_root.mkdir(parents=True, exist_ok=True)
+
+    docs_by_type = {}
+    for doc in watcher.get("command", {}).get("payload", {}).get("documents", []):
+        doc_type = doc.get("document_type")
+        file_id = doc.get("drive_file_id")
+        filename = doc.get("filename", "bank_file")
+        if doc_type and file_id:
+            local_path = temp_root / filename
+            try:
+                local_path.write_bytes(drive.download(file_id))
+                docs_by_type[doc_type] = {
+                    **doc,
+                    "source_path": str(local_path),
+                }
+            except Exception as exc:
+                docs_by_type[doc_type] = {
+                    **doc,
+                    "source_path": None,
+                    "download_error": str(exc),
+                }
+
+    missing_downloads = [
+        key for key in ("amex_statement", "banorte_statement")
+        if not docs_by_type.get(key, {}).get("source_path")
+    ]
+    if missing_downloads:
+        return {
+            "status": "requires_review",
+            "requires_review_reason": f"bank_file_download_failed:{','.join(missing_downloads)}",
+            "watcher_result": watcher,
+        }
+
+    # Build resume request and run bank stage
+    config = _load_json(config_path)
+
+    def _safe(val: Any, default: Any) -> Any:
+        return val if val is not None else default
+
+    bank_request = {
+        "workflow_key": "corte_santo_daily_sales_reconciliation",
+        "phase": "P0",
+        "dry_run": not _env("SANTO_CRON_WRITE", "").strip().lower() in ("true", "1"),
+        "source_channel": "scheduler",
+        "payload": {
+            "business_date": effective_date,
+            "restaurant_key": restaurant_key,
+            "documents": list(docs_by_type.values()),
+            "income_channels": _safe(stage1.get("income_channels"), {}),
+            "expected_collections": _safe(stage1.get("expected_collections"), []),
+            "revision_document": _safe(stage1.get("revision_document"), {}),
+            "workbook_paths": _safe(stage1.get("workbook_paths"), {}),
+            "workbook_outputs": _safe(stage1.get("workbook_outputs"), {}),
+            "drive_file_ids": _safe(stage1.get("drive_file_ids"), {}),
+        },
     }
+
+    runtime = _load_runtime()
+    result = runtime.run_bank_stage(bank_request, config)
+    result["watcher_result"] = watcher
+    return result
 
 
 def run_all(args: argparse.Namespace) -> dict[str, Any]:

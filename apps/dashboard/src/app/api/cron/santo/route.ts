@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,8 +16,22 @@ type CronResult = {
 
 const VALID_JOBS = new Set(["agent-mail", "bank-watcher", "all"]);
 
+/**
+ * Resolve the repository root. On Vercel, if the dashboard is deployed from
+ * apps/dashboard, the Python packages under services/ and workflows/ at the
+ * repo root are not part of the deployment. The build step copies them into
+ * apps/dashboard/.python_modules, and we fall back to that location.
+ */
 function repoRoot() {
-  return process.env.SANTOOS_REPO_ROOT || process.cwd();
+  if (process.env.SANTOOS_REPO_ROOT) {
+    return process.env.SANTOOS_REPO_ROOT;
+  }
+  // Auto-detect copied modules (used when deploying apps/dashboard standalone).
+  const copiedModules = path.join(process.cwd(), ".python_modules");
+  if (fs.existsSync(path.join(copiedModules, "services", "scheduler", "corte_santo_cron.py"))) {
+    return copiedModules;
+  }
+  return process.cwd();
 }
 
 function pythonBin() {
@@ -25,6 +41,16 @@ function pythonBin() {
 function limited(value: string) {
   const max = 40_000;
   return value.length > max ? `${value.slice(0, max)}\n...[truncated]` : value;
+}
+
+function formatIsoNoMs(date: Date) {
+  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function yesterdayIso() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split("T")[0];
 }
 
 function runCronProcess(args: string[], cwd: string): Promise<CronResult> {
@@ -89,14 +115,36 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const requestedJob = url.searchParams.get("job") || process.env.SANTO_CRON_DEFAULT_JOB || "agent-mail";
   const job = VALID_JOBS.has(requestedJob) ? requestedJob : "all";
-  const businessDate = url.searchParams.get("business_date") || process.env.CORTE_SANTO_BANK_WATCH_DATE;
   const writeMode = url.searchParams.get("write") || process.env.SANTO_CRON_WRITE || "false";
+  const isLive = writeMode === "true" || writeMode === "1";
 
   const args = ["--job", job];
-  if (businessDate) {
+
+  // Agent-mail needs an --after timestamp to avoid reprocessing old messages.
+  if (job === "agent-mail" || job === "all") {
+    const after = url.searchParams.get("after") || process.env.CORTE_SANTO_AGENTMAIL_AFTER;
+    if (after) {
+      args.push("--after", after);
+    } else {
+      const lookbackMinutes = parseInt(
+        process.env.CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES || "15",
+        10,
+      );
+      const afterDate = new Date(Date.now() - lookbackMinutes * 60 * 1000);
+      args.push("--after", formatIsoNoMs(afterDate));
+    }
+  }
+
+  // Bank-watcher needs a business date; default to yesterday if unset.
+  if (job === "bank-watcher" || job === "all") {
+    const businessDate =
+      url.searchParams.get("business_date") ||
+      process.env.CORTE_SANTO_BANK_WATCH_DATE ||
+      yesterdayIso();
     args.push("--business-date", businessDate);
   }
-  if (writeMode === "true" || writeMode === "1") {
+
+  if (isLive) {
     args.push("--write");
   }
 
@@ -108,7 +156,7 @@ export async function GET(request: Request) {
       ...result,
       cwd,
       job,
-      writeMode: writeMode === "true" || writeMode === "1" ? "live" : "dry_run",
+      writeMode: isLive ? "live" : "dry_run",
     },
     { status: statusCode },
   );

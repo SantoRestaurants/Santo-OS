@@ -1,0 +1,50 @@
+name: Corte Santo — Agent Mail
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      after:
+        description: "ISO timestamp for AgentMail after filter (default: 15 min ago)"
+        required: false
+        default: ""
+
+jobs:
+  agent-mail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/dashboard/requirements.txt
+
+      - name: Run Agent Mail stage
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+          SANTO_CRON_WRITE: "true"
+          CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES: "15"
+        run: |
+          AFTER="${{ github.event.inputs.after }}"
+          if [ -z "$AFTER" ]; then
+            AFTER=$(date -u -d '15 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          fi
+          python -m services.scheduler.corte_santo_cron \
+            --job agent-mail \
+            --after "$AFTER" \
+            --write

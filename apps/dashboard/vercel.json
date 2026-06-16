@@ -2,8 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/santo",
+      "path": "/api/cron/santo?job=agent-mail&write=true",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/santo?job=bank-watcher&write=true",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

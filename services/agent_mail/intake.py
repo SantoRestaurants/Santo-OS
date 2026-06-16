@@ -111,11 +111,18 @@ def _base_email_message(email: dict[str, Any], processing_status: str) -> dict[s
 
 
 def _matching_prefixes(subject: str, prefix_map: dict[str, str]) -> list[tuple[str, str]]:
-    normalized_subject = subject.strip().upper()
+    _EMAIL_PREFIXES = ("RE:", "RE：", "FWD:", "FWD：", "R:", "ENC:", "RV:", "RES:")
+    raw = subject.strip()
+    normalized = raw.upper()
+    for pfx in _EMAIL_PREFIXES:
+        if normalized.startswith(pfx):
+            after = raw[len(pfx):].strip().lstrip("-").strip()
+            normalized = after.upper()
+            break
     matches = []
 
     for prefix, workflow_key in prefix_map.items():
-        if normalized_subject.startswith(prefix.upper()):
+        if normalized.startswith(prefix.upper()):
             matches.append((prefix, workflow_key))
 
     return matches

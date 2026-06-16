@@ -1,0 +1,48 @@
+name: Corte Santo — Bank Watcher
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      business_date:
+        description: "Business date for bank reconciliation (default: yesterday)"
+        required: false
+        default: ""
+
+jobs:
+  bank-watcher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/dashboard/requirements.txt
+
+      - name: Run Bank Watcher stage
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+          SANTO_CRON_WRITE: "true"
+        run: |
+          BUSINESS_DATE="${{ github.event.inputs.business_date }}"
+          if [ -z "$BUSINESS_DATE" ]; then
+            BUSINESS_DATE=$(date -u -d 'yesterday' +%Y-%m-%d)
+          fi
+          python -m services.scheduler.corte_santo_cron \
+            --job bank-watcher \
+            --business-date "$BUSINESS_DATE"

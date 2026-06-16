@@ -179,6 +179,10 @@ def build_canonical_evidence(
         detail_values = vision["detalle_efectivo"].get("values") or {}
     courtesy = _amount(detail_values.get("cortesia_direccion"))
     if courtesy is None:
+        courtesy = _amount(detail_values.get("cortesia"))
+    if courtesy is None:
+        courtesy = _amount(tira_values.get("cortesia_platillos"))
+    if courtesy is None:
         courtesy = 0.0
     income_cash = round(cash_base + courtesy, 2)
 

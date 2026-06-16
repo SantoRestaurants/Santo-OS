@@ -44,7 +44,7 @@ except Exception:  # pragma: no cover - dependency guard
 DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     "tira": {
         "description": "Foto de la tira/ticket del sistema con totales por forma de pago.",
-        "fields": ["gran_total", "propina_total", "efectivo", "amex", "tarjeta_debito", "tarjeta_credito"],
+        "fields": ["gran_total", "propina_total", "efectivo", "amex", "tarjeta_debito", "tarjeta_credito", "cortesia_platillos"],
     },
     "bancarias": {
         "description": "Foto del cierre de lote de terminales bancarias (Banorte/Visa/MC). Extrae solo los totales agregados visibles; el split debito/credito viene del Excel de corte.",

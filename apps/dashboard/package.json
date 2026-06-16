@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "python -m pip install -r requirements.txt --target .python_packages",
+    "postinstall": "python -m pip install -r requirements.txt --target .python_packages && node scripts/copy-python-modules.js",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

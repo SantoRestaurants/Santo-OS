@@ -239,6 +239,20 @@ class SupabaseWriter:
             return data.get("id")
         return None
 
+    def update_workflow_run_output(self, run_id: str, output: dict[str, Any], status: str | None = None) -> bool:
+        """Patch a workflow_run's output_payload and optional status."""
+        body: dict[str, Any] = {"output_payload": output}
+        if status:
+            body["status"] = status
+        resp = self.http.patch(
+            f"/rest/v1/workflow_runs?id=eq.{run_id}",
+            json=body,
+        )
+        if resp.status_code >= 400:
+            logger.error("Failed to update workflow_run output: %s %s", resp.status_code, resp.text)
+            return False
+        return True
+
 
 def _agentmail_to_intake_format(msg: dict[str, Any]) -> dict[str, Any]:
     """Convert AgentMail message format to our intake format."""
@@ -527,9 +541,16 @@ def poll_and_classify(
                         f"agent_mail:{email_record['provider_message_id']}".encode()
                     ).hexdigest()[:32]
 
+                    corte_stage_result = result.get("corte_santo_initial_stage", {})
+                    corte_business_date = (
+                        corte_stage_result.get("workflow_result", {})
+                        .get("workflow_run", {})
+                        .get("business_date")
+                    ) or datetime.now(UTC).strftime("%Y-%m-%d")
+
                     run_id = supabase.upsert_workflow_run({
                         "workflow_id": workflow_id,
-                        "business_date": datetime.now(UTC).strftime("%Y-%m-%d"),
+                        "business_date": corte_business_date,
                         "status": "requires_review",
                         "source_channel": "agent_mail",
                         "idempotency_key": idem_key,
@@ -553,6 +574,48 @@ def poll_and_classify(
                                 "email_from": email_record["from_address"],
                             },
                         })
+
+                        # Persist Corte Santo stage-1 output in Supabase for bank-watcher resume
+                        corte_stage = result.get("corte_santo_initial_stage")
+                        if corte_stage and corte_stage.get("status") in (
+                            "waiting_for_input", "completed"
+                        ):
+                            wr = corte_stage.get("workflow_result", {}).get("workflow_run", {})
+                            inp = wr.get("input_payload", {}) or {}
+                            # income_channels is NOT a top-level key in workflow_run.
+                            # It lives inside input_payload (set by script.py:651-652)
+                            # or can be derived from canonical_evidence.income_register.
+                            channels = inp.get("income_channels") or {}
+                            if not channels:
+                                register = (
+                                    wr.get("canonical_evidence", {}) or {}
+                                ).get("income_register", {})
+                                channels = {
+                                    "amex": register.get("amex"),
+                                    "debito": register.get("debito"),
+                                    "credito": register.get("credito"),
+                                    "efectivo": register.get("efectivo"),
+                                    "paypal": register.get("paypal"),
+                                    "uber": register.get("uber"),
+                                    "rappi": register.get("rappi"),
+                                    "propinas": register.get("propinas"),
+                                }
+                                channels = {k: (v if v is not None else 0.0) for k, v in channels.items()}
+                            output_payload = {
+                                "stage": "corte_loaded",
+                                "business_date": wr.get("business_date"),
+                                "income_channels": channels,
+                                "drive_file_ids": inp.get("drive_file_ids"),
+                                "workbook_paths": inp.get("workbook_paths"),
+                                "workbook_outputs": inp.get("workbook_outputs"),
+                                "expected_collections": [],
+                                "revision_document": wr.get("revision_document"),
+                            }
+                            supabase.update_workflow_run_output(
+                                run_id,
+                                output_payload,
+                                status="waiting_for_input",
+                            )
 
             # If requires_review → create exception
             elif result["status"] == "requires_review":

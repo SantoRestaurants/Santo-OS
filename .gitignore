@@ -14,6 +14,8 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
+.python_packages/
+.python_modules/
 
 # Node / Next.js
 node_modules/
