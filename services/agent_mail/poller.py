@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import json
 import logging
+import re
 import sys
 import time
 from datetime import UTC, datetime
@@ -34,6 +35,16 @@ from services.drive_connector.connector import save_document
 logger = logging.getLogger("agent_mail.poller")
 
 DEFAULT_INBOX_ID = "santoos@agentmail.to"
+
+
+def _safe_storage_segment(value: str, *, fallback: str = "item") -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or "")).strip("._-")
+    return normalized[:120] or fallback
+
+
+def _safe_message_storage_id(message_id: str) -> str:
+    digest = hashlib.sha256(str(message_id or "").encode("utf-8")).hexdigest()[:16]
+    return f"msg_{digest}"
 AGENTMAIL_BASE = "https://api.agentmail.to/v0"
 
 
@@ -432,7 +443,11 @@ def poll_and_classify(
 
                 try:
                     content = client.download_attachment(message_id, att_id)
-                    storage_path = f"agent_mail/{message_id}/{filename}"
+                    storage_path = (
+                        "agent_mail/"
+                        f"{_safe_message_storage_id(message_id)}/"
+                        f"{_safe_storage_segment(filename, fallback='attachment')}"
+                    )
                     public_url = supabase.upload_document(
                         path=storage_path,
                         content=content,
@@ -440,7 +455,11 @@ def poll_and_classify(
                     )
 
                     if public_url:
-                        document_key = f"email_att_{message_id}_{att_id}"
+                        document_key = (
+                            "email_att_"
+                            f"{_safe_message_storage_id(message_id)}_"
+                            f"{_safe_storage_segment(str(att_id), fallback='attachment')}"
+                        )
                         source_hash = hashlib.sha256(content).hexdigest()
                         supabase.insert_document({
                             "document_key": document_key,
