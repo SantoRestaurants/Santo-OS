@@ -1,34 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createSupabaseServiceClient } from "@/lib/supabase/server";
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
+const REPO = "SantoRestaurants/Santo-OS";
 
 export async function POST(request: NextRequest) {
-  const supabase = createSupabaseServiceClient();
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-  }
+    if (!GITHUB_TOKEN) {
+        return NextResponse.json(
+            { error: "GITHUB_TOKEN not configured. Add it to Vercel environment variables." },
+            { status: 500 }
+        );
+    }
 
-  const body = await request.json().catch(() => null);
-  if (!body || !body.workflow) {
-    return NextResponse.json({ error: "Missing 'workflow' field" }, { status: 400 });
-  }
+    const body = await request.json().catch(() => null);
+    if (!body) {
+        return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-  const { workflow, business_date } = body;
+    const { workflow, business_date, inputs } = body;
 
-  if (!["agent-mail", "bank-watcher"].includes(workflow)) {
-    return NextResponse.json({ error: "Invalid workflow. Use 'agent-mail' or 'bank-watcher'" }, { status: 400 });
-  }
+    // Map workflow names to file names
+    const workflowMap: Record<string, string> = {
+        "agent-mail": "corte-santo-agent-mail.yml",
+        "bank-watcher": "corte-santo-bank-watcher.yml",
+        "reprocess": "reprocess-corte.yml",
+    };
 
-  // The actual workflow execution happens via GitHub Actions or Vercel Cron.
-  // This endpoint just triggers a workflow_run record in Supabase that the
-  // scheduler will pick up, or returns the trigger info for the frontend.
+    const workflowFile = workflowMap[workflow];
+    if (!workflowFile) {
+        return NextResponse.json(
+            { error: `Unknown workflow: ${workflow}. Use: ${Object.keys(workflowMap).join(", ")}` },
+            { status: 400 }
+        );
+    }
 
-  // For now, return the trigger info so the frontend can show a confirmation.
-  // The actual execution is handled by the cron/scheduler infrastructure.
-  return NextResponse.json({
-    status: "triggered",
-    workflow,
-    business_date: business_date ?? null,
-    message: `Workflow '${workflow}' triggered. Se ejecutará en el próximo ciclo del scheduler.`,
-  });
+    // Build the inputs
+    const workflowInputs: Record<string, string> = {};
+    if (business_date) {
+        workflowInputs.business_date = business_date;
+    }
+    if (inputs && typeof inputs === "object") {
+        Object.assign(workflowInputs, inputs);
+    }
+
+    // Trigger the workflow via GitHub API
+    const url = `https://api.github.com/repos/${REPO}/actions/workflows/${workflowFile}/dispatches`;
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${GITHUB_TOKEN}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        body: JSON.stringify({
+            ref: "main",
+            inputs: workflowInputs,
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        return NextResponse.json(
+            { error: `GitHub API error: ${response.status} ${errorText}` },
+            { status: response.status }
+        );
+    }
+
+    return NextResponse.json({
+        status: "triggered",
+        workflow,
+        business_date: business_date || null,
+        message: `Workflow '${workflow}' triggered successfully.`,
+    });
 }

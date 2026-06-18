@@ -56,6 +56,24 @@ async function requireAuth() {
     return { user, serviceClient };
 }
 
+async function triggerReprocess(businessDate: string, stage: string = "bank-watcher") {
+    try {
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || "";
+        const url = baseUrl.startsWith("http") ? `${baseUrl}/api/workflows/trigger` : `https://${baseUrl}/api/workflows/trigger`;
+        await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                workflow: "reprocess",
+                business_date: businessDate,
+                inputs: { business_date: businessDate, stage },
+            }),
+        });
+    } catch {
+        // Best-effort: workflow trigger is non-critical
+    }
+}
+
 export async function approveReview(formData: FormData) {
     const reviewId = formData.get("reviewId") as string;
     const { serviceClient } = await requireAuth();
@@ -149,7 +167,7 @@ export async function correctValue(formData: FormData) {
     // Get the current workflow run
     const { data: run, error: fetchError } = await serviceClient
         .from("workflow_runs")
-        .select("output_payload")
+        .select("output_payload,business_date")
         .eq("id", workflowRunId)
         .single();
 
@@ -197,6 +215,12 @@ export async function correctValue(formData: FormData) {
         })
         .eq("id", exceptionId);
 
+    // Trigger re-processing to re-write Excel to Drive
+    const businessDate = (run as Record<string, unknown>).business_date as string;
+    if (businessDate) {
+        await triggerReprocess(businessDate, "bank-watcher");
+    }
+
     revalidatePath("/reviews");
     revalidatePath("/cortes");
     redirect("/reviews?success=resolved");
@@ -207,6 +231,13 @@ export async function retryWorkflow(formData: FormData) {
     const workflowRunId = formData.get("workflowRunId") as string;
     const { user, serviceClient } = await requireAuth();
 
+    // Get the workflow run to find business_date
+    const { data: run } = await serviceClient
+        .from("workflow_runs")
+        .select("business_date")
+        .eq("id", workflowRunId)
+        .single();
+
     // Mark exception as acknowledged
     await serviceClient
         .from("exceptions")
@@ -216,8 +247,11 @@ export async function retryWorkflow(formData: FormData) {
         })
         .eq("id", exceptionId);
 
-    // The actual retry happens via GitHub Actions or the scheduler
-    // For now, we just mark it and let the user trigger manually
+    // Trigger re-processing
+    const businessDate = (run as Record<string, unknown>)?.business_date as string;
+    if (businessDate) {
+        await triggerReprocess(businessDate, "bank-watcher");
+    }
 
     revalidatePath("/reviews");
     redirect("/reviews?success=resolved");
@@ -234,9 +268,8 @@ export async function reuploadPhoto(formData: FormData) {
         redirect(`/reviews?error=Seleccioná un archivo`);
     }
 
-    // Read file as base64
+    // Read file as buffer
     const buffer = await file.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
 
     // Store in Supabase Storage
     const fileName = `reuploads/${workflowRunId}/${documentType}_${Date.now()}_${file.name}`;
@@ -272,14 +305,16 @@ export async function reuploadPhoto(formData: FormData) {
         .eq("id", exceptionId);
 
     // Also update the workflow run's documents to include the new file
+    let businessDate = "";
     if (workflowRunId) {
         const { data: run } = await serviceClient
             .from("workflow_runs")
-            .select("output_payload")
+            .select("output_payload,business_date")
             .eq("id", workflowRunId)
             .single();
 
         if (run) {
+            businessDate = (run as Record<string, unknown>).business_date as string || "";
             const payload = (run.output_payload || {}) as Record<string, unknown>;
             const docs = (payload.documents || []) as Array<Record<string, unknown>>;
             docs.push({
@@ -295,6 +330,11 @@ export async function reuploadPhoto(formData: FormData) {
                 .update({ output_payload: payload })
                 .eq("id", workflowRunId);
         }
+    }
+
+    // Trigger re-processing with the new photo
+    if (businessDate) {
+        await triggerReprocess(businessDate, "agent-mail");
     }
 
     revalidatePath("/reviews");
