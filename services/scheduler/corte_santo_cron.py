@@ -115,6 +115,24 @@ def _load_runtime():
     return module
 
 
+def _find_income_register(output: Any) -> dict[str, Any]:
+    """Recursively locate an ``income_register`` dict inside a stage-1 output."""
+    if isinstance(output, dict):
+        candidate = output.get("income_register")
+        if isinstance(candidate, dict) and candidate:
+            return candidate
+        for value in output.values():
+            found = _find_income_register(value)
+            if found:
+                return found
+    elif isinstance(output, list):
+        for item in output:
+            found = _find_income_register(item)
+            if found:
+                return found
+    return {}
+
+
 def _load_stage1_run(
     writer: SupabaseWriter,
     supabase_url: str,
@@ -149,6 +167,8 @@ def _load_stage1_run(
     output = data[0].get("output_payload") or {}
     if not isinstance(output, dict):
         return None
+    # Expose the full income_register so the bank stage can preserve cortesia/propinas.
+    output["income_register"] = _find_income_register(output)
     return output
 
 
@@ -291,6 +311,7 @@ def run_bank_watcher_once(
             "restaurant_key": restaurant_key,
             "documents": list(docs_by_type.values()),
             "income_channels": _safe(stage1.get("income_channels"), {}),
+            "income_register": _safe(stage1.get("income_register"), {}),
             "expected_collections": _safe(stage1.get("expected_collections"), []),
             "revision_document": _safe(stage1.get("revision_document"), {}),
             "workbook_paths": workbook_paths or _safe(stage1.get("workbook_paths"), {}),
