@@ -59,20 +59,27 @@ jobs:
 
           target_date = os.environ.get("CLEANUP_DATE", "").strip()
 
-          # 1. Delete workflow_runs for target date or common test dates
-          dates = [target_date] if target_date else ["2026-06-03", "2026-06-04", "2026-06-05"]
-          for bd in dates:
-              if not bd:
-                  continue
+          # 1. Delete workflow_runs
+          if target_date.upper() == "ALL" or not target_date:
+              # Delete ALL workflow_runs
               r = httpx.get(
                   f"{supabase_url}/rest/v1/workflow_runs",
                   headers=headers,
-                  params={"business_date": f"eq.{bd}", "select": "id"},
+                  params={"select": "id"},
                   timeout=30.0,
               )
               ids = [x["id"] for x in r.json()] if isinstance(r.json(), list) else []
-              if not ids:
-                  continue
+          else:
+              # Delete only for specific date
+              r = httpx.get(
+                  f"{supabase_url}/rest/v1/workflow_runs",
+                  headers=headers,
+                  params={"business_date": f"eq.{target_date}", "select": "id"},
+                  timeout=30.0,
+              )
+              ids = [x["id"] for x in r.json()] if isinstance(r.json(), list) else []
+
+          if ids:
               # Delete related records first
               for table in ["reviews", "exceptions", "tasks", "documents", "events", "watchdog_log"]:
                   for wid in ids:
@@ -86,14 +93,16 @@ jobs:
                           print(f"warning deleting {table} for {wid}: {e}")
               # Delete workflow_runs
               for wid in ids:
-                  dr = httpx.delete(
+                  httpx.delete(
                       f"{supabase_url}/rest/v1/workflow_runs?id=eq.{wid}",
                       headers=headers,
                       timeout=30.0,
                   )
-              print(f"Deleted {len(ids)} workflow_runs for {bd}")
+              print(f"Deleted {len(ids)} workflow_runs")
+          else:
+              print("No workflow_runs found")
 
-          # 2. Delete test/prueba email_messages
+          # 2. Delete ALL email_messages
           r = httpx.get(
               f"{supabase_url}/rest/v1/email_messages",
               headers=headers,
@@ -101,14 +110,12 @@ jobs:
               timeout=30.0,
           )
           for em in r.json():
-              subj = str(em.get("subject", "")).upper()
-              if "PRUEBA" in subj or "TEST" in subj or "CORTE" in subj:
-                  httpx.delete(
-                      f"{supabase_url}/rest/v1/email_messages?id=eq.{em['id']}",
-                      headers=headers,
-                      timeout=30.0,
-                  )
-                  print(f"Deleted email: {em.get('subject', '')[:60]}")
+              httpx.delete(
+                  f"{supabase_url}/rest/v1/email_messages?id=eq.{em['id']}",
+                  headers=headers,
+                  timeout=30.0,
+              )
+              print(f"Deleted email: {em.get('subject', '')[:60]}")
 
           # 3. Delete unread test emails from AgentMail inbox
           am_key = os.environ.get("AGENTMAIL_API_KEY", "")
