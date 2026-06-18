@@ -7,6 +7,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install httpx
       - name: Clean Drive folder
         env:
           GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
