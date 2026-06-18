@@ -1,0 +1,42 @@
+name: Clean Drive Bank Folder
+on:
+  workflow_dispatch:
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Clean Drive folder
+        env:
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+        run: |
+          python -c "
+          import httpx, os, json
+
+          token_resp = httpx.post('https://oauth2.googleapis.com/token', data={
+              'client_id': os.environ['GOOGLE_DRIVE_CLIENT_ID'],
+              'client_secret': os.environ['GOOGLE_DRIVE_CLIENT_SECRET'],
+              'refresh_token': os.environ['GOOGLE_DRIVE_REFRESH_TOKEN'],
+              'grant_type': 'refresh_token',
+          }, timeout=15)
+          access_token = token_resp.json()['access_token']
+          headers = {'Authorization': 'Bearer ' + access_token}
+
+          bank_folder = '1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL'
+          query = \"'\" + bank_folder + \"' in parents\"
+          list_resp = httpx.get(
+              'https://www.googleapis.com/drive/v3/files',
+              params={'q': query, 'fields': 'files(id,name)'},
+              headers=headers,
+              timeout=15,
+          )
+          existing = list_resp.json().get('files', [])
+          print('Found ' + str(len(existing)) + ' files')
+          for f in existing:
+              print('Deleting: ' + f['name'])
+              httpx.delete('https://www.googleapis.com/drive/v3/files/' + f['id'], headers=headers, timeout=15)
+          print('Done')
+          "
