@@ -30,7 +30,7 @@ jobs:
           SANTO_CRON_WRITE: 'true'
         run: |
           python -c "
-          import base64, httpx, os, json, glob
+          import base64, httpx, os, json, glob, io
           from pathlib import Path
 
           # --- Step 1: Get Drive access token ---
