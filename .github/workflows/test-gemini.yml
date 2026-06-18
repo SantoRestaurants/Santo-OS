@@ -1,0 +1,34 @@
+name: Test Gemini API
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install httpx
+      - name: Test Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python -c "
+          import httpx, os
+          key = os.environ['GEMINI_API_KEY']
+          resp = httpx.post(
+              'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+              params={'key': key},
+              json={'contents': [{'parts': [{'text': 'test'}]}]},
+              timeout=15,
+          )
+          print('Status:', resp.status_code)
+          if resp.status_code != 200:
+              print('Error:', resp.text[:300])
+          else:
+              print('OK - API working')
+          "
