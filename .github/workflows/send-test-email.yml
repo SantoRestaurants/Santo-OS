@@ -60,12 +60,11 @@ jobs:
 
           resp = httpx.post(
               'https://api.agentmail.to/v0/inboxes/santoos@agentmail.to/messages/send',
-              headers={'Authorization': f'Bearer {api_key}'},
+              headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
               json={
-                  'from_address': '${{ inputs.from_address }}',
-                  'to_addresses': ['santoos@agentmail.to'],
+                  'to': 'santoos@agentmail.to',
                   'subject': '[CORTE] SANTO 03 JUNIO 2026 - PRUEBA E2E',
-                  'body': 'Corte de prueba E2E - 03 junio 2026',
+                  'text': 'Corte de prueba E2E - 03 junio 2026',
                   'attachments': attachments,
               },
               timeout=60,
