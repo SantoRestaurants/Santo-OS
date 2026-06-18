@@ -45,9 +45,23 @@ jobs:
           headers = {'Authorization': f'Bearer {access_token}'}
           print('Drive token obtained')
 
-          # --- Step 2: Upload bank files to Drive ---
-          print('\n=== Step 2: Upload bank files to Drive ===')
+          # --- Step 2: Clean old bank files and upload new ones ---
+          print('\n=== Step 2: Clean and upload bank files to Drive ===')
           bank_folder = '1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL'
+
+          # List existing files in the folder
+          list_resp = httpx.get(
+              'https://www.googleapis.com/drive/v3/files',
+              params={'q': f"'{bank_folder}' in parents", 'fields': 'files(id,name)'},
+              headers=headers,
+              timeout=15,
+          )
+          existing = list_resp.json().get('files', [])
+          print(f'Found {len(existing)} files in Drive folder')
+          for f in existing:
+              print(f'  Deleting: {f["name"]} ({f["id"]})')
+              httpx.delete(f'https://www.googleapis.com/drive/v3/files/{f["id"]}', headers=headers, timeout=15)
+          print('Old files cleaned')
 
           # Create AMEX XLS using openpyxl
           from openpyxl import Workbook
