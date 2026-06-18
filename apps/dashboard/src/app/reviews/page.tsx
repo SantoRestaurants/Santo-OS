@@ -1,11 +1,11 @@
-import { ArrowLeft, CheckCircle2, MessageSquare, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquare, RefreshCw, ShieldCheck, Upload, Wrench } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/Badge";
 import { HelpTooltip } from "@/components/ui/HelpTooltip";
-import { approveReview, requestCorrection, resolveException, correctValue, retryWorkflow } from "./actions";
+import { approveReview, requestCorrection, resolveException, correctValue, retryWorkflow, reuploadPhoto } from "./actions";
 
 const GOLD = "#C9A84C";
 const CREAM = "#E8E0D0";
@@ -67,6 +67,26 @@ function isCorrectable(exceptionKey: string): boolean {
         exceptionKey.includes("discrepancy") ||
         exceptionKey.includes("payment_form") ||
         exceptionKey.includes("total_real");
+}
+
+function isReuploadable(exceptionKey: string): boolean {
+    return exceptionKey.includes("vision_extraction_error") ||
+        exceptionKey.includes("vision_confidence") ||
+        exceptionKey.includes("photo") ||
+        exceptionKey.includes("tira") ||
+        exceptionKey.includes("bancarias") ||
+        exceptionKey.includes("amex") ||
+        exceptionKey.includes("detalle_efectivo") ||
+        exceptionKey.includes("cxc");
+}
+
+function getDocumentType(exceptionKey: string): string {
+    if (exceptionKey.includes("tira")) return "tira";
+    if (exceptionKey.includes("bancarias")) return "bancarias";
+    if (exceptionKey.includes("amex")) return "amex";
+    if (exceptionKey.includes("detalle_efectivo")) return "detalle_efectivo";
+    if (exceptionKey.includes("cxc")) return "cxc";
+    return "unknown";
 }
 
 function formatDate(iso: string) {
@@ -176,6 +196,8 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                             const hint = getExceptionHint(ex.exception_key || "");
                             const correctable = isCorrectable(ex.exception_key || "");
                             const retryable = isRetryable(ex.exception_key || "");
+                            const reuploadable = isReuploadable(ex.exception_key || "");
+                            const docType = getDocumentType(ex.exception_key || "");
 
                             return (
                                 <div key={ex.id} className="px-5 py-5">
@@ -230,6 +252,22 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                                                 <input type="hidden" name="workflowRunId" value={ex.workflow_run_id} />
                                                 <button className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "#5A8AE044", background: "#5A8AE011", color: "#5A8AE0" }} type="submit">
                                                     <RefreshCw className="h-3 w-3" /> Reintentar
+                                                </button>
+                                            </form>
+                                        )}
+
+                                        {/* Re-upload photo */}
+                                        {reuploadable && ex.workflow_run_id && (
+                                            <form action={reuploadPhoto} className="flex items-end gap-2">
+                                                <input type="hidden" name="exceptionId" value={ex.id} />
+                                                <input type="hidden" name="workflowRunId" value={ex.workflow_run_id} />
+                                                <input type="hidden" name="documentType" value={docType} />
+                                                <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "#E08A3A44", background: "#E08A3A11", color: "#E08A3A" }}>
+                                                    <Upload className="h-3 w-3" /> Re-subir foto
+                                                    <input type="file" name="file" accept="image/*" className="hidden" />
+                                                </label>
+                                                <button className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "#E08A3A44", background: "#E08A3A11", color: "#E08A3A" }} type="submit">
+                                                    Subir
                                                 </button>
                                             </form>
                                         )}

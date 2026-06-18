@@ -222,3 +222,81 @@ export async function retryWorkflow(formData: FormData) {
     revalidatePath("/reviews");
     redirect("/reviews?success=resolved");
 }
+
+export async function reuploadPhoto(formData: FormData) {
+    const exceptionId = formData.get("exceptionId") as string;
+    const workflowRunId = formData.get("workflowRunId") as string;
+    const documentType = formData.get("documentType") as string;
+    const file = formData.get("file") as File;
+    const { user, serviceClient } = await requireAuth();
+
+    if (!file || file.size === 0) {
+        redirect(`/reviews?error=Seleccioná un archivo`);
+    }
+
+    // Read file as base64
+    const buffer = await file.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+
+    // Store in Supabase Storage
+    const fileName = `reuploads/${workflowRunId}/${documentType}_${Date.now()}_${file.name}`;
+    const { data: uploadData, error: uploadError } = await serviceClient.storage
+        .from("corte-attachments")
+        .upload(fileName, buffer, {
+            contentType: file.type,
+            upsert: true,
+        });
+
+    if (uploadError) {
+        redirect(`/reviews?error=${encodeURIComponent("Error al subir: " + uploadError.message)}`);
+    }
+
+    // Get public URL
+    const { data: urlData } = await serviceClient.storage
+        .from("corte-attachments")
+        .getPublicUrl(fileName);
+
+    // Update the exception with the reuploaded photo URL
+    await serviceClient
+        .from("exceptions")
+        .update({
+            status: "acknowledged",
+            details: {
+                reuploaded_by: user.email,
+                reuploaded_at: new Date().toISOString(),
+                document_type: documentType,
+                file_url: urlData.publicUrl,
+                file_name: file.name,
+            },
+        })
+        .eq("id", exceptionId);
+
+    // Also update the workflow run's documents to include the new file
+    if (workflowRunId) {
+        const { data: run } = await serviceClient
+            .from("workflow_runs")
+            .select("output_payload")
+            .eq("id", workflowRunId)
+            .single();
+
+        if (run) {
+            const payload = (run.output_payload || {}) as Record<string, unknown>;
+            const docs = (payload.documents || []) as Array<Record<string, unknown>>;
+            docs.push({
+                document_type: documentType,
+                source_path: urlData.publicUrl,
+                source_uri: urlData.publicUrl,
+                reuploaded: true,
+                reuploaded_by: user.email,
+            });
+            payload.documents = docs;
+            await serviceClient
+                .from("workflow_runs")
+                .update({ output_payload: payload })
+                .eq("id", workflowRunId);
+        }
+    }
+
+    revalidatePath("/reviews");
+    redirect("/reviews?success=resolved");
+}
