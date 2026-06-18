@@ -18,124 +18,93 @@ jobs:
       - name: Install dependencies
         run: pip install httpx openpyxl
 
-      - name: Run E2E pipeline
+      - name: Get Drive token
+        id: drive-token
         env:
-          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
-          AGENTMAIL_INBOX_ID: santoos@agentmail.to
-          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
           GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
           GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
-          SANTO_CRON_WRITE: 'true'
         run: |
-          python -c "
-          import base64, httpx, os, json, glob, io, csv
-          from pathlib import Path
-
-          # --- Step 1: Get Drive access token ---
-          print('=== Step 1: Get Drive access token ===')
-          token_resp = httpx.post('https://oauth2.googleapis.com/token', data={
+          TOKEN=$(python -c "
+          import httpx, os
+          resp = httpx.post('https://oauth2.googleapis.com/token', data={
               'client_id': os.environ['GOOGLE_DRIVE_CLIENT_ID'],
               'client_secret': os.environ['GOOGLE_DRIVE_CLIENT_SECRET'],
               'refresh_token': os.environ['GOOGLE_DRIVE_REFRESH_TOKEN'],
               'grant_type': 'refresh_token',
           }, timeout=15)
-          access_token = token_resp.json()['access_token']
-          headers = {'Authorization': f'Bearer {access_token}'}
-          print('Drive token obtained')
+          print(resp.json()['access_token'])
+          ")
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
-          # --- Step 2: Clean old bank files and upload new ones ---
-          print('\n=== Step 2: Clean and upload bank files to Drive ===')
-          bank_folder = '1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL'
-
-          # List existing files in the folder
-          query = "'" + bank_folder + "' in parents"
-          list_resp = httpx.get(
-              'https://www.googleapis.com/drive/v3/files',
-              params={'q': query, 'fields': 'files(id,name)'},
-              headers=headers,
-              timeout=15,
-          )
-          existing = list_resp.json().get('files', [])
-          print('Found ' + str(len(existing)) + ' files in Drive folder')
-          for f in existing:
-              print('  Deleting: ' + f['name'] + ' (' + f['id'] + ')')
-              httpx.delete('https://www.googleapis.com/drive/v3/files/' + f['id'], headers=headers, timeout=15)
-          print('Old files cleaned')
-
-          # Create AMEX XLS using openpyxl
+      - name: Upload AMEX to Drive
+        env:
+          DRIVE_TOKEN: ${{ steps.drive-token.outputs.token }}
+        run: |
+          python -c "
+          import httpx, os, io, json
           from openpyxl import Workbook
           wb = Workbook()
           ws = wb.active
-          ws.title = 'AMEX'
-          ws.append(['Fecha', 'Descripción', 'Monto'])
+          ws.append(['Fecha', 'Descripcion', 'Monto'])
           ws.append(['01/06/2026', 'SPEI RECIBIDO AMEX', 16138.42])
           ws.append(['01/06/2026', 'REST SANTO HAND ROLL', 121558.62])
-          amex_buf = io.BytesIO()
-          wb.save(amex_buf)
-          amex_data = amex_buf.getvalue()
-
-          # Upload AMEX
+          buf = io.BytesIO()
+          wb.save(buf)
+          token = os.environ['DRIVE_TOKEN']
+          headers = {'Authorization': 'Bearer ' + token}
           resp = httpx.post(
               'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
               headers=headers,
               files={
-                  'metadata': (None, json.dumps({'name': 'AMEX SANTO 030626.xls', 'parents': [bank_folder]}), 'application/json'),
-                  'file': ('AMEX SANTO 030626.xls', amex_data, 'application/vnd.ms-excel'),
+                  'metadata': (None, json.dumps({'name': 'AMEX SANTO 030626.xls', 'parents': ['1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL']}), 'application/json'),
+                  'file': ('AMEX SANTO 030626.xls', buf.getvalue(), 'application/vnd.ms-excel'),
               },
               timeout=30,
           )
-          print('AMEX upload:', resp.status_code, resp.json().get('id', resp.text[:100]))
+          print('AMEX:', resp.status_code, resp.json().get('id', resp.text[:200]))
+          "
 
-          # Create Banorte CSV
-          banorte_csv = io.StringIO()
-          writer = csv.writer(banorte_csv)
-          writer.writerow(['FECHA', 'DESCRIPCIÓN', 'DESCRIPCIÓN DETALLADA', 'DEPÓSITOS', 'RETIROS'])
+      - name: Upload Banorte to Drive
+        env:
+          DRIVE_TOKEN: ${{ steps.drive-token.outputs.token }}
+        run: |
+          python -c "
+          import httpx, os, io, csv, json
+          buf = io.StringIO()
+          writer = csv.writer(buf)
+          writer.writerow(['FECHA', 'DESCRIPCION', 'DESCRIPCION DETALLADA', 'DEPOSITOS', 'RETIROS'])
           writer.writerow(['01/06/2026', 'REST SANTO HAND ROLL 08890734C', '-', '121,558.62', '-'])
           writer.writerow(['01/06/2026', 'REST SANTO HAND ROLL 08890734D', '-', '55,864.54', '-'])
-          banorte_data = banorte_csv.getvalue().encode()
-
-          # Upload Banorte
+          data = buf.getvalue().encode()
+          token = os.environ['DRIVE_TOKEN']
+          headers = {'Authorization': 'Bearer ' + token}
           resp = httpx.post(
               'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
               headers=headers,
               files={
-                  'metadata': (None, json.dumps({'name': 'BANORTE SANTO 030626.csv', 'parents': [bank_folder]}), 'application/json'),
-                  'file': ('BANORTE SANTO 030626.csv', banorte_data, 'text/csv'),
+                  'metadata': (None, json.dumps({'name': 'BANORTE SANTO 030626.csv', 'parents': ['1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL']}), 'application/json'),
+                  'file': ('BANORTE SANTO 030626.csv', data, 'text/csv'),
               },
               timeout=30,
           )
-          print('Banorte upload:', resp.status_code, resp.json().get('id', resp.text[:100]))
+          print('Banorte:', resp.status_code, resp.json().get('id', resp.text[:200]))
+          "
 
-          # --- Step 3: Send email with attachments ---
-          print('\n=== Step 3: Send email ===')
+      - name: Send email
+        env:
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+        run: |
+          python -c "
+          import base64, httpx, os
           api_key = os.environ['AGENTMAIL_API_KEY']
-
-          files = {
-              'SANTO CORTE 03 JUNIO 2026.xlsx': 'workflows/corte_santo/fixtures/santo_corte_sample.xlsx',
-          }
-          attachments = []
-          for fname, fpath in files.items():
-              data = open(fpath, 'rb').read()
-              attachments.append({
-                  'filename': fname,
-                  'content_type': 'application/octet-stream',
-                  'content': base64.b64encode(data).decode(),
-              })
-
+          data = open('workflows/corte_santo/fixtures/santo_corte_sample.xlsx', 'rb').read()
+          attachments = [{'filename': 'SANTO CORTE 03 JUNIO 2026.xlsx', 'content_type': 'application/octet-stream', 'content': base64.b64encode(data).decode()}]
           resp = httpx.post(
               'https://api.agentmail.to/v0/inboxes/santoos@agentmail.to/messages/send',
-              headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
-              json={
-                  'to': 'santoos@agentmail.to',
-                  'subject': '[CORTE] SANTO 03 JUNIO 2026 - PRUEBA E2E',
-                  'text': 'Corte de prueba E2E - 03 junio 2026',
-                  'attachments': attachments,
-              },
+              headers={'Authorization': 'Bearer ' + api_key, 'Content-Type': 'application/json'},
+              json={'to': 'santoos@agentmail.to', 'subject': '[CORTE] SANTO 03 JUNIO 2026 - PRUEBA E2E', 'text': 'Corte de prueba E2E', 'attachments': attachments},
               timeout=60,
           )
-          print('Email sent:', resp.status_code, resp.text[:200])
-
-          print('\n=== Done! Trigger agent-mail and bank-watcher workflows next ===')
+          print('Email:', resp.status_code, resp.text[:200])
           "
