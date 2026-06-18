@@ -1,4 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "next build --no-turbopack"
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }
