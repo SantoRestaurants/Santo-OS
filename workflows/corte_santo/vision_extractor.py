@@ -58,6 +58,10 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "description": "Detalle del efectivo contado (puede ser manuscrito).",
         "fields": ["efectivo_real", "propina_efectivo", "cortesia_direccion", "deposito", "total"],
     },
+    "cxc": {
+        "description": "Foto de un ajuste de Cuenta por Cobrar (CXC). El monto incluye consumo y propina. El canal es la forma de pago (tarjeta de debito, tarjeta de credito, efectivo, etc).",
+        "fields": ["consumo", "propina", "monto_total", "canal"],
+    },
 }
 
 
@@ -120,6 +124,14 @@ def _build_prompt(document_type: str) -> str:
             "'Cortesias' o similar. Es un descuento en comida, no en bebidas ni efectivo.\n"
             "- Si la tira tiene 'cortesia_platillos' y 'efectivo' por separado, "
             "reporta cada uno en su campo sin sumarlos.\n"
+        )
+    elif document_type == "cxc":
+        extra_rules = (
+            "- 'consumo' es el monto sin propina. 'propina' es la propina incluida. "
+            "'monto_total' es consumo + propina.\n"
+            "- 'canal' es la forma de pago: 'debito', 'credito', 'efectivo', 'amex', etc. "
+            "Mapea el texto de la foto al canal mas cercano.\n"
+            "- Si no ves propina, pon propina en 0 y monto_total igual a consumo.\n"
         )
     return (
         "Eres un extractor de datos financieros para el corte diario de un "

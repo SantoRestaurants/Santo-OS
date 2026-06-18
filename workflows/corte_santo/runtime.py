@@ -87,6 +87,8 @@ def _deliver_and_update(
         result["drive_updates"] = []
         return result
 
+    is_requires_review = result.get("status") == "requires_review"
+
     drive_file_ids = payload.get("drive_file_ids", {})
     missing_drive_keys = [
         key for key in required_drive_keys if not isinstance(drive_file_ids, dict) or not drive_file_ids.get(key)
@@ -138,6 +140,14 @@ def _deliver_and_update(
         result["notification_delivery"] = {
             "status": "not_attempted",
             "reason": "drive_workbook_update_failed",
+        }
+        return result
+
+    # Skip notifications when status is requires_review (Drive was still uploaded).
+    if is_requires_review:
+        result["notification_delivery"] = {
+            "status": "not_attempted",
+            "reason": "stage_requires_review",
         }
         return result
 

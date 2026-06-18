@@ -188,18 +188,25 @@ def test_initial_stage_waits_for_bank_files() -> None:
 def test_runtime_does_not_notify_or_update_when_stage_requires_review(monkeypatch) -> None:
     attempted = []
     monkeypatch.setattr(runtime, "send_notification", lambda *args, **kwargs: attempted.append("mail"))
-    monkeypatch.setattr(runtime, "replace_document_content", lambda *args, **kwargs: attempted.append("drive"))
+    monkeypatch.setattr(runtime, "replace_document_content", lambda *args, **kwargs: {"status": "updated", "attempted": "drive"})
 
     result = runtime._deliver_and_update(
-        {"status": "requires_review", "notification": {"to": "developer@santorestaurants.com"}},
+        {
+            "status": "requires_review",
+            "notification": {"to": "developer@santorestaurants.com"},
+            "ingresos_write": {"output_path": "/tmp/ingresos.xlsx"},
+        },
         {"drive_file_ids": {"ingresos": "file-id"}},
         False,
         required_drive_keys=("ingresos",),
     )
 
-    assert attempted == []
+    # Notifications should not be attempted when status is requires_review
+    assert "mail" not in attempted
     assert result["notification_delivery"]["status"] == "not_attempted"
-    assert result["drive_updates"] == []
+    assert result["notification_delivery"]["reason"] == "stage_requires_review"
+    # Drive updates should still happen (uploaded even with requires_review)
+    assert len(result["drive_updates"]) == 1
 
 
 def test_runtime_requires_drive_workbook_ids() -> None:

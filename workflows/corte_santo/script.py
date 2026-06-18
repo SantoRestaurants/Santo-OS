@@ -712,7 +712,7 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 }
                 for doc in documents
                 if isinstance(doc, dict)
-                and doc.get("document_type") in ("tira", "bancarias", "amex", "detalle_efectivo")
+                and doc.get("document_type") in ("tira", "bancarias", "amex", "detalle_efectivo", "cxc")
                 and doc.get("source_path")
             ]
             if image_documents:

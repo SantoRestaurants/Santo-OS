@@ -189,6 +189,35 @@ def build_canonical_evidence(
         courtesy = 0.0
     income_cash = round(cash_base + courtesy, 2)
 
+    # --- CXC (Cuenta por Cobrar) ---
+    cxc_consumo = 0.0
+    cxc_propina = 0.0
+    cxc_channel = None
+    cxc_doc = vision.get("cxc")
+    if cxc_doc and cxc_doc.get("status") == "extracted":
+        cxc_values = cxc_doc.get("values") or {}
+        cxc_consumo = _amount(cxc_values.get("consumo")) or 0.0
+        cxc_propina = _amount(cxc_values.get("propina")) or 0.0
+        canal_raw = cxc_values.get("canal")
+        if isinstance(canal_raw, str):
+            canal_lower = canal_raw.lower().strip()
+            if "debito" in canal_lower or "débito" in canal_lower:
+                cxc_channel = "debito"
+            elif "credito" in canal_lower or "crédito" in canal_lower:
+                cxc_channel = "credito"
+            elif "amex" in canal_lower:
+                cxc_channel = "amex"
+            elif "efectivo" in canal_lower:
+                cxc_channel = "efectivo"
+            elif "transferencia" in canal_lower:
+                cxc_channel = "transferencia"
+            elif "paypal" in canal_lower:
+                cxc_channel = "paypal"
+            elif "uber" in canal_lower:
+                cxc_channel = "uber"
+            elif "rappi" in canal_lower:
+                cxc_channel = "rappi"
+
     debit_channel = _channel_amount(income_channels, "debito")
     if debit_channel is None:
         debit_channel = _sum_values(bancarias_values, "consumo_debito", "propina_debito")
@@ -224,6 +253,12 @@ def build_canonical_evidence(
         "propinas": selected_tips,
         "cortesia_direccion": courtesy,
     }
+
+    # Apply CXC adjustments: add consumo to the appropriate channel, add propina to propinas.
+    if cxc_consumo > 0 and cxc_channel:
+        income_register[cxc_channel] = round((income_register.get(cxc_channel) or 0.0) + cxc_consumo, 2)
+    if cxc_propina > 0:
+        income_register["propinas"] = round((income_register.get("propinas") or 0.0) + cxc_propina, 2)
 
     bank_statement = bank_statement if isinstance(bank_statement, dict) else None
     if bank_statement and bank_statement.get("status") == "requires_review":
