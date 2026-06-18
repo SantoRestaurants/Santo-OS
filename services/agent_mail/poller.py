@@ -582,14 +582,13 @@ def poll_and_classify(
                         ):
                             wr = corte_stage.get("workflow_result", {}).get("workflow_run", {})
                             inp = wr.get("input_payload", {}) or {}
-                            # income_channels is NOT a top-level key in workflow_run.
-                            # It lives inside input_payload (set by script.py:651-652)
-                            # or can be derived from canonical_evidence.income_register.
-                            channels = inp.get("income_channels") or {}
-                            if not channels:
-                                register = (
-                                    wr.get("canonical_evidence", {}) or {}
-                                ).get("income_register", {})
+                            register = (
+                                (wr.get("canonical_evidence", {}) or {})
+                                .get("income_register", {})
+                            )
+                            # Prefer income_register (cortesia already in efectivo)
+                            # over raw input_payload income_channels.
+                            if register:
                                 channels = {
                                     "amex": register.get("amex"),
                                     "debito": register.get("debito"),
@@ -601,10 +600,13 @@ def poll_and_classify(
                                     "propinas": register.get("propinas"),
                                 }
                                 channels = {k: (v if v is not None else 0.0) for k, v in channels.items()}
+                            else:
+                                channels = inp.get("income_channels") or {}
                             output_payload = {
                                 "stage": "corte_loaded",
                                 "business_date": wr.get("business_date"),
                                 "income_channels": channels,
+                                "income_register": register,
                                 "drive_file_ids": inp.get("drive_file_ids"),
                                 "workbook_paths": inp.get("workbook_paths"),
                                 "workbook_outputs": inp.get("workbook_outputs"),
