@@ -55,17 +55,19 @@ export function Sidebar() {
       {/* Mobile hamburger button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed left-4 top-4 z-40 rounded-xl border border-stone-200 bg-white p-2 shadow-sm lg:hidden"
+        className="fixed left-4 top-4 z-40 rounded-xl border p-2 shadow-sm lg:hidden"
+        style={{ borderColor: "#222", background: "#111" }}
         aria-label="Abrir menú"
         type="button"
       >
-        <Menu className="h-5 w-5 text-stone-700" />
+        <Menu className="h-5 w-5" style={{ color: "#E8E0D0" }} />
       </button>
 
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-stone-950/40 lg:hidden"
+          className="fixed inset-0 z-40 lg:hidden"
+          style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -73,25 +75,27 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside
         data-tour="sidebar"
-        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-stone-200 bg-white transition-transform duration-200 lg:relative lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r transition-transform duration-200 lg:relative lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
           }`}
+        style={{ borderColor: "#222", background: "#0c0c0c" }}
       >
         {/* Brand header */}
-        <div className="flex items-center justify-between border-b border-stone-100 px-4 py-4">
+        <div className="flex items-center justify-between border-b px-4 py-4" style={{ borderColor: "#1a1a1a" }}>
           <div className="flex items-center gap-2.5">
-            <span className="rounded-xl bg-stone-950 p-2 text-white">
+            <span className="rounded-xl p-2" style={{ background: "#C9A84C", color: "#080808" }}>
               <Sparkles className="h-4 w-4" />
             </span>
             <div>
-              <p className="text-sm font-semibold text-stone-950">
-                Santo AI OS
+              <p className="text-sm font-semibold" style={{ color: "#C9A84C", letterSpacing: "2px", textTransform: "uppercase" }}>
+                Santo OS
               </p>
-              <p className="text-[10px] text-stone-600">Panel de cortes</p>
+              <p className="text-[10px]" style={{ color: "#666" }}>Panel de cortes</p>
             </div>
           </div>
           <button
             onClick={() => setMobileOpen(false)}
-            className="rounded-lg p-1 text-stone-500 hover:text-stone-700 lg:hidden"
+            className="rounded-lg p-1 lg:hidden"
+            style={{ color: "#666" }}
             type="button"
           >
             <X className="h-4 w-4" />
@@ -101,17 +105,20 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 space-y-1 px-3 py-4">
           {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 data-tour={item.dataTour}
                 onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive
-                  ? "bg-stone-950 text-white"
-                  : "text-stone-700 hover:bg-stone-100"
-                  }`}
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition"
+                style={{
+                  background: isActive ? "#C9A84C" : "transparent",
+                  color: isActive ? "#080808" : "#888",
+                }}
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#161616"; }}
+                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
               >
                 {item.icon}
                 {item.label}
@@ -121,11 +128,14 @@ export function Sidebar() {
         </nav>
 
         {/* Help button */}
-        <div className="border-t border-stone-100 p-3">
+        <div className="border-t p-3" style={{ borderColor: "#1a1a1a" }}>
           <button
             data-tour="help-button"
             onClick={handleRestartTour}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium text-stone-600 transition hover:bg-stone-100 hover:text-stone-700"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium transition"
+            style={{ color: "#666" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#161616"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             type="button"
           >
             <HelpCircle className="h-4 w-4" />

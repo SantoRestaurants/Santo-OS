@@ -43,7 +43,10 @@ export function HelpTooltip({
     <div ref={ref} className="relative inline-flex">
       <button
         onClick={() => setOpen(!open)}
-        className="group inline-flex items-center justify-center rounded-full p-0.5 text-stone-500 transition hover:bg-stone-100 hover:text-stone-700"
+        className="group inline-flex items-center justify-center rounded-full p-0.5 transition"
+        style={{ color: "#666" }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "#222"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
         aria-label="Ayuda"
         type="button"
       >
@@ -51,14 +54,10 @@ export function HelpTooltip({
       </button>
       {open && (
         <div className={`absolute z-50 w-64 ${positionClasses[position]}`}>
-          <div className="rounded-xl border border-stone-200 bg-white p-3 shadow-lg">
+          <div className="rounded-xl border p-3 shadow-lg" style={{ borderColor: "#333", background: "#1a1a1a" }}>
             <div className="flex items-start justify-between gap-2">
-              <p className="text-xs leading-5 text-stone-600">{text}</p>
-              <button
-                onClick={() => setOpen(false)}
-                className="shrink-0 text-stone-500 hover:text-stone-700"
-                type="button"
-              >
+              <p className="text-xs leading-5" style={{ color: "#999" }}>{text}</p>
+              <button onClick={() => setOpen(false)} className="shrink-0" style={{ color: "#666" }} type="button">
                 <X className="h-3 w-3" />
               </button>
             </div>
