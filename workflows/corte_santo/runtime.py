@@ -35,33 +35,39 @@ def _income_channels(payload: dict[str, Any], workflow_result: dict[str, Any]) -
 def _bank_write_channels(payload: dict[str, Any]) -> dict[str, Any]:
     """Build columnar values for the Ingresos workbook during bank validation.
 
-    The full ``income_register`` is the source of truth because it includes
-    courtesy adjustments (``cortesia_*``) and ``propinas``.  When it is
-    available we map its keys to the workbook columns and add any courtesy
-    amount to ``efectivo`` so the validated sheet matches the yellow sheet
-    produced by the initial stage.
+    The full ``income_register`` is the source of truth because it already
+    includes courtesy adjustments (``cortesia_*``) inside ``efectivo`` and
+    exposes ``propinas`` separately.  When available the register values are
+    used directly so the blue sheet matches the yellow sheet written by the
+    initial stage.  When not available we fall back to the raw
+    ``income_channels`` and add any courtesy amounts to ``efectivo``.
     """
     register = payload.get("income_register")
-    if isinstance(register, dict) and register:
-        channels: dict[str, Any] = {}
-    else:
+    use_register = isinstance(register, dict) and bool(register)
+    if not use_register:
         register = {}
-        channels = dict(payload.get("income_channels") or {})
+
+    channels = dict(payload.get("income_channels") or {})
 
     layout_keys = ["amex", "debito", "credito", "efectivo", "paypal", "uber", "rappi", "propinas", "transferencia"]
     result: dict[str, Any] = {}
     for key in layout_keys:
-        val = channels.get(key) if channels.get(key) is not None else register.get(key)
+        if use_register:
+            val = register.get(key) if register.get(key) is not None else channels.get(key)
+        else:
+            val = channels.get(key)
         result[key] = float(val) if val is not None else 0.0
 
-    # Courtesy/discount items belong to efectivo in the Ingresos sheet.
-    cortesia = 0.0
-    for key in ("cortesia_direccion", "cortesia_platillos", "cortesias", "cortesia_platillo", "cortesia"):
-        val = register.get(key)
-        if val is not None:
-            cortesia += float(val)
-    if cortesia:
-        result["efectivo"] = result.get("efectivo", 0.0) + cortesia
+    # When using the raw income_channels (no income_register) the courtesy
+    # amounts are not yet inside efectivo, so we add them now.
+    if not use_register:
+        cortesia = 0.0
+        for key in ("cortesia_direccion", "cortesia_platillos", "cortesias", "cortesia_platillo", "cortesia"):
+            val = register.get(key)
+            if val is not None:
+                cortesia += float(val)
+        if cortesia:
+            result["efectivo"] = result.get("efectivo", 0.0) + cortesia
 
     return result
 
