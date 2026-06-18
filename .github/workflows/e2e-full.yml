@@ -49,24 +49,25 @@ jobs:
           print('\n=== Step 2: Upload bank files to Drive ===')
           bank_folder = '1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL'
 
-          # Create AMEX file (XLS)
-          amex_path = 'workflows/corte_santo/tests/fixtures/santo_corte_sample.xlsx'
-          # We'll create a minimal AMEX CSV for testing
-          import io, csv
-          amex_csv = io.StringIO()
-          writer = csv.writer(amex_csv)
-          writer.writerow(['Fecha', 'Descripción', 'Monto'])
-          writer.writerow(['01/06/2026', 'SPEI RECIBIDO AMEX', '16138.42'])
-          writer.writerow(['01/06/2026', 'REST SANTO HAND ROLL', '121558.62'])
-          amex_data = amex_csv.getvalue().encode()
+          # Create AMEX XLS using openpyxl
+          from openpyxl import Workbook
+          wb = Workbook()
+          ws = wb.active
+          ws.title = 'AMEX'
+          ws.append(['Fecha', 'Descripción', 'Monto'])
+          ws.append(['01/06/2026', 'SPEI RECIBIDO AMEX', 16138.42])
+          ws.append(['01/06/2026', 'REST SANTO HAND ROLL', 121558.62])
+          amex_buf = io.BytesIO()
+          wb.save(amex_buf)
+          amex_data = amex_buf.getvalue()
 
           # Upload AMEX
           resp = httpx.post(
               'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
               headers=headers,
               files={
-                  'metadata': (None, json.dumps({'name': 'AMEX SANTO 030626.csv', 'parents': [bank_folder]}), 'application/json'),
-                  'file': ('AMEX SANTO 030626.csv', amex_data, 'text/csv'),
+                  'metadata': (None, json.dumps({'name': 'AMEX SANTO 030626.xls', 'parents': [bank_folder]}), 'application/json'),
+                  'file': ('AMEX SANTO 030626.xls', amex_data, 'application/vnd.ms-excel'),
               },
               timeout=30,
           )
