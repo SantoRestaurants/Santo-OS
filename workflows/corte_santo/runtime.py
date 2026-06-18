@@ -161,7 +161,7 @@ def run_initial_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[s
     outputs = payload.get("workbook_outputs", {})
     dry_run = bool(request.get("dry_run", True))
     channels = _income_channels(payload, workflow_result)
-    if workflow_result.get("status") != "ready_for_approval":
+    if workflow_result.get("status") not in ("ready_for_approval", "requires_review"):
         return pipeline.initial_stage_result(
             workflow_result,
             {"status": "requires_review", "review_reason": "reconciliation_not_ready"},
