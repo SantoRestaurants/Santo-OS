@@ -79,7 +79,7 @@ def _deliver_and_update(
     *,
     required_drive_keys: tuple[str, ...],
 ) -> dict[str, Any]:
-    if result.get("status") not in ("waiting_for_input", "completed"):
+    if result.get("status") not in ("waiting_for_input", "completed", "requires_review"):
         result["notification_delivery"] = {
             "status": "not_attempted",
             "reason": "workflow_stage_requires_review",
