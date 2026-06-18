@@ -406,6 +406,19 @@ def build_revision_document(
     if not isinstance(vta_por_dia_rows, list):
         vta_por_dia_rows = []
 
+    # If vta_por_dia is empty, try to read from Forecast workbook.
+    if not vta_por_dia_rows:
+        forecast_path = (payload.get("workbook_paths") or {}).get("forecast")
+        if forecast_path:
+            try:
+                writer = _load("workbook_writer")
+                forecast_layout = config.get("forecast_layout")
+                vta_por_dia_rows = writer.read_forecast_daily_sales(
+                    forecast_path, layout=forecast_layout
+                )
+            except Exception:
+                pass
+
     normalized_rows = []
     meta_acumulada = 0.0
     venta_acumulada = 0.0

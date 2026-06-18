@@ -20,6 +20,76 @@ YELLOW = "FFFFFF00"
 BLUE = "FF00B0F0"
 
 
+def read_forecast_daily_sales(
+    source_path: str,
+    *,
+    layout: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Read daily sales rows from the Forecast workbook.
+
+    Returns a list of dicts with keys: dia, fecha, meta_vta, venta_real, diferencia.
+    """
+    if load_workbook is None:
+        return []
+    source = Path(source_path)
+    if not source.is_file():
+        return []
+
+    layout = layout if isinstance(layout, dict) else {}
+    date_column = int(layout.get("date_column", 3))  # C
+    meta_column = "D"
+    venta_column = layout.get("venta_real_column", "E")
+    diff_column = "F"
+    data_start = int(layout.get("data_start_row", 4))
+    data_end = int(layout.get("data_end_row", 34))
+
+    wb = load_workbook(source, data_only=True)
+    ws = wb.active
+    rows: list[dict[str, Any]] = []
+
+    for row_idx in range(data_start, data_end + 1):
+        fecha_cell = ws[f"{chr(64 + date_column)}{row_idx}"]
+        fecha_val = fecha_cell.value
+        if fecha_val is None:
+            continue
+        if isinstance(fecha_val, datetime):
+            fecha_str = fecha_val.strftime("%Y-%m-%d")
+            dia_name = _day_name_es(fecha_val.weekday())
+        elif isinstance(fecha_val, date):
+            fecha_str = fecha_val.isoformat()
+            dia_name = _day_name_es(fecha_val.weekday())
+        elif isinstance(fecha_val, str):
+            fecha_str = fecha_val
+            dia_name = str(ws[f"B{row_idx}"].value or "")
+        else:
+            continue
+
+        meta_val = ws[f"{meta_column}{row_idx}"].value
+        venta_val = ws[f"{venta_column}{row_idx}"].value
+        diff_val = ws[f"{diff_column}{row_idx}"].value
+
+        meta = float(meta_val) if meta_val is not None else 0.0
+        venta = float(venta_val) if venta_val is not None else 0.0
+        diff = float(diff_val) if diff_val is not None else (venta - meta)
+
+        if meta > 0 or venta > 0:
+            rows.append({
+                "dia": dia_name,
+                "fecha": fecha_str,
+                "meta_vta": round(meta, 2),
+                "venta_real": round(venta, 2),
+                "diferencia": round(diff, 2),
+            })
+
+    wb.close()
+    return rows
+
+
+def _day_name_es(weekday: int) -> str:
+    names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    return names[weekday] if 0 <= weekday < 7 else ""
+
+
 def _as_date(value: Any) -> date | None:
     if isinstance(value, datetime):
         return value.date()
