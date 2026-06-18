@@ -50,17 +50,18 @@ jobs:
           bank_folder = '1sN9QP54zdwgprH0-LUJwCVLtd4OY9vsL'
 
           # List existing files in the folder
+          query = "'" + bank_folder + "' in parents"
           list_resp = httpx.get(
               'https://www.googleapis.com/drive/v3/files',
-              params={'q': f"'{bank_folder}' in parents", 'fields': 'files(id,name)'},
+              params={'q': query, 'fields': 'files(id,name)'},
               headers=headers,
               timeout=15,
           )
           existing = list_resp.json().get('files', [])
-          print(f'Found {len(existing)} files in Drive folder')
+          print('Found ' + str(len(existing)) + ' files in Drive folder')
           for f in existing:
-              print(f'  Deleting: {f["name"]} ({f["id"]})')
-              httpx.delete(f'https://www.googleapis.com/drive/v3/files/{f["id"]}', headers=headers, timeout=15)
+              print('  Deleting: ' + f['name'] + ' (' + f['id'] + ')')
+              httpx.delete('https://www.googleapis.com/drive/v3/files/' + f['id'], headers=headers, timeout=15)
           print('Old files cleaned')
 
           # Create AMEX XLS using openpyxl
