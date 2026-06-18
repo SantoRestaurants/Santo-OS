@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3,
   HelpCircle,
   Home,
   Menu,
@@ -31,6 +32,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/reviews",
     icon: <ShieldCheck className="h-4 w-4" />,
     dataTour: "nav-reviews",
+  },
+  {
+    label: "Cortes",
+    href: "/cortes",
+    icon: <BarChart3 className="h-4 w-4" />,
+    dataTour: "nav-cortes",
   },
 ];
 
