@@ -129,25 +129,39 @@ export function extractRevisionDocument(corte: CorteDetail): RevisionDocument | 
   const payload = corte.output_payload;
   if (!payload || typeof payload !== "object") return null;
 
-  // The revision_document is stored at different paths depending on the stage
-  const workflowRun = payload.workflow_run as Record<string, unknown> | undefined;
-  if (workflowRun && typeof workflowRun === "object" && "revision_document" in workflowRun) {
-    return workflowRun.revision_document as RevisionDocument;
+  // Direct path (from agent-mail and bank-watcher output)
+  if (payload.revision_document && typeof payload.revision_document === "object") {
+    return payload.revision_document as RevisionDocument;
   }
 
-  // Direct path (from bank-watcher output)
-  if ("revision_document" in payload) {
-    return payload.revision_document as RevisionDocument;
+  // Nested in workflow_run
+  const workflowRun = payload.workflow_run as Record<string, unknown> | undefined;
+  if (workflowRun && typeof workflowRun === "object" && workflowRun.revision_document && typeof workflowRun.revision_document === "object") {
+    return workflowRun.revision_document as RevisionDocument;
   }
 
   // Nested in corte_santo_initial_stage (from agent-mail output)
   const stage = payload.corte_santo_initial_stage as Record<string, unknown> | undefined;
   if (stage && typeof stage === "object") {
     const wr = (stage.workflow_result as Record<string, unknown> | undefined)?.workflow_run as Record<string, unknown> | undefined;
-    if (wr && "revision_document" in wr) {
+    if (wr && wr.revision_document && typeof wr.revision_document === "object") {
       return wr.revision_document as RevisionDocument;
     }
   }
 
+  // Recursive search as fallback
+  return findRevisionDocumentRecursive(payload);
+}
+
+function findRevisionDocumentRecursive(obj: unknown): RevisionDocument | null {
+  if (!obj || typeof obj !== "object") return null;
+  const record = obj as Record<string, unknown>;
+  if (record.revision_document && typeof record.revision_document === "object") {
+    return record.revision_document as RevisionDocument;
+  }
+  for (const value of Object.values(record)) {
+    const found = findRevisionDocumentRecursive(value);
+    if (found) return found;
+  }
   return null;
 }
