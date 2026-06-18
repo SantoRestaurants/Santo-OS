@@ -1,11 +1,11 @@
-import { ArrowLeft, CheckCircle2, MessageSquare, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquare, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/Badge";
 import { HelpTooltip } from "@/components/ui/HelpTooltip";
-import { approveReview, requestCorrection, resolveException } from "./actions";
+import { approveReview, requestCorrection, resolveException, correctValue, retryWorkflow } from "./actions";
 
 const GOLD = "#C9A84C";
 const CREAM = "#E8E0D0";
@@ -31,8 +31,42 @@ function humanizeExceptionType(t: string) {
         missing_mandatory_document: "Falta un documento obligatorio en el corte",
         unclassified_email: "Llegó un email que el sistema no pudo clasificar",
         sender_not_in_allowlist: "Email de un remitente no autorizado",
+        evidence_requires_review: "La evidencia necesita revisión",
+        extraction_requires_review: "La extracción del Excel tuvo problemas",
     };
     return map[t] ?? t.replace(/_/g, " ");
+}
+
+function getExceptionHint(exceptionKey: string): string {
+    if (exceptionKey.includes("vision_extraction_error")) return "Gemini falló al extraer datos de la foto. Podés reintentar o corregir manualmente.";
+    if (exceptionKey.includes("vision_confidence")) return "Gemini no confió en la lectura. Revisá los valores extraídos.";
+    if (exceptionKey.includes("photo_vs_excel")) return "La foto no coincide con el Excel. Corregí el valor correcto abajo.";
+    if (exceptionKey.includes("requires_review")) return "Hay un problema que necesita tu atención.";
+    if (exceptionKey.includes("missing")) return "Falta información. Completá lo que falta.";
+    if (exceptionKey.includes("discrepancy")) return "Hay una diferencia que necesita revisión.";
+    return "";
+}
+
+function getExceptionFields(exceptionKey: string): string[] {
+    if (exceptionKey.includes("amex_photo")) return ["amex"];
+    if (exceptionKey.includes("bancarias_photo")) return ["bancos"];
+    if (exceptionKey.includes("payment_form")) return ["consumo", "propina"];
+    if (exceptionKey.includes("total_real")) return ["total_real", "total_sistema"];
+    return [];
+}
+
+function isRetryable(exceptionKey: string): boolean {
+    return exceptionKey.includes("vision_extraction_error") ||
+        exceptionKey.includes("vision_confidence") ||
+        exceptionKey.includes("drive") ||
+        exceptionKey.includes("requires_review");
+}
+
+function isCorrectable(exceptionKey: string): boolean {
+    return exceptionKey.includes("photo_vs_excel") ||
+        exceptionKey.includes("discrepancy") ||
+        exceptionKey.includes("payment_form") ||
+        exceptionKey.includes("total_real");
 }
 
 function formatDate(iso: string) {
@@ -137,25 +171,80 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
                     </div>
                     <div className="divide-y" style={{ borderColor: "#1a1a1a" }}>
                         {exceptions.length === 0 && <p className="px-5 py-8 text-center text-sm" style={{ color: "#444" }}>Sin problemas detectados — todo en orden.</p>}
-                        {exceptions.map((ex) => (
-                            <div key={ex.id} className="px-5 py-4">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                        <h3 className="text-sm font-medium" style={{ color: CREAM }}>{humanizeExceptionType(ex.exception_type)}</h3>
-                                        <p className="mt-0.5 text-xs" style={{ color: "#666" }}>{formatDate(ex.created_at)}{ex.severity === "high" || ex.severity === "critical" ? " · Prioridad alta" : ""}</p>
+                        {exceptions.map((ex) => {
+                            const details = (ex.details || {}) as Record<string, unknown>;
+                            const hint = getExceptionHint(ex.exception_key || "");
+                            const correctable = isCorrectable(ex.exception_key || "");
+                            const retryable = isRetryable(ex.exception_key || "");
+
+                            return (
+                                <div key={ex.id} className="px-5 py-5">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1">
+                                            <h3 className="text-sm font-semibold" style={{ color: CREAM }}>{humanizeExceptionType(ex.exception_type)}</h3>
+                                            <p className="mt-0.5 text-xs" style={{ color: "#666" }}>{formatDate(ex.created_at)}{ex.severity === "high" || ex.severity === "critical" ? " · Prioridad alta" : ""}</p>
+                                            {hint && <p className="mt-1 text-xs" style={{ color: "#999" }}>{hint}</p>}
+                                            {ex.exception_key && <p className="mt-1 text-[10px] font-mono" style={{ color: "#555" }}>{ex.exception_key}</p>}
+                                        </div>
+                                        <Badge tone={ex.severity === "high" || ex.severity === "critical" ? "red" : "amber"}>
+                                            {ex.severity === "high" || ex.severity === "critical" ? "Urgente" : "Revisar"}
+                                        </Badge>
                                     </div>
-                                    <Badge tone={ex.severity === "high" || ex.severity === "critical" ? "red" : "amber"}>
-                                        {ex.severity === "high" || ex.severity === "critical" ? "Urgente" : "Revisar"}
-                                    </Badge>
+
+                                    {/* Details */}
+                                    {Object.keys(details).length > 0 && (
+                                        <div className="mt-3 rounded-lg border p-3" style={{ borderColor: "#222", background: "#0c0c0c" }}>
+                                            <p className="text-[10px] font-medium" style={{ color: "#666", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "8px" }}>Detalles</p>
+                                            {Object.entries(details).map(([key, val]) => (
+                                                <div key={key} className="flex justify-between py-1 text-xs" style={{ borderBottom: "1px solid #1a1a1a" }}>
+                                                    <span style={{ color: "#666" }}>{key.replace(/_/g, " ")}</span>
+                                                    <span style={{ color: CREAM, fontFamily: "monospace" }}>{typeof val === "number" ? val.toLocaleString("es-MX") : String(val).substring(0, 100)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Action buttons */}
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {/* Correct value */}
+                                        {correctable && ex.workflow_run_id && (
+                                            <form action={correctValue} className="flex items-end gap-2">
+                                                <input type="hidden" name="exceptionId" value={ex.id} />
+                                                <input type="hidden" name="workflowRunId" value={ex.workflow_run_id} />
+                                                <div>
+                                                    <input className="rounded-lg border px-2 py-1.5 text-xs" style={{ borderColor: "#222", background: "#0c0c0c", color: CREAM, width: "80px" }} name="field" placeholder="campo" type="text" />
+                                                </div>
+                                                <div>
+                                                    <input className="rounded-lg border px-2 py-1.5 text-xs" style={{ borderColor: "#222", background: "#0c0c0c", color: CREAM, width: "100px" }} name="value" placeholder="valor" type="text" />
+                                                </div>
+                                                <button className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "#C9A84C44", background: "#C9A84C11", color: GOLD }} type="submit">
+                                                    <Wrench className="h-3 w-3" /> Corregir
+                                                </button>
+                                            </form>
+                                        )}
+
+                                        {/* Retry */}
+                                        {retryable && ex.workflow_run_id && (
+                                            <form action={retryWorkflow}>
+                                                <input type="hidden" name="exceptionId" value={ex.id} />
+                                                <input type="hidden" name="workflowRunId" value={ex.workflow_run_id} />
+                                                <button className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "#5A8AE044", background: "#5A8AE011", color: "#5A8AE0" }} type="submit">
+                                                    <RefreshCw className="h-3 w-3" /> Reintentar
+                                                </button>
+                                            </form>
+                                        )}
+
+                                        {/* Resolve */}
+                                        <form action={resolveException}>
+                                            <input type="hidden" name="exceptionId" value={ex.id} />
+                                            <button className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "#222", background: "#111", color: CREAM }} type="submit">
+                                                <CheckCircle2 className="h-3 w-3" /> Ya lo resolví
+                                            </button>
+                                        </form>
+                                    </div>
                                 </div>
-                                <form action={resolveException} className="mt-3">
-                                    <input type="hidden" name="exceptionId" value={ex.id} />
-                                    <button className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "#222", background: "#111", color: CREAM }} type="submit">
-                                        <CheckCircle2 className="h-3.5 w-3.5" /> Ya lo resolví
-                                    </button>
-                                </form>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </section>
 
