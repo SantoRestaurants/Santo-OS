@@ -416,8 +416,11 @@ def build_revision_document(
                 vta_por_dia_rows = writer.read_forecast_daily_sales(
                     forecast_path, layout=forecast_layout
                 )
-            except Exception:
-                pass
+                import sys
+                print(f"DEBUG: read_forecast_daily_sales returned {len(vta_por_dia_rows)} rows from {forecast_path}", file=sys.stderr)
+            except Exception as e:
+                import sys
+                print(f"DEBUG: read_forecast_daily_sales failed: {e}", file=sys.stderr)
 
     normalized_rows = []
     meta_acumulada = 0.0
