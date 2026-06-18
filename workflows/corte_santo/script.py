@@ -411,9 +411,9 @@ def build_revision_document(
         forecast_path = (payload.get("workbook_paths") or {}).get("forecast")
         if forecast_path:
             try:
-                writer = _load("workbook_writer")
+                from workflows.corte_santo.workbook_writer import read_forecast_daily_sales
                 forecast_layout = config.get("forecast_layout")
-                vta_por_dia_rows = writer.read_forecast_daily_sales(
+                vta_por_dia_rows = read_forecast_daily_sales(
                     forecast_path, layout=forecast_layout
                 )
                 import sys
