@@ -578,7 +578,7 @@ def poll_and_classify(
                         # Persist Corte Santo stage-1 output in Supabase for bank-watcher resume
                         corte_stage = result.get("corte_santo_initial_stage")
                         if corte_stage and corte_stage.get("status") in (
-                            "waiting_for_input", "completed"
+                            "waiting_for_input", "completed", "requires_review"
                         ):
                             wr = corte_stage.get("workflow_result", {}).get("workflow_run", {})
                             inp = wr.get("input_payload", {}) or {}
