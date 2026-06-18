@@ -278,11 +278,8 @@ function CorteCard({ corte }: { corte: CorteDetail }) {
   const formato = revision?.formato_corte;
 
   return (
-    <Link href={`/cortes/${corte.id}`} style={{ textDecoration: "none" }}>
-      <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "border-color 0.2s", cursor: "pointer" }}
-        onMouseEnter={(e) => (e.currentTarget.style.borderColor = GOLD)}
-        onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#222")}
-      >
+    <Link href={`/cortes/${corte.id}`} className="corte-card" style={{ textDecoration: "none" }}>
+      <div className="corte-card-inner" style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "border-color 0.2s", cursor: "pointer" }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: CREAM }}>{formatDate(corte.business_date)}</div>
           <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
@@ -323,9 +320,8 @@ function WorkflowTriggers() {
 function TriggerButton({ label, icon }: { label: string; icon: React.ReactNode }) {
   return (
     <button
+      className="trigger-btn"
       style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 6, background: "#111", border: "1px solid #222", color: CREAM, fontSize: 11, letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer", transition: "border-color 0.2s" }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = GOLD)}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#222")}
     >
       {icon} {label}
     </button>
@@ -349,6 +345,10 @@ export default async function CortesPage() {
 
   return (
     <div style={{ background: "#080808", color: CREAM, minHeight: "100vh", fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
+      <style>{`
+        .corte-card-inner:hover, .corte-card:hover .corte-card-inner { border-color: ${GOLD} !important; }
+        .trigger-btn:hover { border-color: ${GOLD} !important; }
+      `}</style>
       {/* Header */}
       <div style={{ padding: "32px 40px 24px", borderBottom: "1px solid #222", display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
         <div>
