@@ -57,7 +57,13 @@ def _supabase_writer(write: bool) -> tuple[SupabaseWriter | None, str | None]:
     return SupabaseWriter(url=url, service_key=key), None
 
 
-def run_agent_mail_once(*, config_path: str, write: bool, after: str | None = None) -> dict[str, Any]:
+def run_agent_mail_once(
+    *,
+    config_path: str,
+    write: bool,
+    after: str | None = None,
+    force_reprocess: bool = False,
+) -> dict[str, Any]:
     api_key = _env("AGENTMAIL_API_KEY")
     if not api_key:
         return {"status": "requires_review", "requires_review_reason": "agentmail_api_key_missing"}
@@ -80,6 +86,7 @@ def run_agent_mail_once(*, config_path: str, write: bool, after: str | None = No
         drive_config=drive_config,
         after=after or _env("CORTE_SANTO_AGENTMAIL_AFTER") or None,
         dry_run=not write,
+        force_reprocess=force_reprocess,
     )
     reviewed = [
         item
@@ -91,6 +98,7 @@ def run_agent_mail_once(*, config_path: str, write: bool, after: str | None = No
         "processed_count": len(results),
         "requires_review_count": len(reviewed),
         "write_mode": "live" if write else "dry_run",
+        "force_reprocess": force_reprocess,
         "results": results,
     }
 
@@ -336,6 +344,7 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
                     config_path=args.routing_config,
                     write=args.write,
                     after=args.after,
+                    force_reprocess=args.force_reprocess,
                 ),
             }
         )
@@ -372,6 +381,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--business-date")
     parser.add_argument("--after")
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--force-reprocess", action="store_true")
     args = parser.parse_args(argv)
 
     try:

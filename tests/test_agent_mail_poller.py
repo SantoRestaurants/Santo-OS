@@ -290,6 +290,55 @@ def test_poll_and_classify_skips_existing_content_duplicate(monkeypatch) -> None
     assert results[0]["skipped_reason"] == "email_message_already_processed"
 
 
+def test_poll_and_classify_force_reprocess_bypasses_existing_email(monkeypatch) -> None:
+    class FakeClient:
+        def list_messages(self, after=None):
+            return [
+                {
+                    "message_id": "msg-1",
+                    "inbox_id": "santoos@agentmail.to",
+                    "from": "Developer Santo <developer@santorestaurants.com>",
+                    "to": ["santoos@agentmail.to"],
+                    "subject": "SANTO CORTE JUEVES 18 JUNIO 2026",
+                    "timestamp": "2026-06-19T17:34:00Z",
+                    "attachments": [],
+                }
+            ]
+
+    class FakeSupabase:
+        def get_email_message(self, provider, provider_message_id):
+            raise AssertionError("force reprocess should bypass message-id dedupe")
+
+        def get_email_message_by_content_fingerprint(self, fingerprint):
+            raise AssertionError("force reprocess should bypass content dedupe")
+
+        def upsert_email_message(self, record):
+            return {"id": "email-1", **record}
+
+        def insert_event(self, event):
+            return True
+
+        def get_workflow_id(self, workflow_key):
+            return None
+
+    monkeypatch.setattr("services.agent_mail.poller.summarize_email", lambda subject, body: None)
+
+    results = poll_and_classify(
+        FakeClient(),
+        {
+            "confirmed": True,
+            "allowed_senders": ["developer@santorestaurants.com"],
+            "subject_prefixes": {"SANTO CORTE": "corte_santo_daily_sales_reconciliation"},
+        },
+        supabase=FakeSupabase(),
+        dry_run=False,
+        force_reprocess=True,
+    )
+
+    assert results[0]["status"] == "classified"
+    assert results[0]["email_message"]["classification_key"] == "SANTO CORTE"
+
+
 def test_supabase_workflow_run_upsert_uses_conflict_target() -> None:
     seen: dict[str, str] = {}
 

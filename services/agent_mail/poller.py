@@ -364,6 +364,7 @@ def poll_and_classify(
     after: str | None = None,
     dry_run: bool = True,
     drive_config: dict[str, Any] | None = None,
+    force_reprocess: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Poll new messages, classify them, optionally write to Supabase.
@@ -376,7 +377,7 @@ def poll_and_classify(
         intake_input = _agentmail_to_intake_format(msg)
 
         existing_email = None
-        if supabase and not dry_run:
+        if supabase and not dry_run and not force_reprocess:
             existing_email = supabase.get_email_message(
                 provider=str(intake_input.get("provider", "agentmail")),
                 provider_message_id=str(intake_input.get("provider_message_id", "")),
@@ -769,6 +770,7 @@ def main(argv: list[str] | None = None) -> int:
                     client, routing_config, supabase,
                     drive_config=drive_config,
                     after=last_check, dry_run=dry_run,
+                    force_reprocess=False,
                 )
                 if results:
                     last_check = datetime.now(UTC).isoformat()
@@ -781,6 +783,7 @@ def main(argv: list[str] | None = None) -> int:
             client, routing_config, supabase,
             drive_config=drive_config,
             after=args.after, dry_run=dry_run,
+            force_reprocess=False,
         )
         print(json.dumps(results, indent=2, default=str))
         return 0

@@ -41,6 +41,7 @@ def test_run_all_aggregates_requires_review(monkeypatch):
             business_date=None,
             after=None,
             write=False,
+            force_reprocess=False,
         )
     )
 

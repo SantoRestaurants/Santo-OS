@@ -9,6 +9,10 @@ on:
         description: "ISO timestamp for AgentMail after filter (default: 15 min ago)"
         required: false
         default: ""
+      force_reprocess:
+        description: "Reprocess messages even if already recorded (manual use only)"
+        required: false
+        default: "false"
 
 concurrency:
   group: corte-santo-agent-mail
@@ -53,4 +57,5 @@ jobs:
           python -m services.scheduler.corte_santo_cron \
             --job agent-mail \
             --after "$AFTER" \
-            --write
+            --write \
+            ${{ github.event.inputs.force_reprocess == 'true' && '--force-reprocess' || '' }}
