@@ -3,6 +3,7 @@ import httpx
 from services.agent_mail.poller import AgentMailClient
 from services.agent_mail.poller import SupabaseWriter
 from services.agent_mail.poller import poll_and_classify
+from services.agent_mail.intake import intake_email, message_content_fingerprint
 
 
 def test_download_attachment_follows_agentmail_signed_url(monkeypatch) -> None:
@@ -115,6 +116,74 @@ def test_supabase_existing_email_lookup_filters_by_provider_message_id() -> None
     assert "provider_message_id=eq.msg-1" in seen["url"]
 
 
+def test_message_content_fingerprint_matches_forwarded_duplicate() -> None:
+    original = {
+        "inbox_address": "santoos@agentmail.to",
+        "subject": "SANTO CORTE JUEVES 18 JUNIO 2026",
+        "attachments": [
+            {"filename": "SANTO CORTE 18 JUNIO 2026.xlsx", "size": 49220},
+            {"filename": "AMEX 18 JUNIO.jpeg", "size": 255000},
+        ],
+    }
+    forwarded = {
+        **original,
+        "subject": "Fwd: SANTO CORTE JUEVES 18 JUNIO 2026",
+        "attachments": list(reversed(original["attachments"])),
+    }
+
+    assert message_content_fingerprint(original) == message_content_fingerprint(forwarded)
+
+
+def test_intake_records_message_content_fingerprint() -> None:
+    result = intake_email(
+        {
+            "provider": "agentmail",
+            "provider_message_id": "msg-1",
+            "inbox_address": "santoos@agentmail.to",
+            "from_address": "developer@santorestaurants.com",
+            "subject": "SANTO CORTE JUEVES 18 JUNIO 2026",
+            "attachments": [{"filename": "SANTO CORTE 18 JUNIO 2026.xlsx", "size": 49220}],
+        },
+        {
+            "confirmed": True,
+            "allowed_senders": ["developer@santorestaurants.com"],
+            "subject_prefixes": {"SANTO CORTE": "corte_santo_daily_sales_reconciliation"},
+        },
+    )
+
+    assert result["email_message"]["raw_metadata"]["message_content_fingerprint"]
+
+
+def test_supabase_existing_email_lookup_filters_by_content_fingerprint() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "email-1",
+                    "provider": "agentmail",
+                    "provider_message_id": "msg-1",
+                    "processing_status": "classified",
+                }
+            ],
+            request=request,
+        )
+
+    writer = SupabaseWriter("https://supabase.test", "service-key")
+    writer.http = httpx.Client(
+        base_url="https://supabase.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = writer.get_email_message_by_content_fingerprint("fingerprint-1")
+
+    assert result and result["id"] == "email-1"
+    assert "raw_metadata-%3E%3Emessage_content_fingerprint=eq.fingerprint-1" in seen["url"]
+
+
 def test_poll_and_classify_skips_existing_live_email(monkeypatch) -> None:
     class FakeClient:
         def list_messages(self, after=None):
@@ -151,8 +220,62 @@ def test_poll_and_classify_skips_existing_live_email(monkeypatch) -> None:
                 "processing_status": "classified",
             }
 
+        def get_email_message_by_content_fingerprint(self, fingerprint):
+            raise AssertionError("message id match should short-circuit content fingerprint lookup")
+
     def fail_automation(**kwargs):
         raise AssertionError("corte automation must not run for skipped messages")
+
+    monkeypatch.setattr("services.agent_mail.poller.run_corte_initial_from_message", fail_automation)
+
+    results = poll_and_classify(
+        FakeClient(),
+        {"confirmed": True, "subject_prefixes": {"SANTO CORTE": "corte_santo_daily_sales_reconciliation"}},
+        supabase=FakeSupabase(),
+        dry_run=False,
+    )
+
+    assert results[0]["status"] == "skipped"
+    assert results[0]["skipped_reason"] == "email_message_already_processed"
+
+
+def test_poll_and_classify_skips_existing_content_duplicate(monkeypatch) -> None:
+    class FakeClient:
+        def list_messages(self, after=None):
+            return [
+                {
+                    "message_id": "msg-2",
+                    "inbox_id": "santoos@agentmail.to",
+                    "from": "Developer Santo <developer@santorestaurants.com>",
+                    "to": ["santoos@agentmail.to"],
+                    "subject": "Fwd: SANTO CORTE JUEVES 18 JUNIO 2026",
+                    "timestamp": "2026-06-19T20:56:00Z",
+                    "attachments": [
+                        {
+                            "attachment_id": "att-1",
+                            "filename": "SANTO CORTE 18 JUNIO 2026.xlsx",
+                            "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            "size": 49220,
+                        }
+                    ],
+                }
+            ]
+
+    class FakeSupabase:
+        def get_email_message(self, provider, provider_message_id):
+            return None
+
+        def get_email_message_by_content_fingerprint(self, fingerprint):
+            assert fingerprint
+            return {
+                "id": "email-1",
+                "provider": "agentmail",
+                "provider_message_id": "msg-1",
+                "processing_status": "classified",
+            }
+
+    def fail_automation(**kwargs):
+        raise AssertionError("corte automation must not run for duplicate content")
 
     monkeypatch.setattr("services.agent_mail.poller.run_corte_initial_from_message", fail_automation)
 

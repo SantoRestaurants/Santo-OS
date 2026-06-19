@@ -76,6 +76,54 @@ def _email_idempotency_key(email: dict[str, Any]) -> str:
     )
 
 
+def _canonical_subject(subject: str) -> str:
+    forward_reply_prefixes = ("RE:", "REï¼š", "FWD:", "FWDï¼š", "R:", "ENC:", "RV:", "RES:")
+    raw = subject.strip()
+    while raw:
+        normalized = raw.upper()
+        matched = False
+        for prefix in forward_reply_prefixes:
+            if normalized.startswith(prefix):
+                raw = raw[len(prefix):].strip().lstrip("-").strip()
+                matched = True
+                break
+        if not matched:
+            break
+    return " ".join(raw.upper().split())
+
+
+def message_content_fingerprint(email: dict[str, Any]) -> str:
+    """Stable duplicate guard for forwarded/original copies of the same intake package."""
+    attachments = email.get("attachments", [])
+    normalized_attachments = []
+    if isinstance(attachments, list):
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            normalized_attachments.append(
+                {
+                    "filename": str(attachment.get("filename", "")).strip().lower(),
+                    "size": attachment.get("size"),
+                    "content_type": str(attachment.get("content_type", "")).strip().lower(),
+                }
+            )
+    normalized_attachments = sorted(
+        normalized_attachments,
+        key=lambda item: (
+            str(item.get("filename", "")),
+            str(item.get("size", "")),
+            str(item.get("content_type", "")),
+        ),
+    )
+    return _stable_hash(
+        {
+            "inbox_address": str(email.get("inbox_address", "")).strip().lower(),
+            "subject": _canonical_subject(str(email.get("subject") or "")),
+            "attachments": normalized_attachments,
+        }
+    )
+
+
 def _event(event_type: str, severity: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "aggregate_type": "email_message",
@@ -104,6 +152,7 @@ def _base_email_message(email: dict[str, Any], processing_status: str) -> dict[s
         "requires_review_reason": None,
         "raw_metadata": {
             "idempotency_key": _email_idempotency_key(email),
+            "message_content_fingerprint": message_content_fingerprint(email),
             "attachments": email.get("attachments", []),
             "labels": email.get("labels", []),
         },

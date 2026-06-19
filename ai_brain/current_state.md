@@ -222,6 +222,12 @@ resume in a fresh conversation.
   record before classification, attachment download, Drive writes or Corte
   automation, so messages already handled once are skipped on later lookback
   passes.
+- Agent Mail polling explicitly requests `include_unauthenticated=true` so
+  trusted allowed senders whose domains are missing inbound auth headers can
+  still enter SantoOS review gates. Intake also stores a normalized
+  `message_content_fingerprint` based on subject and attachment metadata so a
+  forwarded copy of the same Corte package is skipped after the original has
+  been recorded.
 
 ## Processed Context
 

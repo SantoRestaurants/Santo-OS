@@ -27,7 +27,7 @@ from typing import Any
 
 import httpx
 
-from services.agent_mail.intake import intake_email
+from services.agent_mail.intake import intake_email, message_content_fingerprint
 from services.agent_mail.corte_santo_automation import run_corte_initial_from_message
 from services.ai.classifier import classify_email, summarize_email
 from services.drive_connector.connector import save_document
@@ -137,6 +137,32 @@ class SupabaseWriter:
         if resp.status_code >= 400:
             logger.warning(
                 "Failed to check existing email_message: %s %s",
+                resp.status_code,
+                resp.text,
+            )
+            return None
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return data[0]
+        if isinstance(data, dict) and data.get("id"):
+            return data
+        return None
+
+    def get_email_message_by_content_fingerprint(self, fingerprint: str) -> dict[str, Any] | None:
+        """Return an existing email_message for a forwarded/original duplicate package."""
+        if not fingerprint:
+            return None
+        resp = self.http.get(
+            "/rest/v1/email_messages",
+            params={
+                "raw_metadata->>message_content_fingerprint": f"eq.{fingerprint}",
+                "select": "id,provider,provider_message_id,processing_status,requires_review_reason,subject",
+                "limit": "1",
+            },
+        )
+        if resp.status_code >= 400:
+            logger.warning(
+                "Failed to check duplicate email content fingerprint: %s %s",
                 resp.status_code,
                 resp.text,
             )
@@ -355,6 +381,10 @@ def poll_and_classify(
                 provider=str(intake_input.get("provider", "agentmail")),
                 provider_message_id=str(intake_input.get("provider_message_id", "")),
             )
+            if existing_email is None:
+                existing_email = supabase.get_email_message_by_content_fingerprint(
+                    message_content_fingerprint(intake_input)
+                )
         if existing_email is not None:
             result = {
                 "status": "skipped",
