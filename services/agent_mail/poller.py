@@ -73,7 +73,13 @@ class AgentMailClient:
         )
 
     def list_messages(self, after: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"limit": limit}
+        params: dict[str, Any] = {
+            "limit": limit,
+            # AgentMail excludes unauthenticated inbound messages from normal
+            # lists unless they are requested explicitly. Santo still accepts
+            # known allowed senders and routes them through our own review gates.
+            "include_unauthenticated": "true",
+        }
         if after:
             params["after"] = after
         resp = self.http.get(f"/inboxes/{self.inbox_id}/messages", params=params)

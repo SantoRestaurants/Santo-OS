@@ -30,6 +30,25 @@ def test_download_attachment_follows_agentmail_signed_url(monkeypatch) -> None:
     assert client.download_attachment("msg", "att") == b"real-attachment"
 
 
+def test_list_messages_includes_unauthenticated_label() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"messages": []}, request=request)
+
+    client = AgentMailClient("key", "inbox")
+    client.http = httpx.Client(
+        base_url="https://api.agentmail.to/v0",
+        headers={"Authorization": "Bearer key"},
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.list_messages(after="2026-06-19T00:00:00Z") == []
+    assert "include_unauthenticated=true" in seen["url"]
+    assert "after=2026-06-19T00%3A00%3A00Z" in seen["url"]
+
+
 def test_supabase_email_upsert_uses_conflict_target() -> None:
     seen: dict[str, str] = {}
 
