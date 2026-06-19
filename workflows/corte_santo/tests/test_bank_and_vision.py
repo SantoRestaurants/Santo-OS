@@ -93,6 +93,7 @@ def test_amex_prompt_requires_summing_multiple_tickets() -> None:
 
     assert "mas de un ticket" in prompt
     assert "sumar todos los tickets visibles" in prompt
+    assert "No sumes propina otra vez" in prompt
 
 
 def test_corte_run_skips_vision_when_disabled(monkeypatch, tmp_path: Path) -> None:

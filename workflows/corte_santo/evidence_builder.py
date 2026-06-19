@@ -204,7 +204,14 @@ def build_canonical_evidence(
     cxc_channel = None
     cxc_doc = vision.get("cxc")
     cxc_total = 0.0
-    if cxc_doc and cxc_doc.get("status") == "extracted":
+    if cxc_doc and cxc_doc.get("status") != "extracted":
+        exceptions.append(
+            _exception(
+                "cxc_vision_requires_review",
+                {"reason": cxc_doc.get("review_reason")},
+            )
+        )
+    elif cxc_doc and cxc_doc.get("status") == "extracted":
         cxc_values = cxc_doc.get("values") or {}
         cxc_consumo = _amount(cxc_values.get("consumo")) or 0.0
         cxc_propina = _amount(cxc_values.get("propina")) or 0.0

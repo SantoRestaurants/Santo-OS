@@ -119,3 +119,22 @@ def test_cxc_adjustment_is_checked_against_bancos_difference() -> None:
         and check["cxc_total"] == 6714.0
         for check in result["checks"]
     )
+
+
+def test_cxc_vision_failure_requires_review() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 83564.65, "propina": 0.0}},
+        {"bancos": {"consumo": 76850.65, "propina": 0.0}},
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "requires_review",
+                "review_reason": "vision_extraction_error:HTTPStatusError:429",
+                "values": {},
+            }
+        ],
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["status"] == "requires_review"
+    assert result["exceptions"][0]["exception_key"] == "cxc_vision_requires_review"

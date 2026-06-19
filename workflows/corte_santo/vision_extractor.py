@@ -117,6 +117,8 @@ def _build_prompt(document_type: str) -> str:
             "Debes sumar todos los tickets visibles: consumo total, propina total "
             "y total general.\n"
             "- No extraigas solo el ticket mas grande si hay otro ticket visible.\n"
+            "- Para 'total', suma solo la linea TOTAL de cada ticket. No sumes "
+            "propina otra vez si ya esta incluida en el total del ticket.\n"
         )
     elif document_type == "tira":
         extra_rules = (
