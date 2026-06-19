@@ -1,0 +1,39 @@
+name: Test AgentMail API
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install httpx
+      - name: Test API
+        env:
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+        run: |
+          python -c "
+          import httpx, os, json
+
+          api_key = os.environ['AGENTMAIL_API_KEY']
+          headers = {'Authorization': f'Bearer {api_key}'}
+
+          # List messages
+          resp = httpx.get(
+              'https://api.agentmail.to/v0/inboxes/santoos@agentmail.to/messages',
+              headers=headers,
+              params={'limit': 50},
+              timeout=15,
+          )
+          print('Status:', resp.status_code)
+          data = resp.json()
+          messages = data.get('messages', [])
+          print(f'Found {len(messages)} messages')
+          for msg in messages:
+              print(f'  - {msg.get(\"subject\", \"?\")} | {msg.get(\"from\", \"?\")} | status={msg.get(\"status\", \"?\")} | labels={msg.get(\"labels\", [])}')
+          "
