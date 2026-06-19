@@ -73,7 +73,7 @@ def _document_type(filename: str) -> str:
         return "amex"
     if "DETALLE" in normalized and "EFECTIVO" in normalized:
         return "detalle_efectivo"
-    if "CXC" in normalized or ("AJUSTE" in normalized and normalized.endswith((".JPG", ".JPEG", ".PNG"))):
+    if "CXC" in normalized:
         return "cxc"
     if "DESCUENTO" in normalized:
         return "discounts"
