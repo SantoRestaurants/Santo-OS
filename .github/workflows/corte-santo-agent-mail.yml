@@ -40,7 +40,7 @@ jobs:
           GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
           GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
           SANTO_CRON_WRITE: "true"
-          CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES: "15"
+          CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES: "60"
         run: |
           AFTER="${{ github.event.inputs.after }}"
           if [ -z "$AFTER" ]; then
