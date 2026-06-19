@@ -110,9 +110,10 @@ def _build_prompt(document_type: str) -> str:
     fields = schema.get("fields", [])
     description = schema.get("description", "")
     extra_rules = ""
-    if document_type == "bancarias":
+    if document_type in ("amex", "bancarias"):
+        label = "AMEX" if document_type == "amex" else "bancarias"
         extra_rules = (
-            "- La foto puede contener mas de un ticket/cierre bancario. "
+            f"- La foto puede contener mas de un ticket/cierre {label}. "
             "Debes sumar todos los tickets visibles: consumo total, propina total "
             "y total general.\n"
             "- No extraigas solo el ticket mas grande si hay otro ticket visible.\n"
@@ -127,8 +128,10 @@ def _build_prompt(document_type: str) -> str:
         )
     elif document_type == "cxc":
         extra_rules = (
+            "- La foto puede contener mas de un ajuste/movimiento CXC. "
+            "Debes sumar todos los movimientos visibles.\n"
             "- 'consumo' es el monto sin propina. 'propina' es la propina incluida. "
-            "'monto_total' es consumo + propina.\n"
+            "'monto_total' es consumo + propina para todos los movimientos visibles.\n"
             "- 'canal' es la forma de pago: 'debito', 'credito', 'efectivo', 'amex', etc. "
             "Mapea el texto de la foto al canal mas cercano.\n"
             "- Si no ves propina, pon propina en 0 y monto_total igual a consumo.\n"

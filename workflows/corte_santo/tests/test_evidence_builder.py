@@ -97,3 +97,25 @@ def test_photo_total_mismatch_requires_review() -> None:
 
     assert result["status"] == "requires_review"
     assert result["exceptions"][0]["exception_key"] == "amex_photo_vs_excel_discrepancy"
+
+
+def test_cxc_adjustment_is_checked_against_bancos_difference() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 83564.65, "propina": 0.0}},
+        {"bancos": {"consumo": 76850.65, "propina": 0.0}},
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {"monto_total": 6714.0, "canal": "debito"},
+            }
+        ],
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert any(
+        check["check_key"] == "cxc_adjustment_vs_bancos_difference"
+        and check["status"] == "ok"
+        and check["cxc_total"] == 6714.0
+        for check in result["checks"]
+    )

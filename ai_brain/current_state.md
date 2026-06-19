@@ -228,6 +228,10 @@ resume in a fresh conversation.
   `message_content_fingerprint` based on subject and attachment metadata so a
   forwarded copy of the same Corte package is skipped after the original has
   been recorded.
+- Corte evidence handling now classifies `AJUSTE DE CXC...`/`CXC...` photos as
+  `cxc` vision inputs, checks the extracted CXC total against the Bancos
+  reconciliation difference, and prompts AMEX vision to sum all visible AMEX
+  tickets instead of extracting only one ticket.
 
 ## Processed Context
 

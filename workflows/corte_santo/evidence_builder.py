@@ -55,6 +55,15 @@ def _optional_group_global(groups: dict[str, Any], key: str) -> float | None:
     return _global(groups.get(key)) if isinstance(groups.get(key), dict) else None
 
 
+def _cxc_total(values: dict[str, Any]) -> float:
+    total = _amount(values.get("monto_total"))
+    if total is not None:
+        return total
+    consumo = _amount(values.get("consumo")) or 0.0
+    propina = _amount(values.get("propina")) or 0.0
+    return round(consumo + propina, 2)
+
+
 def _vision_by_type(vision_documents: Any) -> dict[str, dict[str, Any]]:
     if not isinstance(vision_documents, list):
         return {}
@@ -194,10 +203,12 @@ def build_canonical_evidence(
     cxc_propina = 0.0
     cxc_channel = None
     cxc_doc = vision.get("cxc")
+    cxc_total = 0.0
     if cxc_doc and cxc_doc.get("status") == "extracted":
         cxc_values = cxc_doc.get("values") or {}
         cxc_consumo = _amount(cxc_values.get("consumo")) or 0.0
         cxc_propina = _amount(cxc_values.get("propina")) or 0.0
+        cxc_total = _cxc_total(cxc_values)
         canal_raw = cxc_values.get("canal")
         if isinstance(canal_raw, str):
             canal_lower = canal_raw.lower().strip()
@@ -217,6 +228,20 @@ def build_canonical_evidence(
                 cxc_channel = "uber"
             elif "rappi" in canal_lower:
                 cxc_channel = "rappi"
+
+    if cxc_total > 0:
+        bancos_difference = round(_global(terminal.get("bancos")) - _global(sistema.get("bancos")), 2)
+        cxc_difference = round(abs(bancos_difference) - cxc_total, 2)
+        checks.append(
+            {
+                "check_key": "cxc_adjustment_vs_bancos_difference",
+                "bancos_difference": bancos_difference,
+                "cxc_total": cxc_total,
+                "difference": cxc_difference,
+                "channel": cxc_channel,
+                "status": "ok" if abs(cxc_difference) <= tolerance else "requires_review",
+            }
+        )
 
     debit_channel = _channel_amount(income_channels, "debito")
     if debit_channel is None:

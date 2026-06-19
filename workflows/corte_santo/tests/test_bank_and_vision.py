@@ -88,6 +88,13 @@ def test_vision_batch_status_aggregates() -> None:
     assert out["documents"][0]["document_type"] == "tira"
 
 
+def test_amex_prompt_requires_summing_multiple_tickets() -> None:
+    prompt = vision._build_prompt("amex")
+
+    assert "mas de un ticket" in prompt
+    assert "sumar todos los tickets visibles" in prompt
+
+
 def test_corte_run_skips_vision_when_disabled(monkeypatch, tmp_path: Path) -> None:
     called = []
     monkeypatch.setattr(script, "_load_sibling_module", lambda name: called.append(name) or None)
