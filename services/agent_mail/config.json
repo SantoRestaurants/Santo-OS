@@ -6,7 +6,9 @@
     "allowed_senders": [
         "developer@santorestaurants.com",
         "dantecastelaou@gmail.com",
-        "santoos@agentmail.to"
+        "santoos@agentmail.to",
+        "caja@santorestaurants.com",
+        "audit@santorestaurants.com"
     ],
     "subject_prefixes": {
         "[CORTE]": "corte_santo_daily_sales_reconciliation",
