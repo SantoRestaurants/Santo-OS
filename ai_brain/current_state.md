@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-06-16.
+Last updated: 2026-06-19.
 
 ## Active Handoff
 
@@ -216,6 +216,12 @@ resume in a fresh conversation.
   requires `CRON_SECRET`. Live writes require `SANTO_CRON_WRITE=true`; otherwise
   the scheduler runs dry. Full bank-stage automation still requires persisting
   the stage-1 expected-collections/resume payload in Supabase.
+- GitHub Actions Agent Mail intake runs every 15 minutes with a 60-minute
+  lookback window and a workflow-level concurrency lock. The poller checks
+  Supabase for an existing `email_messages(provider, provider_message_id)`
+  record before classification, attachment download, Drive writes or Corte
+  automation, so messages already handled once are skipped on later lookback
+  passes.
 
 ## Processed Context
 

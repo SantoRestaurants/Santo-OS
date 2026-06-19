@@ -73,7 +73,7 @@ class AgentMailClient:
         )
 
     def list_messages(self, after: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"limit": limit, "status": "unread"}
+        params: dict[str, Any] = {"limit": limit}
         if after:
             params["after"] = after
         resp = self.http.get(f"/inboxes/{self.inbox_id}/messages", params=params)
@@ -116,6 +116,31 @@ class SupabaseWriter:
             },
             timeout=30.0,
         )
+
+    def get_email_message(self, provider: str, provider_message_id: str) -> dict[str, Any] | None:
+        """Return an existing email_message, if this provider message was already handled."""
+        resp = self.http.get(
+            "/rest/v1/email_messages",
+            params={
+                "provider": f"eq.{provider}",
+                "provider_message_id": f"eq.{provider_message_id}",
+                "select": "id,provider,provider_message_id,processing_status,requires_review_reason",
+                "limit": "1",
+            },
+        )
+        if resp.status_code >= 400:
+            logger.warning(
+                "Failed to check existing email_message: %s %s",
+                resp.status_code,
+                resp.text,
+            )
+            return None
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return data[0]
+        if isinstance(data, dict) and data.get("id"):
+            return data
+        return None
 
     def upsert_email_message(self, record: dict[str, Any]) -> dict[str, Any] | None:
         """Upsert into email_messages. Returns the record on success."""
@@ -317,6 +342,32 @@ def poll_and_classify(
 
     for msg in messages:
         intake_input = _agentmail_to_intake_format(msg)
+
+        existing_email = None
+        if supabase and not dry_run:
+            existing_email = supabase.get_email_message(
+                provider=str(intake_input.get("provider", "agentmail")),
+                provider_message_id=str(intake_input.get("provider_message_id", "")),
+            )
+        if existing_email is not None:
+            result = {
+                "status": "skipped",
+                "skipped_reason": "email_message_already_processed",
+                "email_message": existing_email,
+                "command": None,
+                "events": [],
+                "_source_message_id": msg.get("message_id"),
+                "_source_subject": msg.get("subject"),
+                "_source_from": msg.get("from"),
+            }
+            results.append(result)
+            logger.info(
+                "Skipped already processed AgentMail message: subject=%r message_id=%s",
+                msg.get("subject"),
+                intake_input.get("provider_message_id"),
+            )
+            continue
+
         result = intake_email(intake_input, routing_config)
 
         # AI classification for unclassified emails

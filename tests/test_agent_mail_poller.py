@@ -2,6 +2,7 @@ import httpx
 
 from services.agent_mail.poller import AgentMailClient
 from services.agent_mail.poller import SupabaseWriter
+from services.agent_mail.poller import poll_and_classify
 
 
 def test_download_attachment_follows_agentmail_signed_url(monkeypatch) -> None:
@@ -61,6 +62,90 @@ def test_supabase_email_upsert_uses_conflict_target() -> None:
 
     assert result == {"id": "email-1"}
     assert "on_conflict=provider%2Cprovider_message_id" in seen["url"]
+
+
+def test_supabase_existing_email_lookup_filters_by_provider_message_id() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "email-1",
+                    "provider": "agentmail",
+                    "provider_message_id": "msg-1",
+                    "processing_status": "classified",
+                }
+            ],
+            request=request,
+        )
+
+    writer = SupabaseWriter("https://supabase.test", "service-key")
+    writer.http = httpx.Client(
+        base_url="https://supabase.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = writer.get_email_message("agentmail", "msg-1")
+
+    assert result and result["id"] == "email-1"
+    assert "/rest/v1/email_messages" in seen["url"]
+    assert "provider=eq.agentmail" in seen["url"]
+    assert "provider_message_id=eq.msg-1" in seen["url"]
+
+
+def test_poll_and_classify_skips_existing_live_email(monkeypatch) -> None:
+    class FakeClient:
+        def list_messages(self, after=None):
+            return [
+                {
+                    "message_id": "msg-1",
+                    "inbox_id": "santoos@agentmail.to",
+                    "from": "Developer Santo <developer@santorestaurants.com>",
+                    "to": ["santoos@agentmail.to"],
+                    "subject": "SANTO CORTE JUEVES 18 JUNIO 2026",
+                    "timestamp": "2026-06-19T17:34:00Z",
+                    "attachments": [
+                        {
+                            "attachment_id": "att-1",
+                            "filename": "SANTO CORTE 18 JUNIO 2026.xlsx",
+                            "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            "size": 48100,
+                        }
+                    ],
+                }
+            ]
+
+        def download_attachment(self, message_id, attachment_id):
+            raise AssertionError("attachments must not be downloaded for skipped messages")
+
+    class FakeSupabase:
+        def get_email_message(self, provider, provider_message_id):
+            assert provider == "agentmail"
+            assert provider_message_id == "msg-1"
+            return {
+                "id": "email-1",
+                "provider": provider,
+                "provider_message_id": provider_message_id,
+                "processing_status": "classified",
+            }
+
+    def fail_automation(**kwargs):
+        raise AssertionError("corte automation must not run for skipped messages")
+
+    monkeypatch.setattr("services.agent_mail.poller.run_corte_initial_from_message", fail_automation)
+
+    results = poll_and_classify(
+        FakeClient(),
+        {"confirmed": True, "subject_prefixes": {"SANTO CORTE": "corte_santo_daily_sales_reconciliation"}},
+        supabase=FakeSupabase(),
+        dry_run=False,
+    )
+
+    assert results[0]["status"] == "skipped"
+    assert results[0]["skipped_reason"] == "email_message_already_processed"
 
 
 def test_supabase_workflow_run_upsert_uses_conflict_target() -> None:

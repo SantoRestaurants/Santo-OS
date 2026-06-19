@@ -10,6 +10,10 @@ on:
         required: false
         default: ""
 
+concurrency:
+  group: corte-santo-agent-mail
+  cancel-in-progress: false
+
 jobs:
   agent-mail:
     runs-on: ubuntu-latest
@@ -44,7 +48,7 @@ jobs:
         run: |
           AFTER="${{ github.event.inputs.after }}"
           if [ -z "$AFTER" ]; then
-            AFTER=$(date -u -d '15 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+            AFTER=$(date -u -d '60 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
           fi
           python -m services.scheduler.corte_santo_cron \
             --job agent-mail \
