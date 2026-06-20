@@ -327,3 +327,11 @@ Activate and validate the Corte two-stage runtime in production:
   - The Drive watcher waits for both bank files and rejects duplicates.
   - Runtime delivery gates prevent success notifications on reviewed stages and
     downgrade failed Drive updates to `requires_review`.
+- Corte Agent Mail production verification:
+  - Vision extraction now caches successful image reads by attachment
+    `source_hash`, document type, provider/model and prompt/schema hash.
+  - GitHub Actions restores `.cache/corte_santo_vision` for Corte Agent Mail,
+    bank watcher and manual reprocess runs.
+  - Run `27882873008` on `2026-06-20` used the updated production
+    `GEMINI_API_KEY` metadata but still received Gemini `429 Too Many Requests`
+    from `gemini-2.5-flash`; the run completed as `requires_review`.
