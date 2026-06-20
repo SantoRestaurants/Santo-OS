@@ -96,6 +96,42 @@ def test_amex_prompt_requires_summing_multiple_tickets() -> None:
     assert "No sumes propina otra vez" in prompt
 
 
+def test_vision_uses_success_cache(monkeypatch, tmp_path: Path) -> None:
+    image = tmp_path / "amex.jpeg"
+    image.write_bytes(b"fake-image")
+    calls = []
+
+    def fake_call(cfg, prompt, media_type, b64):
+        calls.append((cfg, prompt, media_type, b64))
+        return {
+            "values": {"consumo": 100.0, "propina": 10.0, "total": 110.0},
+            "confidence": 0.99,
+            "notes": "ok",
+        }
+
+    monkeypatch.setenv("TEST_GEMINI_KEY", "key")
+    monkeypatch.setattr(vision, "_call_gemini", fake_call)
+    config = {
+        "vision_extraction": {
+            "provider": "gemini",
+            "model": "gemini-test",
+            "api_key_env": "TEST_GEMINI_KEY",
+            "confidence_threshold": 0.9,
+            "cache_enabled": True,
+            "cache_dir": str(tmp_path / "cache"),
+        }
+    }
+
+    first = vision.extract_document("amex", str(image), config, source_hash="hash-amex")
+    second = vision.extract_document("amex", str(image), config, source_hash="hash-amex")
+
+    assert first["status"] == "extracted"
+    assert first["cache"] == "miss"
+    assert second["status"] == "extracted"
+    assert second["cache"] == "hit"
+    assert len(calls) == 1
+
+
 def test_corte_run_skips_vision_when_disabled(monkeypatch, tmp_path: Path) -> None:
     called = []
     monkeypatch.setattr(script, "_load_sibling_module", lambda name: called.append(name) or None)

@@ -25,6 +25,7 @@ Safety / P0 alignment:
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import mimetypes
 import os
@@ -95,6 +96,9 @@ def _vision_config(config: dict[str, Any]) -> dict[str, Any]:
         "retry_attempts": int(vision.get("retry_attempts", 3)),
         "retry_backoff_seconds": float(vision.get("retry_backoff_seconds", 10)),
         "request_delay_seconds": float(vision.get("request_delay_seconds", 0)),
+        "cache_enabled": bool(vision.get("cache_enabled", True)),
+        "cache_dir": os.environ.get("CORTE_VISION_CACHE_DIR", "")
+        or vision.get("cache_dir", ".cache/corte_santo_vision"),
         "api_key": api_key,
     }
 
@@ -163,6 +167,61 @@ def _parse_model_json(text: str) -> dict[str, Any]:
     if start == -1 or end == -1 or end <= start:
         raise ValueError("model_response_not_json")
     return json.loads(text[start : end + 1])
+
+
+def _cache_key(cfg: dict[str, Any], document_type: str, source_hash: str, prompt: str) -> str:
+    parts = {
+        "source_hash": source_hash,
+        "document_type": document_type,
+        "provider": cfg.get("provider"),
+        "model": cfg.get("model"),
+        "prompt_hash": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        "schema_hash": hashlib.sha256(
+            json.dumps(DOCUMENT_SCHEMAS.get(document_type, {}), sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+    }
+    raw = json.dumps(parts, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _cache_path(cfg: dict[str, Any], cache_key: str) -> Path:
+    return Path(str(cfg["cache_dir"])) / f"{cache_key}.json"
+
+
+def _read_cache(cfg: dict[str, Any], cache_key: str) -> dict[str, Any] | None:
+    if not cfg.get("cache_enabled"):
+        return None
+    path = _cache_path(cfg, cache_key)
+    if not path.is_file():
+        return None
+    try:
+        cached = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    result = cached.get("result") if isinstance(cached, dict) else None
+    if not isinstance(result, dict) or result.get("status") != "extracted":
+        return None
+    result = dict(result)
+    result["cache"] = "hit"
+    return result
+
+
+def _write_cache(cfg: dict[str, Any], cache_key: str, result: dict[str, Any], source_hash: str) -> None:
+    if not cfg.get("cache_enabled") or result.get("status") != "extracted":
+        return
+    path = _cache_path(cfg, cache_key)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "source_hash": source_hash,
+            "provider": cfg.get("provider"),
+            "model": cfg.get("model"),
+            "cached_at": int(time.time()),
+            "result": result,
+        }
+        path.write_text(json.dumps(payload, sort_keys=True, ensure_ascii=True), encoding="utf-8")
+    except OSError:
+        return
 
 
 def _call_anthropic(cfg: dict[str, Any], prompt: str, media_type: str, b64: str) -> dict[str, Any]:
@@ -248,6 +307,8 @@ def extract_document(
     document_type: str,
     image_path: str,
     config: dict[str, Any] | None = None,
+    *,
+    source_hash: str | None = None,
 ) -> dict[str, Any]:
     """
     Extract structured values from one corte image via the configured vision model.
@@ -291,6 +352,11 @@ def extract_document(
     try:
         media_type, b64 = _encode_image(path)
         prompt = _build_prompt(document_type)
+        effective_source_hash = source_hash or hashlib.sha256(path.read_bytes()).hexdigest()
+        cache_key = _cache_key(cfg, document_type, effective_source_hash, prompt)
+        cached = _read_cache(cfg, cache_key)
+        if cached is not None:
+            return cached
         if cfg["provider"] == "anthropic":
             result = _call_anthropic(cfg, prompt, media_type, b64)
         elif cfg["provider"] == "gemini":
@@ -314,14 +380,17 @@ def extract_document(
     if confidence_f < cfg["confidence_threshold"]:
         return review("vision_confidence_below_threshold", values=values, confidence=confidence_f, notes=notes)
 
-    return {
+    extracted = {
         "document_type": document_type,
         "status": "extracted",
         "values": values,
         "confidence": confidence_f,
         "review_reason": None,
         "notes": notes,
+        "cache": "miss",
     }
+    _write_cache(cfg, cache_key, extracted, effective_source_hash)
+    return extracted
 
 
 def extract_documents(images: list[dict[str, Any]], config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -345,6 +414,7 @@ def extract_documents(images: list[dict[str, Any]], config: dict[str, Any] | Non
                 str(item.get("document_type", "")),
                 str(item.get("image_path", "")),
                 config,
+                source_hash=str(item.get("source_hash") or "") or None,
             )
         )
 

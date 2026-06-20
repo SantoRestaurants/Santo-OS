@@ -69,6 +69,8 @@
     "api_key_env": "GEMINI_API_KEY",
     "confidence_threshold": 0.9,
     "max_tokens": 4096,
+    "cache_enabled": true,
+    "cache_dir": ".cache/corte_santo_vision",
     "retry_attempts": 4,
     "retry_backoff_seconds": 15,
     "request_delay_seconds": 2

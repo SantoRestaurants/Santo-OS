@@ -709,6 +709,7 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 {
                     "document_type": doc.get("document_type"),
                     "image_path": doc.get("source_path"),
+                    "source_hash": doc.get("source_hash"),
                 }
                 for doc in documents
                 if isinstance(doc, dict)

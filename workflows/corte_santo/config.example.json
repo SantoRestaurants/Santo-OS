@@ -51,7 +51,9 @@
     "endpoint": "https://api.anthropic.com/v1/messages",
     "model": "[CONFIRM]",
     "api_key_env": "CORTE_VISION_API_KEY",
-    "confidence_threshold": 0.9
+    "confidence_threshold": 0.9,
+    "cache_enabled": true,
+    "cache_dir": ".cache/corte_santo_vision"
   },
   "bank_keywords": {
     "_comment": "Keyword rules to classify Banorte statement rows. 'REST SANTO' => Banorte settlement; SPEI from AMERICAN EXPRESS => amex; UBR PAGOS/UBER => uber; domiciliacion/Spotify => additional expense.",

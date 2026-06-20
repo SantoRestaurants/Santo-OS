@@ -24,6 +24,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Restore Corte vision cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/corte_santo_vision
+          key: corte-santo-vision-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            corte-santo-vision-${{ runner.os }}-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
