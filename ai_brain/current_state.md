@@ -354,3 +354,6 @@ Activate and validate the Corte two-stage runtime in production:
     the 60-minute lookback window. The Agent Mail cron now uses a 36-hour
     lookback and 50-message limit so delayed/dropped GitHub schedules can still
     pick up unprocessed daily Corte emails through idempotency.
+  - To reduce GitHub Actions minutes while workflows scale, Corte Agent Mail now
+    runs once daily at `09:00 UTC` (`06:00` Argentina) with the 36-hour lookback.
+    Corte Bank Watcher is manual-only for now.

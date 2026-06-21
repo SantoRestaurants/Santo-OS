@@ -1,8 +1,6 @@
 name: Corte Santo — Bank Watcher
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       business_date:
