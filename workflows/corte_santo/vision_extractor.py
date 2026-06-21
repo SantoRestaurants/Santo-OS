@@ -103,7 +103,7 @@ def _vision_config(config: dict[str, Any]) -> dict[str, Any]:
         "retry_backoff_seconds": float(vision.get("retry_backoff_seconds", 10)),
         "request_delay_seconds": float(vision.get("request_delay_seconds", 0)),
         "cache_enabled": bool(vision.get("cache_enabled", True)),
-        "cache_version": str(vision.get("cache_version", "local-ocr-v2")),
+        "cache_version": str(vision.get("cache_version", "local-ocr-v3")),
         "cache_dir": os.environ.get("CORTE_VISION_CACHE_DIR", "")
         or vision.get("cache_dir", ".cache/corte_santo_vision"),
         "local_ocr_enabled": bool(vision.get("local_ocr_enabled", True)),
