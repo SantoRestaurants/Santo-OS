@@ -166,6 +166,35 @@ def test_cxc_candidate_amounts_match_bancos_difference() -> None:
     assert check["status"] == "ok"
 
 
+def test_cxc_does_not_change_income_register_and_tips_fallback_to_terminal() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {
+            "amex": {"consumo": 15776.5, "propina": 1485.5},
+            "bancos": {"consumo": 74273.5, "propina": 9291.15},
+        },
+        {
+            "amex": {"consumo": 15776.5, "propina": 1485.5},
+            "bancos": {"consumo": 67558.5, "propina": 9292.15},
+        },
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "monto_total": 9050.5,
+                    "monto_candidates": [1695.0, 2750.0, 2269.0],
+                    "canal": "debito",
+                },
+            }
+        ],
+        income_channels={"debito": 10027.51, "credito": 66823.14},
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["income_register"]["debito"] == 10027.51
+    assert result["income_register"]["propinas"] == 10776.65
+
+
 def test_cxc_vision_failure_requires_review() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"bancos": {"consumo": 83564.65, "propina": 0.0}},

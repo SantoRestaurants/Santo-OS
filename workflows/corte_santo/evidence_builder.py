@@ -56,6 +56,20 @@ def _optional_group_global(groups: dict[str, Any], key: str) -> float | None:
     return _global(groups.get(key)) if isinstance(groups.get(key), dict) else None
 
 
+def _tip_total(groups: dict[str, Any], *keys: str) -> float | None:
+    tips = []
+    for key in keys:
+        entry = groups.get(key)
+        if not isinstance(entry, dict):
+            continue
+        tip = _amount(entry.get("propina"))
+        if tip is not None:
+            tips.append(tip)
+    if not tips:
+        return None
+    return round(sum(tips), 2)
+
+
 def _cxc_total(values: dict[str, Any]) -> float:
     total = _amount(values.get("monto_total"))
     if total is not None:
@@ -216,6 +230,10 @@ def build_canonical_evidence(
                 "status": "ok",
             }
         )
+    if selected_tips is None:
+        selected_tips = _tip_total(terminal, "amex", "bancos")
+    if selected_tips is None:
+        selected_tips = _tip_total(sistema, "amex", "bancos")
 
     cash_base = _global(sistema.get("efectivo"))
     detail_values = {}
@@ -329,12 +347,6 @@ def build_canonical_evidence(
         "propinas": selected_tips,
         "cortesia_direccion": courtesy,
     }
-
-    # Apply CXC adjustments: add consumo to the appropriate channel, add propina to propinas.
-    if cxc_consumo > 0 and cxc_channel:
-        income_register[cxc_channel] = round((income_register.get(cxc_channel) or 0.0) + cxc_consumo, 2)
-    if cxc_propina > 0:
-        income_register["propinas"] = round((income_register.get("propinas") or 0.0) + cxc_propina, 2)
 
     bank_statement = bank_statement if isinstance(bank_statement, dict) else None
     if bank_statement and bank_statement.get("status") == "requires_review":
