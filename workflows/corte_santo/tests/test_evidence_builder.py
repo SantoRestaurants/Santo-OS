@@ -230,6 +230,32 @@ def test_excel_courtesy_and_cxc_tip_adjust_income_register() -> None:
     assert check["status"] == "ok"
 
 
+def test_cxc_tip_uses_bancos_difference_when_ocr_is_close() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 69664.0, "propina": 9049.61}},
+        {"bancos": {"consumo": 67268.0, "propina": 8691.36}},
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "consumo": 2395.0,
+                    "propina": 369.26,
+                    "monto_total": 2764.26,
+                    "canal": "debito",
+                },
+            }
+        ],
+        income_channels={"debito": 5969.5},
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["income_register"]["debito"] == 6328.75
+    check = next(item for item in result["checks"] if item["check_key"] == "cxc_adjustment_vs_bancos_difference")
+    assert check["cxc_total"] == 2754.25
+    assert check["status"] == "ok"
+
+
 def test_cxc_vision_failure_requires_review() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"bancos": {"consumo": 83564.65, "propina": 0.0}},

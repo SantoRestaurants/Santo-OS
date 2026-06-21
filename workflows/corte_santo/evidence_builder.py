@@ -282,6 +282,15 @@ def build_canonical_evidence(
             cxc_total = candidate_cxc_total
             cxc_consumo = candidate_cxc_total
             cxc_propina = 0.0
+        elif (
+            cxc_propina > 0
+            and abs(cxc_total - bancos_difference) <= 20.0
+            and abs(cxc_total - bancos_difference) > tolerance
+        ):
+            ocr_delta = round(cxc_total - bancos_difference, 2)
+            cxc_total = bancos_difference
+            cxc_propina = round(max(cxc_propina - ocr_delta, 0.0), 2)
+            cxc_consumo = round(max(cxc_total - cxc_propina, 0.0), 2)
         canal_raw = cxc_values.get("canal")
         if isinstance(canal_raw, str):
             canal_lower = canal_raw.lower().strip()
