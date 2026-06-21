@@ -16,7 +16,7 @@ on:
       message_limit:
         description: "Maximum AgentMail messages to fetch"
         required: false
-        default: "20"
+        default: "50"
       subject_contains:
         description: "Only process messages whose subject contains this text"
         required: false
@@ -69,14 +69,14 @@ jobs:
           GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
           GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
           SANTO_CRON_WRITE: "true"
-          CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES: "60"
+          CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES: "2160"
           PYTHONUNBUFFERED: "1"
         run: |
           AFTER="${{ github.event.inputs.after }}"
           SUBJECT_CONTAINS="${{ github.event.inputs.subject_contains }}"
           MESSAGE_LIMIT="${{ github.event.inputs.message_limit }}"
           if [ -z "$AFTER" ]; then
-            AFTER=$(date -u -d '60 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+            AFTER=$(date -u -d '2160 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
           fi
           if [ -z "$MESSAGE_LIMIT" ]; then
             MESSAGE_LIMIT="20"

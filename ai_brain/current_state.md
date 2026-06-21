@@ -349,3 +349,8 @@ Activate and validate the Corte two-stage runtime in production:
     most complete duplicate package, Excel cash adjustments and normalized CXC
     OCR. It wrote `debito=6328.75`, `efectivo=5770.0`, `propinas=9120.41`, and
     matched CXC `2754.25` against the Bancos difference without Gemini/429.
+  - Run `27914000865` on `2026-06-21` processed SANTO `2026-06-20`
+    (`received_at=2026-06-21T07:25:27Z`) after the scheduled workflow missed
+    the 60-minute lookback window. The Agent Mail cron now uses a 36-hour
+    lookback and 50-message limit so delayed/dropped GitHub schedules can still
+    pick up unprocessed daily Corte emails through idempotency.

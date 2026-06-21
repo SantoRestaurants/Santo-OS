@@ -371,7 +371,7 @@ def poll_and_classify(
     routing_config: dict[str, Any],
     supabase: SupabaseWriter | None = None,
     after: str | None = None,
-    message_limit: int = 20,
+    message_limit: int = 50,
     subject_contains: str | None = None,
     dry_run: bool = True,
     drive_config: dict[str, Any] | None = None,
@@ -796,7 +796,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", default=True, help="Don't write to Supabase (default).")
     parser.add_argument("--write", action="store_true", help="Write results to Supabase.")
     parser.add_argument("--after", help="Only fetch messages after this ISO timestamp.")
-    parser.add_argument("--message-limit", type=int, default=20, help="Maximum messages to fetch.")
+    parser.add_argument("--message-limit", type=int, default=50, help="Maximum messages to fetch.")
     parser.add_argument("--subject-contains", help="Only process messages whose subject contains this text.")
     parser.add_argument("--watch", action="store_true", help="Keep polling every 30s.")
     args = parser.parse_args(argv)

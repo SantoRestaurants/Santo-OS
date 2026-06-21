@@ -65,7 +65,7 @@ def run_agent_mail_once(
     config_path: str,
     write: bool,
     after: str | None = None,
-    message_limit: int = 20,
+    message_limit: int = 50,
     subject_contains: str | None = None,
     force_reprocess: bool = False,
 ) -> dict[str, Any]:
@@ -353,7 +353,7 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
                         config_path=args.routing_config,
                         write=args.write,
                         after=args.after,
-                        message_limit=getattr(args, "message_limit", 20),
+                        message_limit=getattr(args, "message_limit", 50),
                         subject_contains=getattr(args, "subject_contains", None),
                         force_reprocess=args.force_reprocess,
                     ),
@@ -395,7 +395,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--restaurant-key", default=_env("CORTE_SANTO_RESTAURANT_KEY", "santo"))
     parser.add_argument("--business-date")
     parser.add_argument("--after")
-    parser.add_argument("--message-limit", type=int, default=20)
+    parser.add_argument("--message-limit", type=int, default=50)
     parser.add_argument("--subject-contains")
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--force-reprocess", action="store_true")
