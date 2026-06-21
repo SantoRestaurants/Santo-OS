@@ -13,6 +13,14 @@ on:
         description: "Reprocess messages even if already recorded (manual use only)"
         required: false
         default: "false"
+      message_limit:
+        description: "Maximum AgentMail messages to fetch"
+        required: false
+        default: "20"
+      subject_contains:
+        description: "Only process messages whose subject contains this text"
+        required: false
+        default: ""
 
 concurrency:
   group: corte-santo-agent-mail
@@ -57,13 +65,25 @@ jobs:
           GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
           SANTO_CRON_WRITE: "true"
           CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES: "60"
+          PYTHONUNBUFFERED: "1"
         run: |
           AFTER="${{ github.event.inputs.after }}"
+          SUBJECT_CONTAINS="${{ github.event.inputs.subject_contains }}"
+          MESSAGE_LIMIT="${{ github.event.inputs.message_limit }}"
           if [ -z "$AFTER" ]; then
             AFTER=$(date -u -d '60 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          fi
+          if [ -z "$MESSAGE_LIMIT" ]; then
+            MESSAGE_LIMIT="20"
+          fi
+          SUBJECT_ARGS=()
+          if [ -n "$SUBJECT_CONTAINS" ]; then
+            SUBJECT_ARGS=(--subject-contains "$SUBJECT_CONTAINS")
           fi
           python -m services.scheduler.corte_santo_cron \
             --job agent-mail \
             --after "$AFTER" \
+            --message-limit "$MESSAGE_LIMIT" \
             --write \
+            "${SUBJECT_ARGS[@]}" \
             ${{ github.event.inputs.force_reprocess == 'true' && '--force-reprocess' || '' }}

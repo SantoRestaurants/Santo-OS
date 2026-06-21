@@ -186,7 +186,7 @@ def test_supabase_existing_email_lookup_filters_by_content_fingerprint() -> None
 
 def test_poll_and_classify_skips_existing_live_email(monkeypatch) -> None:
     class FakeClient:
-        def list_messages(self, after=None):
+        def list_messages(self, after=None, limit=20):
             return [
                 {
                     "message_id": "msg-1",
@@ -241,7 +241,7 @@ def test_poll_and_classify_skips_existing_live_email(monkeypatch) -> None:
 
 def test_poll_and_classify_skips_existing_content_duplicate(monkeypatch) -> None:
     class FakeClient:
-        def list_messages(self, after=None):
+        def list_messages(self, after=None, limit=20):
             return [
                 {
                     "message_id": "msg-2",
@@ -292,7 +292,7 @@ def test_poll_and_classify_skips_existing_content_duplicate(monkeypatch) -> None
 
 def test_poll_and_classify_force_reprocess_bypasses_existing_email(monkeypatch) -> None:
     class FakeClient:
-        def list_messages(self, after=None):
+        def list_messages(self, after=None, limit=20):
             return [
                 {
                     "message_id": "msg-1",
@@ -337,6 +337,53 @@ def test_poll_and_classify_force_reprocess_bypasses_existing_email(monkeypatch) 
 
     assert results[0]["status"] == "classified"
     assert results[0]["email_message"]["classification_key"] == "SANTO CORTE"
+
+
+def test_poll_and_classify_filters_by_subject(monkeypatch) -> None:
+    seen = {}
+
+    class FakeClient:
+        def list_messages(self, after=None, limit=20):
+            seen["after"] = after
+            seen["limit"] = limit
+            return [
+                {
+                    "message_id": "msg-18",
+                    "inbox_id": "santoos@agentmail.to",
+                    "from": "Developer Santo <developer@santorestaurants.com>",
+                    "to": ["santoos@agentmail.to"],
+                    "subject": "SANTO CORTE JUEVES 18 JUNIO 2026",
+                    "timestamp": "2026-06-19T23:56:00Z",
+                    "attachments": [],
+                },
+                {
+                    "message_id": "msg-19",
+                    "inbox_id": "santoos@agentmail.to",
+                    "from": "Developer Santo <developer@santorestaurants.com>",
+                    "to": ["santoos@agentmail.to"],
+                    "subject": "SANTO CORTE VIERNES 19 JUNIO 2026",
+                    "timestamp": "2026-06-20T23:56:00Z",
+                    "attachments": [],
+                },
+            ]
+
+    monkeypatch.setattr("services.agent_mail.poller.summarize_email", lambda subject, body: None)
+
+    results = poll_and_classify(
+        FakeClient(),
+        {
+            "confirmed": True,
+            "allowed_senders": ["developer@santorestaurants.com"],
+            "subject_prefixes": {"SANTO CORTE": "corte_santo_daily_sales_reconciliation"},
+        },
+        after="2026-06-19T00:00:00Z",
+        message_limit=5,
+        subject_contains="18 JUNIO 2026",
+    )
+
+    assert seen == {"after": "2026-06-19T00:00:00Z", "limit": 5}
+    assert len(results) == 1
+    assert results[0]["email_message"]["provider_message_id"] == "msg-18"
 
 
 def test_supabase_workflow_run_upsert_uses_conflict_target() -> None:

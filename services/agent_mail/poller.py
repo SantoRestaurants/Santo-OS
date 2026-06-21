@@ -362,6 +362,8 @@ def poll_and_classify(
     routing_config: dict[str, Any],
     supabase: SupabaseWriter | None = None,
     after: str | None = None,
+    message_limit: int = 20,
+    subject_contains: str | None = None,
     dry_run: bool = True,
     drive_config: dict[str, Any] | None = None,
     force_reprocess: bool = False,
@@ -370,10 +372,39 @@ def poll_and_classify(
     Poll new messages, classify them, optionally write to Supabase.
     Returns list of classification results.
     """
-    messages = client.list_messages(after=after)
+    logger.info(
+        "Polling AgentMail messages after=%r limit=%s subject_contains=%r force_reprocess=%s",
+        after,
+        message_limit,
+        subject_contains,
+        force_reprocess,
+    )
+    messages = client.list_messages(after=after, limit=message_limit)
+    logger.info("AgentMail returned %d message(s)", len(messages))
+    if subject_contains:
+        needle = subject_contains.lower()
+        before_count = len(messages)
+        messages = [
+            msg
+            for msg in messages
+            if needle in str(msg.get("subject") or "").lower()
+        ]
+        logger.info(
+            "Filtered messages by subject_contains=%r: %d -> %d",
+            subject_contains,
+            before_count,
+            len(messages),
+        )
     results = []
 
     for msg in messages:
+        logger.info(
+            "Processing AgentMail message id=%s subject=%r from=%r attachments=%d",
+            msg.get("message_id"),
+            msg.get("subject"),
+            msg.get("from"),
+            len(msg.get("attachments") or []),
+        )
         intake_input = _agentmail_to_intake_format(msg)
 
         existing_email = None
@@ -406,6 +437,15 @@ def poll_and_classify(
             continue
 
         result = intake_email(intake_input, routing_config)
+        logger.info(
+            "Classified AgentMail message id=%s status=%s workflow=%s review_reason=%s",
+            msg.get("message_id"),
+            result.get("status"),
+            result.get("command", {}).get("workflow_key") if isinstance(result.get("command"), dict) else None,
+            result.get("email_message", {}).get("requires_review_reason")
+            if isinstance(result.get("email_message"), dict)
+            else None,
+        )
 
         # AI classification for unclassified emails
         if (
@@ -727,6 +767,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", default=True, help="Don't write to Supabase (default).")
     parser.add_argument("--write", action="store_true", help="Write results to Supabase.")
     parser.add_argument("--after", help="Only fetch messages after this ISO timestamp.")
+    parser.add_argument("--message-limit", type=int, default=20, help="Maximum messages to fetch.")
+    parser.add_argument("--subject-contains", help="Only process messages whose subject contains this text.")
     parser.add_argument("--watch", action="store_true", help="Keep polling every 30s.")
     args = parser.parse_args(argv)
 
@@ -770,6 +812,8 @@ def main(argv: list[str] | None = None) -> int:
                     client, routing_config, supabase,
                     drive_config=drive_config,
                     after=last_check, dry_run=dry_run,
+                    message_limit=args.message_limit,
+                    subject_contains=args.subject_contains,
                     force_reprocess=False,
                 )
                 if results:
@@ -783,6 +827,8 @@ def main(argv: list[str] | None = None) -> int:
             client, routing_config, supabase,
             drive_config=drive_config,
             after=args.after, dry_run=dry_run,
+            message_limit=args.message_limit,
+            subject_contains=args.subject_contains,
             force_reprocess=False,
         )
         print(json.dumps(results, indent=2, default=str))

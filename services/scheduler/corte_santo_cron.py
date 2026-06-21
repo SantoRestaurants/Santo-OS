@@ -62,6 +62,8 @@ def run_agent_mail_once(
     config_path: str,
     write: bool,
     after: str | None = None,
+    message_limit: int = 20,
+    subject_contains: str | None = None,
     force_reprocess: bool = False,
 ) -> dict[str, Any]:
     api_key = _env("AGENTMAIL_API_KEY")
@@ -85,6 +87,8 @@ def run_agent_mail_once(
         supabase,
         drive_config=drive_config,
         after=after or _env("CORTE_SANTO_AGENTMAIL_AFTER") or None,
+        message_limit=message_limit,
+        subject_contains=subject_contains or _env("CORTE_SANTO_AGENTMAIL_SUBJECT_CONTAINS") or None,
         dry_run=not write,
         force_reprocess=force_reprocess,
     )
@@ -99,6 +103,8 @@ def run_agent_mail_once(
         "requires_review_count": len(reviewed),
         "write_mode": "live" if write else "dry_run",
         "force_reprocess": force_reprocess,
+        "message_limit": message_limit,
+        "subject_contains": subject_contains,
         "results": results,
     }
 
@@ -340,12 +346,14 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
         jobs.append(
             {
                 "job": "agent-mail",
-                "result": run_agent_mail_once(
-                    config_path=args.routing_config,
-                    write=args.write,
-                    after=args.after,
-                    force_reprocess=args.force_reprocess,
-                ),
+                    "result": run_agent_mail_once(
+                        config_path=args.routing_config,
+                        write=args.write,
+                        after=args.after,
+                        message_limit=getattr(args, "message_limit", 20),
+                        subject_contains=getattr(args, "subject_contains", None),
+                        force_reprocess=args.force_reprocess,
+                    ),
             }
         )
     if args.job in ("bank-watcher", "all"):
@@ -380,6 +388,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--restaurant-key", default=_env("CORTE_SANTO_RESTAURANT_KEY", "santo"))
     parser.add_argument("--business-date")
     parser.add_argument("--after")
+    parser.add_argument("--message-limit", type=int, default=20)
+    parser.add_argument("--subject-contains")
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--force-reprocess", action="store_true")
     args = parser.parse_args(argv)

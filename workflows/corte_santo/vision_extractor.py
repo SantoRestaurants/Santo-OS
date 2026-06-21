@@ -27,6 +27,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import mimetypes
 import os
 import time
@@ -37,6 +38,8 @@ try:
     import httpx
 except Exception:  # pragma: no cover - dependency guard
     httpx = None  # type: ignore[assignment]
+
+logger = logging.getLogger(__name__)
 
 
 # Document types we extract from images, with the fields each one must yield.
@@ -260,6 +263,13 @@ def _call_gemini(cfg: dict[str, Any], prompt: str, media_type: str, b64: str) ->
     response = None
     attempts = max(1, int(cfg.get("retry_attempts", 3)))
     for attempt in range(attempts):
+        logger.info(
+            "Calling Gemini vision model=%s attempt=%d/%d media_type=%s",
+            cfg.get("model"),
+            attempt + 1,
+            attempts,
+            media_type,
+        )
         response = httpx.post(
             url,
             headers={"content-type": "application/json", "x-goog-api-key": cfg["api_key"]},
@@ -290,6 +300,11 @@ def _call_gemini(cfg: dict[str, Any], prompt: str, media_type: str, b64: str) ->
             delay = None
         if delay is None:
             delay = float(cfg.get("retry_backoff_seconds", 10)) * (attempt + 1)
+        logger.warning(
+            "Gemini vision returned HTTP %s; retrying in %.1fs",
+            response.status_code,
+            delay,
+        )
         time.sleep(delay)
     if response is None:  # pragma: no cover - loop always assigns
         raise ValueError("gemini_no_response")
@@ -354,9 +369,29 @@ def extract_document(
         prompt = _build_prompt(document_type)
         effective_source_hash = source_hash or hashlib.sha256(path.read_bytes()).hexdigest()
         cache_key = _cache_key(cfg, document_type, effective_source_hash, prompt)
+        logger.info(
+            "Starting vision extraction document_type=%s image=%s source_hash=%s cache_key=%s",
+            document_type,
+            path.name,
+            effective_source_hash[:12],
+            cache_key[:12],
+        )
         cached = _read_cache(cfg, cache_key)
         if cached is not None:
+            logger.info(
+                "Vision cache hit document_type=%s image=%s cache_key=%s",
+                document_type,
+                path.name,
+                cache_key[:12],
+            )
             return cached
+        logger.info(
+            "Vision cache miss document_type=%s image=%s provider=%s model=%s",
+            document_type,
+            path.name,
+            cfg.get("provider"),
+            cfg.get("model"),
+        )
         if cfg["provider"] == "anthropic":
             result = _call_anthropic(cfg, prompt, media_type, b64)
         elif cfg["provider"] == "gemini":
@@ -364,6 +399,11 @@ def extract_document(
         else:
             return review(f"unsupported_vision_provider:{cfg['provider']}")
     except Exception as exc:  # network, parse, auth, etc.
+        logger.exception(
+            "Vision extraction failed document_type=%s image=%s",
+            document_type,
+            image_path,
+        )
         return review(f"vision_extraction_error:{type(exc).__name__}:{str(exc)[:200]}")
 
     values = result.get("values") if isinstance(result, dict) else None
@@ -390,6 +430,12 @@ def extract_document(
         "cache": "miss",
     }
     _write_cache(cfg, cache_key, extracted, effective_source_hash)
+    logger.info(
+        "Vision extraction completed document_type=%s image=%s confidence=%.3f cache=miss",
+        document_type,
+        path.name,
+        confidence_f,
+    )
     return extracted
 
 
@@ -408,7 +454,15 @@ def extract_documents(images: list[dict[str, Any]], config: dict[str, Any] | Non
         if not isinstance(item, dict):
             continue
         if index > 0 and request_delay > 0:
+            logger.info("Waiting %.1fs before next vision request", request_delay)
             time.sleep(request_delay)
+        logger.info(
+            "Vision batch item %d/%d document_type=%s image_path=%s",
+            index + 1,
+            len(images),
+            item.get("document_type"),
+            item.get("image_path"),
+        )
         results.append(
             extract_document(
                 str(item.get("document_type", "")),
