@@ -11,13 +11,16 @@ from typing import Any
 
 try:
     from openpyxl import load_workbook
+    from openpyxl.comments import Comment
     from openpyxl.styles import PatternFill
 except Exception:  # pragma: no cover
     load_workbook = None  # type: ignore[assignment]
+    Comment = None  # type: ignore[assignment]
     PatternFill = None  # type: ignore[assignment]
 
 YELLOW = "FFFFFF00"
 BLUE = "FF00B0F0"
+RED = "FFFF0000"
 
 
 def read_forecast_daily_sales(
@@ -124,6 +127,25 @@ def _review(reason: str, **extra: Any) -> dict[str, Any]:
     return {"status": "requires_review", "review_reason": reason, **extra}
 
 
+def _is_manual_paypal_adjustment(cell: Any, value: float) -> bool:
+    """Keep red PayPal adjustment formulas/comments as operator evidence."""
+    if round(float(value), 2) != 0.0:
+        return False
+    fill = getattr(getattr(cell, "fill", None), "fgColor", None)
+    fill_rgb = str(getattr(fill, "rgb", "") or "").upper()
+    has_red_fill = fill_rgb == RED
+    has_comment = getattr(cell, "comment", None) is not None
+    has_formula = isinstance(getattr(cell, "value", None), str) and str(cell.value).startswith("=")
+    return has_red_fill and (has_comment or has_formula)
+
+
+def _paypal_note(cell_notes: dict[str, Any] | None, value: float) -> dict[str, Any] | None:
+    if round(float(value), 2) != 0.0 or not isinstance(cell_notes, dict):
+        return None
+    note = cell_notes.get("paypal")
+    return note if isinstance(note, dict) and note.get("comment") else None
+
+
 def _rebase_projection_month(
     ws: Any,
     target: date,
@@ -160,6 +182,7 @@ def write_ingresos(
     stage: str = "corte_loaded",
     dry_run: bool = True,
     layout: dict[str, Any] | None = None,
+    cell_notes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write/plan the Ingresos date row; yellow on load, blue after bank validation."""
     if load_workbook is None:
@@ -197,6 +220,35 @@ def write_ingresos(
     for key, col in columns.items():
         cell = ws[f"{col}{row}"]
         value = round(float(values[key]), 2)
+        if key == "paypal" and _is_manual_paypal_adjustment(cell, value):
+            changes.append(
+                {
+                    "cell": cell.coordinate,
+                    "before": cell.value,
+                    "after": cell.value,
+                    "fill": cell.fill.fgColor.rgb,
+                    "preserved": "manual_paypal_adjustment",
+                }
+            )
+            continue
+        note = _paypal_note(cell_notes, value) if key == "paypal" else None
+        if note:
+            formula = str(note.get("formula") or f"={value:g}-{value:g}")
+            changes.append(
+                {
+                    "cell": cell.coordinate,
+                    "before": cell.value,
+                    "after": formula,
+                    "fill": RED,
+                    "comment": note.get("comment"),
+                }
+            )
+            if not dry_run:
+                cell.value = formula
+                cell.fill = PatternFill("solid", fgColor=RED)
+                if Comment is not None:
+                    cell.comment = Comment(str(note.get("comment")), "SantoOS")
+            continue
         changes.append({"cell": cell.coordinate, "before": cell.value, "after": value, "fill": color})
         if not dry_run:
             cell.value = value

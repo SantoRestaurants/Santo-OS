@@ -4,6 +4,7 @@ import importlib.util
 from datetime import datetime
 from pathlib import Path
 
+from openpyxl.comments import Comment
 from openpyxl import Workbook, load_workbook
 
 
@@ -114,6 +115,65 @@ def test_ingresos_finds_cached_formula_date_rows(tmp_path: Path) -> None:
 
     assert result["status"] == "written"
     assert load_workbook(output).active["C8"].value == VALUES["amex"]
+
+
+def test_ingresos_preserves_red_paypal_adjustment_comment(tmp_path: Path) -> None:
+    source = tmp_path / "ingresos-paypal-comment.xlsx"
+    output = tmp_path / "ingresos-paypal-output.xlsx"
+    _ingresos(source)
+    wb = load_workbook(source)
+    ws = wb.active
+    ws["H5"] = "=2395-2395"
+    ws["H5"].fill = writer.PatternFill("solid", fgColor=writer.RED)
+    ws["H5"].comment = Comment("Mov 89109 $2395 con propina de $359.25 del sr. Toro", "None")
+    wb.save(source)
+    wb.close()
+
+    result = writer.write_ingresos(
+        str(source),
+        str(output),
+        "2026-06-04",
+        VALUES,
+        stage="bank_validated",
+        dry_run=False,
+        layout=INGRESOS_LAYOUT,
+    )
+
+    assert result["status"] == "written"
+    ws_out = load_workbook(output).active
+    assert ws_out["H5"].value == "=2395-2395"
+    assert ws_out["H5"].fill.fgColor.rgb == writer.RED
+    assert "propina de $359.25" in ws_out["H5"].comment.text
+
+
+def test_ingresos_writes_cxc_paypal_comment_when_note_is_supplied(tmp_path: Path) -> None:
+    source = tmp_path / "ingresos-paypal-note.xlsx"
+    output = tmp_path / "ingresos-paypal-note-output.xlsx"
+    _ingresos(source)
+
+    result = writer.write_ingresos(
+        str(source),
+        str(output),
+        "2026-06-04",
+        VALUES,
+        stage="corte_loaded",
+        dry_run=False,
+        layout=INGRESOS_LAYOUT,
+        cell_notes={
+            "paypal": {
+                "kind": "cxc",
+                "amount": 6714.0,
+                "formula": "=6714-6714",
+                "comment": "CXC\nMOV 87745 $1,695\nTOTAL $6714\n======",
+            }
+        },
+    )
+
+    assert result["status"] == "written"
+    ws_out = load_workbook(output).active
+    assert ws_out["H5"].value == "=6714-6714"
+    assert ws_out["H5"].fill.fgColor.rgb == writer.RED
+    assert "MOV 87745" in ws_out["H5"].comment.text
 
 
 def test_forecast_write_updates_total_month_formula(tmp_path: Path) -> None:

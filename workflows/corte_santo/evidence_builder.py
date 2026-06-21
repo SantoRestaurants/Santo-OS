@@ -128,6 +128,25 @@ def _exception(key: str, details: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _cxc_paypal_note(values: dict[str, Any], total: float, channel: str | None) -> dict[str, Any]:
+    lines = ["CXC"]
+    for line in values.get("comment_lines") or []:
+        text = str(line).strip()
+        if text and text not in lines:
+            lines.append(text)
+    if not any("total" in line.lower() for line in lines):
+        lines.append(f"TOTAL ${total:,.2f}")
+    if channel:
+        lines.append(f"Canal: {channel}")
+    lines.append("======")
+    return {
+        "kind": "cxc",
+        "amount": total,
+        "formula": f"={total:g}-{total:g}",
+        "comment": "\n".join(lines),
+    }
+
+
 def build_canonical_evidence(
     cierre_terminal: dict[str, Any],
     cierre_sistema: dict[str, Any],
@@ -259,6 +278,7 @@ def build_canonical_evidence(
     cxc_consumo = 0.0
     cxc_propina = 0.0
     cxc_channel = None
+    cxc_note: dict[str, Any] | None = None
     cxc_doc = vision.get("cxc")
     cxc_total = 0.0
     if cxc_doc and cxc_doc.get("status") != "extracted":
@@ -310,6 +330,8 @@ def build_canonical_evidence(
                 cxc_channel = "uber"
             elif "rappi" in canal_lower:
                 cxc_channel = "rappi"
+        if cxc_total > 0:
+            cxc_note = _cxc_paypal_note(cxc_values, cxc_total, cxc_channel)
 
     if cxc_total > 0:
         bancos_difference = round(_global(terminal.get("bancos")) - _global(sistema.get("bancos")), 2)
@@ -385,6 +407,7 @@ def build_canonical_evidence(
         "income_channels": income_channels if isinstance(income_channels, dict) else {},
         "income_adjustments": adjustments,
         "income_register": income_register,
+        "income_cell_notes": {"paypal": cxc_note} if cxc_note else {},
         "selected_tips": selected_tips,
         "checks": checks,
         "bank_statement": bank_statement,

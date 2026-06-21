@@ -356,7 +356,17 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
     propina = None
     total_line = None
     channel = _cxc_channel(text)
+    comment_lines = []
     for line in text.splitlines():
+        clean_line = " ".join(line.strip().split())
+        lower_clean = clean_line.lower()
+        if clean_line and (
+            "mov" in lower_clean
+            or "total" in lower_clean
+            or "tarjeta" in lower_clean
+            or "cxc" in lower_clean
+        ):
+            comment_lines.append(clean_line)
         lower_line = line.lower()
         amounts = _line_amounts(line)
         if not amounts:
@@ -388,6 +398,7 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
                 "monto_total": total_line,
                 "monto_candidates": [total_line],
                 "canal": channel,
+                "comment_lines": comment_lines,
             },
             "confidence": 0.9,
             "review_reason": None,
@@ -420,6 +431,7 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             "monto_total": total,
             "monto_candidates": amounts,
             "canal": _cxc_channel(text),
+            "comment_lines": comment_lines,
         },
         "confidence": 0.9,
         "review_reason": None,

@@ -228,6 +228,10 @@ def test_excel_courtesy_and_cxc_tip_adjust_income_register() -> None:
     assert result["income_register"]["efectivo"] == 5770.0
     check = next(item for item in result["checks"] if item["check_key"] == "cxc_adjustment_vs_bancos_difference")
     assert check["status"] == "ok"
+    paypal_note = result["income_cell_notes"]["paypal"]
+    assert paypal_note["amount"] == 2754.25
+    assert paypal_note["formula"] == "=2754.25-2754.25"
+    assert "CXC" in paypal_note["comment"]
 
 
 def test_cxc_tip_uses_bancos_difference_when_ocr_is_close() -> None:

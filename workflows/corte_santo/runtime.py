@@ -32,6 +32,15 @@ def _income_channels(payload: dict[str, Any], workflow_result: dict[str, Any]) -
     }
 
 
+def _income_cell_notes(payload: dict[str, Any], workflow_result: dict[str, Any]) -> dict[str, Any]:
+    explicit = payload.get("income_cell_notes")
+    if isinstance(explicit, dict):
+        return explicit
+    canonical = workflow_result.get("workflow_run", {}).get("canonical_evidence", {})
+    notes = canonical.get("income_cell_notes", {}) if isinstance(canonical, dict) else {}
+    return notes if isinstance(notes, dict) else {}
+
+
 def _bank_write_channels(payload: dict[str, Any]) -> dict[str, Any]:
     """Build columnar values for the Ingresos workbook during bank validation.
 
@@ -171,6 +180,7 @@ def run_initial_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[s
     outputs = payload.get("workbook_outputs", {})
     dry_run = bool(request.get("dry_run", True))
     channels = _income_channels(payload, workflow_result)
+    cell_notes = _income_cell_notes(payload, workflow_result)
     if workflow_result.get("status") not in ("ready_for_approval", "requires_review"):
         return pipeline.initial_stage_result(
             workflow_result,
@@ -187,6 +197,7 @@ def run_initial_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[s
         stage="corte_loaded",
         dry_run=dry_run,
         layout=config.get("ingresos_layout"),
+        cell_notes=cell_notes,
     )
     venta_bruta = workflow_result.get("workflow_run", {}).get("revision_document", {}).get(
         "reconciliation_totals", {}
@@ -252,6 +263,7 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
             stage="bank_validated",
             dry_run=bool(request.get("dry_run", True)),
             layout=config.get("ingresos_layout"),
+            cell_notes=payload.get("income_cell_notes") if isinstance(payload.get("income_cell_notes"), dict) else None,
         )
     else:
         ingresos_blue = {
