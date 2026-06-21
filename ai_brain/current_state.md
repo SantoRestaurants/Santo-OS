@@ -335,3 +335,8 @@ Activate and validate the Corte two-stage runtime in production:
   - Run `27882873008` on `2026-06-20` used the updated production
     `GEMINI_API_KEY` metadata but still received Gemini `429 Too Many Requests`
     from `gemini-2.5-flash`; the run completed as `requires_review`.
+  - Local OCR via Tesseract is now installed in Corte GitHub Actions and used
+    before any model call for AMEX, Bancarias and CXC, with Gemini fallback
+    disabled in the confirmed config. Run `27909801448` on `2026-06-21`
+    completed without Gemini/429; AMEX matched the Excel total, while
+    Bancarias and CXC OCR still require parser/rule refinement or review.
