@@ -44,6 +44,21 @@ def test_banorte_unclassified_deposit_requires_review() -> None:
     assert res["unclassified_deposits"][0]["amount"] == 5000.0
 
 
+def test_banorte_ignores_configured_non_operating_deposit() -> None:
+    rows = [
+        {
+            bank.COL_DESC: "ABONO DCTO. CARTERA 0092247213",
+            bank.COL_DESC_DETAIL: "-",
+            bank.COL_DEPOSIT: "$7,000,000.00",
+            bank.COL_WITHDRAWAL: "-",
+        },
+    ]
+    res = bank.parse_banorte_rows(rows, {})
+    assert res["status"] == "ok"
+    assert res["ignored_deposits"][0]["amount"] == 7000000.0
+    assert res["deposits"] == []
+
+
 def test_banorte_domiciled_expense_captured() -> None:
     rows = [
         {"DESCRIPCIÓN": "PAGO SPOTIFY", "DESCRIPCIÓN DETALLADA": "DOMICILIACION", "DEPÓSITOS": "-", "RETIROS": "$199.00"},

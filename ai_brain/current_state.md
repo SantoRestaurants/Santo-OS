@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-06-19.
+Last updated: 2026-06-21.
 
 ## Active Handoff
 
@@ -232,6 +232,15 @@ resume in a fresh conversation.
   `cxc` vision inputs, checks the extracted CXC total against the Bancos
   reconciliation difference, and prompts AMEX vision to sum all visible AMEX
   tickets instead of extracting only one ticket.
+- P0 workflow documentation now follows the workflow-skill Markdown convention
+  from ADR-0015: each workflow `skill.md` starts with YAML frontmatter, and the
+  P0 workflow folders plus `_template` include `index.md` and `log.md` for
+  human/Claude navigation.
+- Corte Santo bank reconciliation was refined after the 2026-06-17 bank watcher:
+  Banorte deposits matching configured `ignore_deposit` keywords such as
+  `ABONO DCTO. CARTERA` are traced but excluded from operational deposits, and
+  consolidated AMEX SPEI deposits can match multiple AMEX expected-payment rows
+  sharing the same expected payment date.
 
 ## Processed Context
 

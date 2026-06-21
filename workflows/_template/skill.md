@@ -1,3 +1,12 @@
+---
+type: workflow_skill
+title: Workflow Template
+description: Base SantoOS workflow module template for creating registry-connected, review-safe workflow skills.
+resource: workflows/_template/
+tags: [template, workflow, p0, registry]
+timestamp: 2026-06-21T00:00:00-06:00
+---
+
 # Workflow Template Skill
 
 This is the base template for SantoOS workflow modules.

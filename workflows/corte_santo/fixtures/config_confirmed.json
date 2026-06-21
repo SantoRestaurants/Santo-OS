@@ -33,6 +33,11 @@
   "evidence_rules": {
     "evidence_tolerance": 0.0
   },
+  "bank_keywords": {
+    "ignore_deposit": [
+      "ABONO DCTO. CARTERA"
+    ]
+  },
   "supervisor_email": "developer@santorestaurants.com",
   "ingresos_layout": {
     "date_column": 2,

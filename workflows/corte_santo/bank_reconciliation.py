@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,22 @@ def _amount(value: Any) -> float:
         return round(float(text), 2)
     except ValueError:
         return 0.0
+
+
+def _date_key(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return text
 
 
 def parse_amex_rows(rows: list[list[Any]]) -> dict[str, Any]:
@@ -99,7 +116,37 @@ def reconcile_bank_stage(
     available = [dict(item, matched=False) for item in banorte_statement.get("deposits", [])]
     matches = []
     pending_items = []
-    for item in expected:
+    expected_remaining = [dict(item, _matched=False) for item in expected]
+
+    # AMEX often lands in Banorte as one consolidated SPEI for several AMEX
+    # payment rows with the same expected payment date. Match the dated group
+    # before falling back to one-to-one exact matching.
+    for deposit in available:
+        if deposit["matched"]:
+            continue
+        channel = deposit.get("source")
+        operation_date = _date_key(deposit.get("operation_date"))
+        if not channel or not operation_date:
+            continue
+        candidates = [
+            item
+            for item in expected_remaining
+            if not item["_matched"]
+            and item.get("channel") == channel
+            and _date_key(item.get("expected_payment_date")) == operation_date
+        ]
+        if len(candidates) < 2:
+            continue
+        total = round(sum(float(item.get("expected_deposit", item.get("amount", 0))) for item in candidates), 2)
+        if abs(float(deposit.get("amount", 0)) - total) <= tolerance:
+            deposit["matched"] = True
+            for item in candidates:
+                item["_matched"] = True
+            matches.append({"expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in candidates], "deposit": deposit})
+
+    for item in expected_remaining:
+        if item["_matched"]:
+            continue
         channel = item.get("channel")
         amount = round(float(item.get("expected_deposit", item.get("amount", 0))), 2)
         matched = next(
@@ -114,9 +161,10 @@ def reconcile_bank_stage(
         )
         if matched:
             matched["matched"] = True
-            matches.append({"expected": item, "deposit": matched})
+            item["_matched"] = True
+            matches.append({"expected": {k: v for k, v in item.items() if k != "_matched"}, "deposit": matched})
         else:
-            pending_items.append(item)
+            pending_items.append({k: v for k, v in item.items() if k != "_matched"})
 
     unmatched_deposits = [item for item in available if not item["matched"]]
     pending: dict[str, float] = {}

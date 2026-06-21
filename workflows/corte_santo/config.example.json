@@ -61,7 +61,7 @@
     "local_ocr_psm": "6"
   },
   "bank_keywords": {
-    "_comment": "Keyword rules to classify Banorte statement rows. 'REST SANTO' => Banorte settlement; SPEI from AMERICAN EXPRESS => amex; UBR PAGOS/UBER => uber; domiciliacion/Spotify => additional expense.",
+    "_comment": "Keyword rules to classify Banorte statement rows. 'REST SANTO' => Banorte settlement; SPEI from AMERICAN EXPRESS => amex; UBR PAGOS/UBER => uber; domiciliacion/Spotify => additional expense; configured ignore_deposit keywords are traced but excluded from operational deposits.",
     "banorte_settlement": [
       "REST SANTO"
     ],
@@ -79,6 +79,9 @@
       "DOMICILIACION",
       "SPOTIFY",
       "DOMICILIADO"
+    ],
+    "ignore_deposit": [
+      "ABONO DCTO. CARTERA"
     ]
   },
   "excel_layout": {

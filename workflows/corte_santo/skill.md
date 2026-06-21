@@ -1,3 +1,12 @@
+---
+type: workflow_skill
+title: Corte Santo
+description: Daily sales reconciliation workflow for Santo, including Agent Mail intake, evidence extraction, review gates, Drive writeback, and bank-stage validation.
+resource: workflows/corte_santo/
+tags: [p0, corte, reconciliation, accounting, agent-mail, drive]
+timestamp: 2026-06-21T00:00:00-06:00
+---
+
 # Corte Santo Skill
 
 P0 primary workflow: Corte Santo - Daily Sales Reconciliation.

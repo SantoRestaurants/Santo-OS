@@ -173,6 +173,29 @@ def test_bank_matching_allows_legitimate_pending_collections() -> None:
     assert result["pending_collections"]["amex"] == 50.0
 
 
+def test_bank_matching_groups_amex_payments_by_expected_payment_date() -> None:
+    result = bank.reconcile_bank_stage(
+        [
+            {"channel": "amex", "amount": 18437.66, "source_date": "12/6/2026", "expected_payment_date": "17/6/2026"},
+            {"channel": "amex", "amount": 62832.78, "source_date": "13/6/2026", "expected_payment_date": "17/6/2026"},
+            {"channel": "amex", "amount": 37299.77, "source_date": "14/6/2026", "expected_payment_date": "17/6/2026"},
+            {"channel": "amex", "amount": 689.89, "source_date": "14/6/2026", "expected_payment_date": "17/6/2026"},
+            {"channel": "amex", "amount": 94.47, "source_date": "12/6/2026", "expected_payment_date": "17/6/2026"},
+            {"channel": "amex", "amount": 7467.54, "source_date": "14/6/2026", "expected_payment_date": "17/6/2026"},
+            {"channel": "amex", "amount": 24309.8, "source_date": "14/6/2026", "expected_payment_date": "17/6/2026"},
+        ],
+        {
+            "status": "ok",
+            "deposits": [{"source": "amex", "amount": 151131.91, "operation_date": "17/06/2026"}],
+            "domiciled_expenses": [],
+        },
+        {"status": "ok", "payments": []},
+    )
+    assert result["status"] == "bank_validated"
+    assert result["pending_collections"] == {}
+    assert result["matches"][0]["expected_group"][0]["amount"] == 18437.66
+
+
 def test_initial_stage_waits_for_bank_files() -> None:
     result = pipeline.initial_stage_result(
         {"status": "ready_for_approval", "workflow_run": {"business_date": "2026-06-04"}},

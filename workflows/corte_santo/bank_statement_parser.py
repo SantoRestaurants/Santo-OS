@@ -31,6 +31,7 @@ DEFAULT_BANK_KEYWORDS: dict[str, list[str]] = {
     "uber_spei": ["UBR PAGOS", "UBER"],
     "rappi_spei": ["RAPPI"],
     "domiciliacion": ["DOMICILIACION", "SPOTIFY", "DOMICILIADO"],
+    "ignore_deposit": ["ABONO DCTO. CARTERA"],
     "ignore_fee": ["COMISION", "IVA COMISION"],
 }
 
@@ -71,6 +72,8 @@ def _classify(description: str, detail: str, keywords: dict[str, list[str]]) -> 
         return "rappi"
     if any(k.upper() in blob for k in keywords.get("domiciliacion", [])):
         return "domiciliacion"
+    if any(k.upper() in blob for k in keywords.get("ignore_deposit", [])):
+        return "ignored_deposit"
     return "unclassified"
 
 
@@ -83,6 +86,7 @@ def parse_banorte_rows(rows: list[dict[str, Any]], config: dict[str, Any] | None
     deposits: list[dict[str, Any]] = []
     domiciled_expenses: list[dict[str, Any]] = []
     unclassified_deposits: list[dict[str, Any]] = []
+    ignored_deposits: list[dict[str, Any]] = []
 
     for row in rows:
         desc = str(row.get(COL_DESC, "") or "")
@@ -94,6 +98,8 @@ def parse_banorte_rows(rows: list[dict[str, Any]], config: dict[str, Any] | None
         if deposit > 0:
             if kind == "unclassified":
                 unclassified_deposits.append({"description": desc.strip(), "amount": round(deposit, 2)})
+            elif kind == "ignored_deposit":
+                ignored_deposits.append({"description": desc.strip(), "amount": round(deposit, 2)})
             else:
                 deposits_by_source[kind] = round(deposits_by_source.get(kind, 0.0) + deposit, 2)
                 deposits.append(
@@ -113,6 +119,7 @@ def parse_banorte_rows(rows: list[dict[str, Any]], config: dict[str, Any] | None
         "deposits": deposits,
         "domiciled_expenses": domiciled_expenses,
         "unclassified_deposits": unclassified_deposits,
+        "ignored_deposits": ignored_deposits,
         # Any unclassified deposit is money we couldn't attribute -> review.
         "status": "requires_review" if unclassified_deposits else "ok",
     }
@@ -122,7 +129,7 @@ def parse_banorte_csv(source_path: str, config: dict[str, Any] | None = None) ->
     path = Path(source_path)
     if not path.is_file():
         return {"status": "requires_review", "review_reason": f"file_not_found:{source_path}",
-                "deposits_by_source": {}, "deposits": [], "domiciled_expenses": [], "unclassified_deposits": []}
+                "deposits_by_source": {}, "deposits": [], "domiciled_expenses": [], "unclassified_deposits": [], "ignored_deposits": []}
     text = path.read_text(encoding="utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     rows = [dict(r) for r in reader]

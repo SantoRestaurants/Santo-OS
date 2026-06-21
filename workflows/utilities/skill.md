@@ -1,3 +1,12 @@
+---
+type: workflow_skill
+title: Utility Receipts Matching
+description: Thin P0 workflow for registering utility receipt metadata, documents, and review status without autonomous payments or provider portal actions.
+resource: workflows/utilities/
+tags: [p0, utilities, receipts, matching, review]
+timestamp: 2026-06-21T00:00:00-06:00
+---
+
 # Utilities Receipt Matching
 
 ## Purpose
