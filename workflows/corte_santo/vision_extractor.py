@@ -336,7 +336,53 @@ def _extract_payment_ticket_totals(text: str, document_type: str) -> dict[str, A
     }
 
 
+def _cxc_channel(text: str) -> str | None:
+    lower = text.lower()
+    if "debito" in lower or "dÃ©bito" in lower:
+        return "debito"
+    if "credito" in lower or "crÃ©dito" in lower:
+        return "credito"
+    if "amex" in lower:
+        return "amex"
+    if "efectivo" in lower:
+        return "efectivo"
+    return None
+
+
 def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
+    consumo = None
+    propina = None
+    total_line = None
+    for line in text.splitlines():
+        lower_line = line.lower()
+        amounts = _line_amounts(line)
+        if not amounts:
+            continue
+        if "consumo" in lower_line:
+            consumo = amounts[-1]
+        elif "propina" in lower_line:
+            propina = amounts[-1]
+        elif "total" in lower_line:
+            total_line = amounts[-1]
+    if total_line is not None:
+        propina_value = propina or 0.0
+        consumo_value = consumo if consumo is not None else round(total_line - propina_value, 2)
+        return {
+            "document_type": "cxc",
+            "status": "extracted",
+            "values": {
+                "consumo": consumo_value,
+                "propina": propina_value,
+                "monto_total": total_line,
+                "monto_candidates": [total_line],
+                "canal": _cxc_channel(text),
+            },
+            "confidence": 0.9,
+            "review_reason": None,
+            "notes": "local_ocr_labeled_cxc",
+            "extractor": "local_ocr",
+        }
+
     amounts = _money_values(text, require_currency_symbol=True)
     if not amounts:
         amounts = [amount for amount in _money_values(text) if amount < 50000]
@@ -361,7 +407,7 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             "propina": 0.0,
             "monto_total": total,
             "monto_candidates": amounts,
-            "canal": channel,
+            "canal": _cxc_channel(text),
         },
         "confidence": 0.9,
         "review_reason": None,

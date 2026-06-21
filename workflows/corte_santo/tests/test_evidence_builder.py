@@ -195,6 +195,41 @@ def test_cxc_does_not_change_income_register_and_tips_fallback_to_terminal() -> 
     assert result["income_register"]["propinas"] == 10776.65
 
 
+def test_excel_courtesy_and_cxc_tip_adjust_income_register() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {
+            "amex": {"consumo": 472.0, "propina": 70.8},
+            "bancos": {"consumo": 69664.0, "propina": 9049.61},
+            "efectivo": {"consumo": 3530.0, "propina": 0.0},
+        },
+        {
+            "amex": {"consumo": 472.0, "propina": 70.8},
+            "bancos": {"consumo": 67268.0, "propina": 8691.36},
+            "efectivo": {"consumo": 3530.0, "propina": 0.0},
+        },
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "consumo": 2395.0,
+                    "propina": 359.25,
+                    "monto_total": 2754.25,
+                    "canal": "debito",
+                },
+            }
+        ],
+        income_channels={"debito": 5969.5, "credito": 69989.86},
+        income_adjustments={"cortesia_direccion": 2240.0},
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["income_register"]["debito"] == 6328.75
+    assert result["income_register"]["efectivo"] == 5770.0
+    check = next(item for item in result["checks"] if item["check_key"] == "cxc_adjustment_vs_bancos_difference")
+    assert check["status"] == "ok"
+
+
 def test_cxc_vision_failure_requires_review() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"bancos": {"consumo": 83564.65, "propina": 0.0}},

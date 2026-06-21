@@ -180,6 +180,28 @@ def _parse_block(
     return groups, details, warnings
 
 
+def _parse_income_adjustments(rows: list[list[Any]]) -> dict[str, float]:
+    label_map = {
+        "propinas efectivo": "propinas_efectivo",
+        "cortesia direccion": "cortesia_direccion",
+        "cxc": "cxc",
+        "sobre efectivo venta": "sobre_efectivo_venta",
+    }
+    adjustments: dict[str, float] = {}
+    for row in rows:
+        for c, cell in enumerate(row):
+            key = label_map.get(_normalize(cell))
+            if not key:
+                continue
+            value = 0.0
+            for candidate in row[c + 1 :]:
+                value = _to_amount(candidate)
+                if value:
+                    break
+            adjustments[key] = value
+    return adjustments
+
+
 def parse_corte_workbook(rows: list[list[Any]], config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Parse pre-loaded worksheet rows into terminal/sistema group dicts."""
     config = config or {}
@@ -233,6 +255,7 @@ def parse_corte_workbook(rows: list[list[Any]], config: dict[str, Any] | None = 
         "income_channels": {
             channel: values["global"] for channel, values in sistema_details.items()
         },
+        "income_adjustments": _parse_income_adjustments(rows),
         "warnings": warnings,
     }
 

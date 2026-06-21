@@ -92,6 +92,31 @@ def test_supplemental_system_block_maps_platforms() -> None:
     assert result["cierre_sistema"]["plataformas"]["consumo"] == 2180.0
 
 
+def test_parse_income_adjustments_from_bottom_block() -> None:
+    rows = [
+        ["Cierre Ter/Pla", "Efectivo Real"],
+        ["Consumo", 3530.0],
+        ["Propina", 3530.0],
+        [None],
+        ["Cierre Sistema", "Efectivo Sistema"],
+        ["Consumo", 3530.0],
+        ["Propina", 3530.0],
+        ["+" , "Propinas Efectivo", 860.0, 0.0],
+        [None, "CORTESIA DIRECCION", 2240.0],
+        [None, "CXC", 0.0, 0.0],
+        [None, "Sobre Efectivo Venta", 3530.0],
+    ]
+
+    result = parser.parse_corte_workbook(rows, {})
+
+    assert result["income_adjustments"] == {
+        "propinas_efectivo": 860.0,
+        "cortesia_direccion": 2240.0,
+        "cxc": 0.0,
+        "sobre_efectivo_venta": 3530.0,
+    }
+
+
 def test_parse_real_xlsx_fixture() -> None:
     result = parser.parse_corte_excel(str(FIXTURE_XLSX), {})
 

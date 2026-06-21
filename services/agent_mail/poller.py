@@ -45,6 +45,15 @@ def _safe_storage_segment(value: str, *, fallback: str = "item") -> str:
 def _safe_message_storage_id(message_id: str) -> str:
     digest = hashlib.sha256(str(message_id or "").encode("utf-8")).hexdigest()[:16]
     return f"msg_{digest}"
+
+
+def _normalized_subject_key(subject: Any) -> str:
+    value = str(subject or "").strip().lower()
+    while value.startswith(("fwd:", "fw:", "re:")):
+        value = value.split(":", 1)[1].strip()
+    return " ".join(value.split())
+
+
 AGENTMAIL_BASE = "https://api.agentmail.to/v0"
 
 
@@ -395,6 +404,26 @@ def poll_and_classify(
             before_count,
             len(messages),
         )
+        messages = sorted(
+            messages,
+            key=lambda msg: (
+                len(msg.get("attachments") or []),
+                str(msg.get("timestamp") or ""),
+            ),
+            reverse=True,
+        )
+        best_by_subject: dict[str, dict[str, Any]] = {}
+        for msg in messages:
+            key = _normalized_subject_key(msg.get("subject"))
+            if key not in best_by_subject:
+                best_by_subject[key] = msg
+        if len(best_by_subject) != len(messages):
+            logger.info(
+                "Collapsed duplicate subject packages after filter: %d -> %d",
+                len(messages),
+                len(best_by_subject),
+            )
+        messages = list(best_by_subject.values())
     results = []
 
     for msg in messages:

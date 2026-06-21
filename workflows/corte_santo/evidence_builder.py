@@ -135,6 +135,7 @@ def build_canonical_evidence(
     vision_documents: list[dict[str, Any]] | None = None,
     bank_statement: dict[str, Any] | None = None,
     income_channels: dict[str, Any] | None = None,
+    income_adjustments: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create canonical reconciliation and income-registration values."""
@@ -147,6 +148,7 @@ def build_canonical_evidence(
 
     terminal = deepcopy(cierre_terminal or {})
     sistema = deepcopy(cierre_sistema or {})
+    adjustments = income_adjustments if isinstance(income_adjustments, dict) else {}
     vision = _vision_by_type(vision_documents)
     exceptions: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
@@ -248,6 +250,8 @@ def build_canonical_evidence(
             if courtesy is not None:
                 break
     if courtesy is None:
+        courtesy = _amount(adjustments.get("cortesia_direccion"))
+    if courtesy is None:
         courtesy = 0.0
     income_cash = round(cash_base + courtesy, 2)
 
@@ -348,6 +352,9 @@ def build_canonical_evidence(
         "cortesia_direccion": courtesy,
     }
 
+    if cxc_propina > 0 and cxc_channel in income_register:
+        income_register[cxc_channel] = round((income_register.get(cxc_channel) or 0.0) + cxc_propina, 2)
+
     bank_statement = bank_statement if isinstance(bank_statement, dict) else None
     if bank_statement and bank_statement.get("status") == "requires_review":
         exceptions.append(
@@ -367,6 +374,7 @@ def build_canonical_evidence(
             "cierre_sistema": sistema,
         },
         "income_channels": income_channels if isinstance(income_channels, dict) else {},
+        "income_adjustments": adjustments,
         "income_register": income_register,
         "selected_tips": selected_tips,
         "checks": checks,

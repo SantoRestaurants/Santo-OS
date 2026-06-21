@@ -386,6 +386,48 @@ def test_poll_and_classify_filters_by_subject(monkeypatch) -> None:
     assert results[0]["email_message"]["provider_message_id"] == "msg-18"
 
 
+def test_subject_filter_processes_most_complete_package_first(monkeypatch) -> None:
+    class FakeClient:
+        def list_messages(self, after=None, limit=20):
+            return [
+                {
+                    "message_id": "msg-later",
+                    "inbox_id": "santoos@agentmail.to",
+                    "from": "Developer Santo <developer@santorestaurants.com>",
+                    "to": ["santoos@agentmail.to"],
+                    "subject": "SANTO CORTE 17 JUNIO 2026",
+                    "timestamp": "2026-06-18T17:00:00Z",
+                    "attachments": [{"filename": "SANTO CORTE.xlsx", "size": 1}],
+                },
+                {
+                    "message_id": "msg-complete",
+                    "inbox_id": "santoos@agentmail.to",
+                    "from": "Developer Santo <developer@santorestaurants.com>",
+                    "to": ["santoos@agentmail.to"],
+                    "subject": "SANTO CORTE 17 JUNIO 2026",
+                    "timestamp": "2026-06-18T16:00:00Z",
+                    "attachments": [
+                        {"filename": "SANTO CORTE.xlsx", "size": 1},
+                        {"filename": "AJUSTE DE CXC.jpeg", "size": 1},
+                    ],
+                },
+            ]
+
+    monkeypatch.setattr("services.agent_mail.poller.summarize_email", lambda subject, body: None)
+
+    results = poll_and_classify(
+        FakeClient(),
+        {
+            "confirmed": True,
+            "allowed_senders": ["developer@santorestaurants.com"],
+            "subject_prefixes": {"SANTO CORTE": "corte_santo_daily_sales_reconciliation"},
+        },
+        subject_contains="17 JUNIO 2026",
+    )
+
+    assert [item["email_message"]["provider_message_id"] for item in results] == ["msg-complete"]
+
+
 def test_supabase_workflow_run_upsert_uses_conflict_target() -> None:
     seen: dict[str, str] = {}
 
