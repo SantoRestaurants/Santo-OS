@@ -345,3 +345,7 @@ Activate and validate the Corte two-stage runtime in production:
     to terminal tips at `10776.65`; Drive updates completed, but the run still
     returned `requires_review` because Bancarias OCR and CXC-vs-difference checks
     need refinement/review.
+  - Run `27913862840` on `2026-06-21` reprocessed SANTO `2026-06-17` using the
+    most complete duplicate package, Excel cash adjustments and normalized CXC
+    OCR. It wrote `debito=6328.75`, `efectivo=5770.0`, `propinas=9120.41`, and
+    matched CXC `2754.25` against the Bancos difference without Gemini/429.
