@@ -30,6 +30,9 @@ import json
 import logging
 import mimetypes
 import os
+import re
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -102,6 +105,10 @@ def _vision_config(config: dict[str, Any]) -> dict[str, Any]:
         "cache_enabled": bool(vision.get("cache_enabled", True)),
         "cache_dir": os.environ.get("CORTE_VISION_CACHE_DIR", "")
         or vision.get("cache_dir", ".cache/corte_santo_vision"),
+        "local_ocr_enabled": bool(vision.get("local_ocr_enabled", True)),
+        "local_ocr_fallback_to_vision": bool(vision.get("local_ocr_fallback_to_vision", True)),
+        "local_ocr_lang": vision.get("local_ocr_lang", "eng+spa"),
+        "local_ocr_psm": str(vision.get("local_ocr_psm", "6")),
         "api_key": api_key,
     }
 
@@ -225,6 +232,139 @@ def _write_cache(cfg: dict[str, Any], cache_key: str, result: dict[str, Any], so
         path.write_text(json.dumps(payload, sort_keys=True, ensure_ascii=True), encoding="utf-8")
     except OSError:
         return
+
+
+def _parse_money(raw: str) -> float | None:
+    cleaned = raw.strip().replace("$", "").replace(" ", "")
+    if "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(",", "")
+    elif "," in cleaned:
+        cleaned = cleaned.replace(",", ".")
+    try:
+        return round(float(cleaned), 2)
+    except ValueError:
+        return None
+
+
+def _money_values(text: str) -> list[float]:
+    values = []
+    for match in re.finditer(r"\$?\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$?\s*\d+(?:[.,]\d{2})", text):
+        value = _parse_money(match.group(0))
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def _line_amounts(line: str) -> list[float]:
+    return _money_values(line)
+
+
+def _run_tesseract(path: Path, cfg: dict[str, Any]) -> str | None:
+    if shutil.which("tesseract") is None:
+        logger.info("Local OCR skipped: tesseract executable not found")
+        return None
+    cmd = [
+        "tesseract",
+        str(path),
+        "stdout",
+        "-l",
+        str(cfg.get("local_ocr_lang") or "eng+spa"),
+        "--psm",
+        str(cfg.get("local_ocr_psm") or "6"),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        logger.exception("Local OCR failed to execute for image=%s", path.name)
+        return None
+    if completed.returncode != 0:
+        logger.warning("Local OCR returned code=%s stderr=%s", completed.returncode, completed.stderr[:300])
+        return None
+    text = completed.stdout.strip()
+    logger.info("Local OCR produced %d character(s) for image=%s", len(text), path.name)
+    return text
+
+
+def _extract_payment_ticket_totals(text: str, document_type: str) -> dict[str, Any] | None:
+    total_lines = []
+    propina_lines = []
+    consumo_lines = []
+    for line in text.splitlines():
+        normalized = line.lower()
+        amounts = _line_amounts(line)
+        if not amounts:
+            continue
+        if "subtotal" in normalized:
+            consumo_lines.extend(amounts)
+            continue
+        if "propina" in normalized or "tip" in normalized:
+            propina_lines.extend(amounts)
+            continue
+        if "total" in normalized:
+            total_lines.extend(amounts)
+
+    totals = [amount for amount in total_lines if amount > 0]
+    if not totals:
+        return None
+    values = {
+        "consumo": round(sum(consumo_lines), 2) if consumo_lines else None,
+        "propina": round(sum(propina_lines), 2) if propina_lines else None,
+        "total": round(sum(totals), 2),
+    }
+    return {
+        "document_type": document_type,
+        "status": "extracted",
+        "values": values,
+        "confidence": 0.91,
+        "review_reason": None,
+        "notes": f"local_ocr_total_lines={len(totals)}",
+        "extractor": "local_ocr",
+    }
+
+
+def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
+    amounts = _money_values(text)
+    if not amounts:
+        return None
+    channel = None
+    lower = text.lower()
+    if "debito" in lower or "débito" in lower:
+        channel = "debito"
+    elif "credito" in lower or "crédito" in lower:
+        channel = "credito"
+    elif "amex" in lower:
+        channel = "amex"
+    elif "efectivo" in lower:
+        channel = "efectivo"
+    total = round(sum(amounts), 2)
+    return {
+        "document_type": "cxc",
+        "status": "extracted",
+        "values": {"consumo": total, "propina": 0.0, "monto_total": total, "canal": channel},
+        "confidence": 0.9,
+        "review_reason": None,
+        "notes": f"local_ocr_amounts={len(amounts)}",
+        "extractor": "local_ocr",
+    }
+
+
+def _local_ocr_extract(document_type: str, path: Path, cfg: dict[str, Any]) -> dict[str, Any] | None:
+    if not cfg.get("local_ocr_enabled") or document_type not in ("amex", "bancarias", "cxc"):
+        return None
+    text = _run_tesseract(path, cfg)
+    if not text:
+        return None
+    if document_type in ("amex", "bancarias"):
+        return _extract_payment_ticket_totals(text, document_type)
+    if document_type == "cxc":
+        return _extract_cxc_totals(text)
+    return None
 
 
 def _call_anthropic(cfg: dict[str, Any], prompt: str, media_type: str, b64: str) -> dict[str, Any]:
@@ -353,19 +493,12 @@ def extract_document(
 
     if document_type not in DOCUMENT_SCHEMAS:
         return review(f"unknown_document_type:{document_type}")
-    if httpx is None:
-        return review("httpx_not_available")
-    if _has_unconfirmed_value(cfg["model"]):
-        return review("vision_model_not_configured")
-    if not cfg["api_key"]:
-        return review("vision_api_key_missing")
 
     path = Path(image_path)
     if not path.is_file():
         return review(f"image_not_found:{image_path}")
 
     try:
-        media_type, b64 = _encode_image(path)
         prompt = _build_prompt(document_type)
         effective_source_hash = source_hash or hashlib.sha256(path.read_bytes()).hexdigest()
         cache_key = _cache_key(cfg, document_type, effective_source_hash, prompt)
@@ -392,6 +525,31 @@ def extract_document(
             cfg.get("provider"),
             cfg.get("model"),
         )
+        local_result = _local_ocr_extract(document_type, path, cfg)
+        if local_result is not None:
+            local_result["cache"] = "miss"
+            _write_cache(cfg, cache_key, local_result, effective_source_hash)
+            logger.info(
+                "Local OCR extraction completed document_type=%s image=%s confidence=%.3f",
+                document_type,
+                path.name,
+                float(local_result.get("confidence") or 0),
+            )
+            return local_result
+        if cfg.get("local_ocr_enabled") and not cfg.get("local_ocr_fallback_to_vision"):
+            logger.info(
+                "Local OCR could not extract document_type=%s image=%s; vision fallback disabled",
+                document_type,
+                path.name,
+            )
+            return review("local_ocr_extraction_requires_review")
+        if httpx is None:
+            return review("httpx_not_available")
+        if _has_unconfirmed_value(cfg["model"]):
+            return review("vision_model_not_configured")
+        if not cfg["api_key"]:
+            return review("vision_api_key_missing")
+        media_type, b64 = _encode_image(path)
         if cfg["provider"] == "anthropic":
             result = _call_anthropic(cfg, prompt, media_type, b64)
         elif cfg["provider"] == "gemini":

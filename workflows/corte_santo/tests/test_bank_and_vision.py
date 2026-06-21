@@ -73,8 +73,10 @@ def test_vision_missing_api_key_requires_review() -> None:
     assert res["review_reason"] in ("vision_api_key_missing", "image_not_found:x.jpg")
 
 
-def test_vision_model_not_configured_requires_review() -> None:
-    res = vision.extract_document("tira", "x.jpg", {"vision_extraction": {}})
+def test_vision_model_not_configured_requires_review(tmp_path: Path) -> None:
+    image = tmp_path / "x.jpg"
+    image.write_bytes(b"fake-image")
+    res = vision.extract_document("tira", str(image), {"vision_extraction": {}})
     assert res["status"] == "requires_review"
     assert res["review_reason"] == "vision_model_not_configured"
 
@@ -130,6 +132,41 @@ def test_vision_uses_success_cache(monkeypatch, tmp_path: Path) -> None:
     assert second["status"] == "extracted"
     assert second["cache"] == "hit"
     assert len(calls) == 1
+
+
+def test_local_ocr_amex_sums_total_lines_without_double_counting_tip() -> None:
+    text = """
+    AMEX CIERRE
+    SUBTOTAL $3,990.00
+    PROPINA $281.75
+    TOTAL $4,271.75
+    AMEX CIERRE
+    SUBTOTAL $12,000.00
+    PROPINA $990.25
+    TOTAL $12,990.25
+    """
+
+    result = vision._extract_payment_ticket_totals(text, "amex")
+
+    assert result is not None
+    assert result["values"]["total"] == 17262.0
+    assert result["values"]["propina"] == 1272.0
+
+
+def test_local_ocr_cxc_sums_visible_amounts_and_detects_debit() -> None:
+    text = """
+    AJUSTE DE CXC DIEGO VILLANUEVA
+    tarjeta de debito
+    movimiento 87745 $1,695.00
+    movimiento 77099 $2,750.00
+    movimiento 77098 $2,270.00
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["monto_total"] == 6715.0
+    assert result["values"]["canal"] == "debito"
 
 
 def test_corte_run_skips_vision_when_disabled(monkeypatch, tmp_path: Path) -> None:

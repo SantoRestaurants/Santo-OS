@@ -71,6 +71,10 @@
     "max_tokens": 4096,
     "cache_enabled": true,
     "cache_dir": ".cache/corte_santo_vision",
+    "local_ocr_enabled": true,
+    "local_ocr_fallback_to_vision": false,
+    "local_ocr_lang": "eng+spa",
+    "local_ocr_psm": "6",
     "retry_attempts": 4,
     "retry_backoff_seconds": 15,
     "request_delay_seconds": 2

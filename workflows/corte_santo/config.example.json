@@ -53,7 +53,11 @@
     "api_key_env": "CORTE_VISION_API_KEY",
     "confidence_threshold": 0.9,
     "cache_enabled": true,
-    "cache_dir": ".cache/corte_santo_vision"
+    "cache_dir": ".cache/corte_santo_vision",
+    "local_ocr_enabled": true,
+    "local_ocr_fallback_to_vision": false,
+    "local_ocr_lang": "eng+spa",
+    "local_ocr_psm": "6"
   },
   "bank_keywords": {
     "_comment": "Keyword rules to classify Banorte statement rows. 'REST SANTO' => Banorte settlement; SPEI from AMERICAN EXPRESS => amex; UBR PAGOS/UBER => uber; domiciliacion/Spotify => additional expense.",
