@@ -169,6 +169,22 @@ def test_local_ocr_cxc_sums_visible_amounts_and_detects_debit() -> None:
     assert result["values"]["canal"] == "debito"
 
 
+def test_local_ocr_cxc_prefers_payment_line_with_tip() -> None:
+    text = """
+    GRAN TOTAL: $2,395.00
+    FORMAS DE PAGO
+    Tarjeta de debito $2,754.25 $359.25
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["consumo"] == 2395.0
+    assert result["values"]["propina"] == 359.25
+    assert result["values"]["monto_total"] == 2754.25
+    assert result["values"]["canal"] == "debito"
+
+
 def test_corte_run_skips_vision_when_disabled(monkeypatch, tmp_path: Path) -> None:
     called = []
     monkeypatch.setattr(script, "_load_sibling_module", lambda name: called.append(name) or None)

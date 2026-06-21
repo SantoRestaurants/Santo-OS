@@ -340,6 +340,8 @@ def _cxc_channel(text: str) -> str | None:
     lower = text.lower()
     if "debito" in lower or "dÃ©bito" in lower:
         return "debito"
+    if "tarjeta" in lower and "credito" not in lower and "crÃ©dito" not in lower:
+        return "debito"
     if "credito" in lower or "crÃ©dito" in lower:
         return "credito"
     if "amex" in lower:
@@ -353,18 +355,28 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
     consumo = None
     propina = None
     total_line = None
+    channel = _cxc_channel(text)
     for line in text.splitlines():
         lower_line = line.lower()
         amounts = _line_amounts(line)
         if not amounts:
             continue
+        if (
+            ("tarjeta" in lower_line or "debito" in lower_line or "dÃ©bito" in lower_line)
+            and len(amounts) >= 2
+        ):
+            total_line = amounts[0]
+            propina = amounts[1]
+            consumo = round(total_line - propina, 2)
+            channel = "debito"
+            break
         if "consumo" in lower_line:
             consumo = amounts[-1]
         elif "propina" in lower_line:
             propina = amounts[-1]
         elif "total" in lower_line:
             total_line = amounts[-1]
-    if total_line is not None:
+    if total_line is not None and (consumo is not None or propina is not None or channel is not None):
         propina_value = propina or 0.0
         consumo_value = consumo if consumo is not None else round(total_line - propina_value, 2)
         return {
@@ -375,7 +387,7 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
                 "propina": propina_value,
                 "monto_total": total_line,
                 "monto_candidates": [total_line],
-                "canal": _cxc_channel(text),
+                "canal": channel,
             },
             "confidence": 0.9,
             "review_reason": None,
