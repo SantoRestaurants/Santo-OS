@@ -14,6 +14,7 @@ It never invents a missing value; incomplete or conflicting evidence produces
 
 from __future__ import annotations
 
+from itertools import combinations
 from copy import deepcopy
 from typing import Any
 
@@ -62,6 +63,35 @@ def _cxc_total(values: dict[str, Any]) -> float:
     consumo = _amount(values.get("consumo")) or 0.0
     propina = _amount(values.get("propina")) or 0.0
     return round(consumo + propina, 2)
+
+
+def _amount_candidates(value: Any) -> list[float]:
+    if not isinstance(value, list):
+        return []
+    candidates = []
+    for item in value:
+        amount = _amount(item)
+        if amount is not None and amount > 0:
+            candidates.append(amount)
+    return candidates
+
+
+def _best_candidate_sum(candidates: list[float], target: float, max_items: int = 10) -> float | None:
+    clean = candidates[:max_items]
+    if not clean:
+        return None
+    best = None
+    best_delta = None
+    for size in range(1, len(clean) + 1):
+        for combo in combinations(clean, size):
+            total = round(sum(combo), 2)
+            delta = abs(round(total - target, 2))
+            if best is None or delta < (best_delta or 0):
+                best = total
+                best_delta = delta
+                if delta == 0:
+                    return best
+    return best
 
 
 def _vision_by_type(vision_documents: Any) -> dict[str, dict[str, Any]]:
@@ -122,6 +152,11 @@ def build_canonical_evidence(
         values = document.get("values") if isinstance(document.get("values"), dict) else {}
         photo_total = _amount(values.get("total"))
         excel_total = _global(terminal.get(group))
+        candidate_total = _best_candidate_sum(_amount_candidates(values.get("total_candidates")), excel_total)
+        if candidate_total is not None and (
+            photo_total is None or abs(candidate_total - excel_total) < abs(photo_total - excel_total)
+        ):
+            photo_total = candidate_total
         if photo_total is None:
             exceptions.append(
                 _exception(f"{document_type}_photo_total_missing", {"document_type": document_type})
@@ -216,6 +251,15 @@ def build_canonical_evidence(
         cxc_consumo = _amount(cxc_values.get("consumo")) or 0.0
         cxc_propina = _amount(cxc_values.get("propina")) or 0.0
         cxc_total = _cxc_total(cxc_values)
+        bancos_difference = abs(round(_global(terminal.get("bancos")) - _global(sistema.get("bancos")), 2))
+        candidate_cxc_total = _best_candidate_sum(
+            _amount_candidates(cxc_values.get("monto_candidates")),
+            bancos_difference,
+        )
+        if candidate_cxc_total is not None and abs(candidate_cxc_total - bancos_difference) < abs(cxc_total - bancos_difference):
+            cxc_total = candidate_cxc_total
+            cxc_consumo = candidate_cxc_total
+            cxc_propina = 0.0
         canal_raw = cxc_values.get("canal")
         if isinstance(canal_raw, str):
             canal_lower = canal_raw.lower().strip()

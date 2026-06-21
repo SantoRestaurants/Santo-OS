@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from datetime import date
@@ -27,6 +28,8 @@ from services.agent_mail.poller import (
 )
 from services.drive_connector.connector import build_drive_client
 from services.drive_connector.corte_bank_watcher import poll_bank_folder_once
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_ROUTING_CONFIG = "services/agent_mail/config.json"
@@ -381,6 +384,10 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
     parser = argparse.ArgumentParser(description="Run Corte Santo scheduled jobs once.")
     parser.add_argument("--job", choices=("agent-mail", "bank-watcher", "all"), default="all")
     parser.add_argument("--routing-config", default=DEFAULT_ROUTING_CONFIG)

@@ -121,6 +121,51 @@ def test_cxc_adjustment_is_checked_against_bancos_difference() -> None:
     )
 
 
+def test_ocr_total_candidates_can_match_excel_total() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"amex": {"consumo": 17262.0, "propina": 0.0}},
+        {"amex": {"consumo": 17262.0, "propina": 0.0}},
+        vision_documents=[
+            {
+                "document_type": "amex",
+                "status": "extracted",
+                "values": {
+                    "total": 26244.0,
+                    "total_candidates": [4271.75, 12990.25, 8982.0],
+                },
+            }
+        ],
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    check = result["checks"][0]
+    assert check["photo_total"] == 17262.0
+    assert check["status"] == "ok"
+
+
+def test_cxc_candidate_amounts_match_bancos_difference() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 83564.65, "propina": 0.0}},
+        {"bancos": {"consumo": 76850.65, "propina": 0.0}},
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "monto_total": 82827.99,
+                    "monto_candidates": [1695.0, 2750.0, 2269.0, 76113.99],
+                    "canal": "debito",
+                },
+            }
+        ],
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    check = next(item for item in result["checks"] if item["check_key"] == "cxc_adjustment_vs_bancos_difference")
+    assert check["cxc_total"] == 6714.0
+    assert check["status"] == "ok"
+
+
 def test_cxc_vision_failure_requires_review() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"bancos": {"consumo": 83564.65, "propina": 0.0}},

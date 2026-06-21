@@ -246,9 +246,14 @@ def _parse_money(raw: str) -> float | None:
         return None
 
 
-def _money_values(text: str) -> list[float]:
+def _money_values(text: str, *, require_currency_symbol: bool = False) -> list[float]:
     values = []
-    for match in re.finditer(r"\$?\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$?\s*\d+(?:[.,]\d{2})", text):
+    pattern = (
+        r"\$\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$\s*\d+(?:[.,]\d{2})"
+        if require_currency_symbol
+        else r"\$?\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$?\s*\d+(?:[.,]\d{2})"
+    )
+    for match in re.finditer(pattern, text):
         value = _parse_money(match.group(0))
         if value is not None:
             values.append(value)
@@ -316,6 +321,7 @@ def _extract_payment_ticket_totals(text: str, document_type: str) -> dict[str, A
         "consumo": round(sum(consumo_lines), 2) if consumo_lines else None,
         "propina": round(sum(propina_lines), 2) if propina_lines else None,
         "total": round(sum(totals), 2),
+        "total_candidates": totals,
     }
     return {
         "document_type": document_type,
@@ -329,7 +335,9 @@ def _extract_payment_ticket_totals(text: str, document_type: str) -> dict[str, A
 
 
 def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
-    amounts = _money_values(text)
+    amounts = _money_values(text, require_currency_symbol=True)
+    if not amounts:
+        amounts = [amount for amount in _money_values(text) if amount < 50000]
     if not amounts:
         return None
     channel = None
@@ -346,7 +354,13 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
     return {
         "document_type": "cxc",
         "status": "extracted",
-        "values": {"consumo": total, "propina": 0.0, "monto_total": total, "canal": channel},
+        "values": {
+            "consumo": total,
+            "propina": 0.0,
+            "monto_total": total,
+            "monto_candidates": amounts,
+            "canal": channel,
+        },
         "confidence": 0.9,
         "review_reason": None,
         "notes": f"local_ocr_amounts={len(amounts)}",
