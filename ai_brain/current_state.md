@@ -340,3 +340,8 @@ Activate and validate the Corte two-stage runtime in production:
     disabled in the confirmed config. Run `27909801448` on `2026-06-21`
     completed without Gemini/429; AMEX matched the Excel total, while
     Bancarias and CXC OCR still require parser/rule refinement or review.
+  - Run `27910052864` on `2026-06-21` confirmed CXC evidence no longer inflates
+    the income register: `debito` remained `10027.51` and `propinas` fell back
+    to terminal tips at `10776.65`; Drive updates completed, but the run still
+    returned `requires_review` because Bancarias OCR and CXC-vs-difference checks
+    need refinement/review.
