@@ -266,10 +266,10 @@ def _line_amounts(line: str) -> list[float]:
     return _money_values(line)
 
 
-def _amount_with_written_suffix(candidates: list[float], text: str, suffix: int) -> float | None:
+def _amount_with_written_suffix(candidates: list[float], text: str, suffix: int, max_delta: int = 5) -> float | None:
     for amount in candidates:
         rounded = int(round(amount))
-        if abs((rounded % 100) - suffix) <= 5:
+        if abs((rounded % 100) - suffix) <= max_delta:
             return float(rounded - ((rounded % 100) - suffix))
     return None
 
@@ -453,7 +453,7 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
         if account_candidates:
             written_account = None
             if "sesenta y cinco" in text.lower():
-                written_account = _amount_with_written_suffix(account_candidates, text, 65)
+                written_account = _amount_with_written_suffix(account_candidates, text, 65, max_delta=25)
             payment_account = written_account if written_account is not None else min(account_candidates)
             payment_propina = round(payment_total - payment_account, 2)
     if payment_total is not None and payment_account is not None:

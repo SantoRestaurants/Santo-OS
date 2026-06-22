@@ -288,6 +288,20 @@ def test_local_ocr_cxc_transfer_ignores_small_subtotal_noise() -> None:
     assert result["values"]["paypal_amount"] == 513.0
 
 
+def test_local_ocr_cxc_transfer_corrects_nearby_written_suffix() -> None:
+    text = """
+    Gran Total: $2,585.00
+    DOS MIL QUINIENTOS SESENTA Y CINCO PESOS
+    Transferencia $3078.00 $613.00 $006
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["consumo"] == 2565.0
+    assert result["values"]["propina"] == 513.0
+
+
 def test_local_ocr_cxc_ticket_uses_gran_total_when_payment_line_is_noisy() -> None:
     text = """
     Subtotal: $211.21
