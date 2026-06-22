@@ -221,6 +221,40 @@ def test_local_ocr_cxc_payment_breakdown_builds_paypal_formula() -> None:
     assert "PAGO CXC MOV 87028 TRANSFERENCIA" in result["values"]["comment_lines"]
 
 
+def test_local_ocr_cxc_ticket_charge_becomes_paypal_component() -> None:
+    text = """
+    Gran Total: $245.00
+    FORMAS DE PAGO
+    Nombre Monto Propina Cambio
+    CXC $245.00 $0.00 $0.00
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["canal"] == "cxc"
+    assert result["values"]["paypal_amount"] == 245.0
+    assert result["values"]["paypal_formula_terms"] == [245.0]
+
+
+def test_local_ocr_cxc_transfer_line_infers_account_from_tip() -> None:
+    text = """
+    Gran Total: $2,565.00
+    FORMAS DE PAGO
+    Nombre Monto Propina Cambio
+    Transferencia $3,078.00 $513.00 $0.00
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["canal"] == "transferencia"
+    assert result["values"]["consumo"] == 2565.0
+    assert result["values"]["propina"] == 513.0
+    assert result["values"]["paypal_amount"] == 513.0
+    assert result["values"]["paypal_formula_terms"] == [3078.0, -2565.0]
+
+
 def test_local_ocr_detalle_efectivo_extracts_courtesy() -> None:
     text = """
     DETALLE DE EFECTIVO

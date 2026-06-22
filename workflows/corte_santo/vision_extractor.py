@@ -389,8 +389,17 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             channel = "transferencia"
         if not amounts:
             continue
-        if "cxc" in lower_line and "mov" in lower_line and "pago" not in lower_line:
-            cxc_charge_amounts.append(amounts[-1])
+        if "transferencia" in lower_line and len(amounts) >= 2:
+            payment_total = amounts[0]
+            payment_propina = amounts[1]
+            payment_account = round(payment_total - payment_propina, 2)
+            channel = "transferencia"
+        if (
+            "cxc" in lower_line
+            and "pago" not in lower_line
+            and ("mov" in lower_line or lower_clean.startswith("cxc"))
+        ):
+            cxc_charge_amounts.append(amounts[0])
         if "cuenta" in lower_line:
             payment_account = amounts[-1]
         elif "propina" in lower_line:
@@ -434,6 +443,26 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             "confidence": 0.9,
             "review_reason": None,
             "notes": "local_ocr_cxc_payment_breakdown",
+            "extractor": "local_ocr",
+        }
+    if cxc_charge_amounts:
+        paypal_amount = round(sum(cxc_charge_amounts), 2)
+        return {
+            "document_type": "cxc",
+            "status": "extracted",
+            "values": {
+                "consumo": paypal_amount,
+                "propina": 0.0,
+                "monto_total": paypal_amount,
+                "monto_candidates": cxc_charge_amounts,
+                "canal": "cxc",
+                "comment_lines": comment_lines,
+                "paypal_amount": paypal_amount,
+                "paypal_formula_terms": cxc_charge_amounts,
+            },
+            "confidence": 0.9,
+            "review_reason": None,
+            "notes": "local_ocr_cxc_charge",
             "extractor": "local_ocr",
         }
     if total_line is not None and (consumo is not None or propina is not None or channel is not None):

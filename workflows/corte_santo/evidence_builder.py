@@ -366,6 +366,8 @@ def build_canonical_evidence(
     cxc_doc = vision.get("cxc")
     cxc_total = 0.0
     paypal_cxc_total = 0.0
+    paypal_note_values: dict[str, Any] = {"comment_lines": [], "paypal_formula_terms": []}
+    paypal_note_channel = None
     for cxc_candidate in _vision_documents_of_type(vision_documents, "cxc"):
         candidate_values = cxc_candidate.get("values") if isinstance(cxc_candidate.get("values"), dict) else {}
         candidate_paypal = _amount(candidate_values.get("paypal_amount"))
@@ -374,9 +376,18 @@ def build_canonical_evidence(
         candidate_propina = _amount(candidate_values.get("propina")) or 0.0
         candidate_channel = _channel_from_raw(candidate_values.get("canal"))
         paypal_cxc_total = round(paypal_cxc_total + candidate_paypal, 2)
-        cxc_note = _cxc_paypal_note(candidate_values, candidate_paypal, candidate_channel)
+        for line in candidate_values.get("comment_lines") or []:
+            text = str(line).strip()
+            if text and text not in paypal_note_values["comment_lines"]:
+                paypal_note_values["comment_lines"].append(text)
+        for term in candidate_values.get("paypal_formula_terms") or []:
+            paypal_note_values["paypal_formula_terms"].append(term)
+        if candidate_channel and candidate_channel != "cxc":
+            paypal_note_channel = candidate_channel
         if candidate_propina > 0:
             selected_tips = round((selected_tips or 0.0) + candidate_propina, 2)
+    if paypal_cxc_total > 0:
+        cxc_note = _cxc_paypal_note(paypal_note_values, paypal_cxc_total, paypal_note_channel)
 
     if paypal_cxc_total <= 0 and cxc_doc and cxc_doc.get("status") != "extracted":
         exceptions.append(

@@ -319,6 +319,61 @@ def test_cxc_transfer_payment_updates_paypal_tips_and_amex_photo_total() -> None
     assert not any(check["check_key"] == "cxc_adjustment_vs_bancos_difference" for check in result["checks"])
 
 
+def test_multiple_cxc_documents_combine_paypal_formula() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {
+            "amex": {"consumo": 67497.0, "propina": 10602.29},
+            "bancos": {"consumo": 143936.0, "propina": 18441.93},
+        },
+        {
+            "amex": {"consumo": 67497.0, "propina": 10602.29},
+            "bancos": {"consumo": 143936.0, "propina": 18441.93},
+        },
+        vision_documents=[
+            {
+                "document_type": "amex",
+                "status": "extracted",
+                "values": {"total": 78099.19},
+            },
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "propina": 0.0,
+                    "monto_total": 245.0,
+                    "canal": "cxc",
+                    "paypal_amount": 245.0,
+                    "paypal_formula_terms": [245.0],
+                    "comment_lines": ["CXC MESERO MOV 89972 $245"],
+                },
+            },
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "consumo": 2565.0,
+                    "propina": 513.0,
+                    "monto_total": 3078.0,
+                    "canal": "transferencia",
+                    "paypal_amount": 513.0,
+                    "paypal_formula_terms": [3078.0, -2565.0],
+                    "comment_lines": ["PAGO CXC MOV 87028 TRANSFERENCIA", "$2565 CUENTA", "$513 PROPINA", "$3078 TOTAL"],
+                },
+            },
+        ],
+        income_channels={"paypal": 0.0},
+        config={"evidence_rules": {"evidence_tolerance": 0, "income_photo_override_tolerance": 0.1}},
+    )
+
+    assert result["income_register"]["paypal"] == 758.0
+    assert result["income_register"]["propinas"] == 29557.12
+    paypal_note = result["income_cell_notes"]["paypal"]
+    assert paypal_note["amount"] == 758.0
+    assert paypal_note["formula"] == "=245+3078-2565"
+    assert "CXC MESERO MOV 89972 $245" in paypal_note["comment"]
+    assert "PAGO CXC MOV 87028 TRANSFERENCIA" in paypal_note["comment"]
+
+
 def test_cxc_vision_failure_requires_review() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"bancos": {"consumo": 83564.65, "propina": 0.0}},
