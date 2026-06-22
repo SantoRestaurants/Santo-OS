@@ -31,7 +31,8 @@
     "reconciliation_tolerance": 0.0
   },
   "evidence_rules": {
-    "evidence_tolerance": 0.0
+    "evidence_tolerance": 0.0,
+    "income_photo_override_tolerance": 0.1
   },
   "bank_keywords": {
     "ignore_deposit": [

@@ -14,7 +14,8 @@
   "thresholds": "[CONFIRM]",
   "evidence_rules": {
     "_comment": "Confirmed rules from the Corte Santo operating procedure. Evidence mismatches above tolerance require review.",
-    "evidence_tolerance": 0
+    "evidence_tolerance": 0,
+    "income_photo_override_tolerance": "[CONFIRM]"
   },
   "supervisor_email": "[CONFIRM]",
   "ingresos_layout": {

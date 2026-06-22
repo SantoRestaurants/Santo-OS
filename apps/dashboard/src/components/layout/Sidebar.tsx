@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  GitCompareArrows,
   HelpCircle,
   Home,
   Menu,
@@ -32,6 +33,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/reviews",
     icon: <ShieldCheck className="h-4 w-4" />,
     dataTour: "nav-reviews",
+  },
+  {
+    label: "Conciliación",
+    href: "/conciliacion",
+    icon: <GitCompareArrows className="h-4 w-4" />,
+    dataTour: "nav-conciliacion",
   },
   {
     label: "Cortes",

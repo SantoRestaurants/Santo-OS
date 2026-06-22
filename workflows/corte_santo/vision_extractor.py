@@ -251,9 +251,9 @@ def _parse_money(raw: str) -> float | None:
 def _money_values(text: str, *, require_currency_symbol: bool = False) -> list[float]:
     values = []
     pattern = (
-        r"\$\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$\s*\d+(?:[.,]\d{2})"
+        r"\$\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$\s*\d+(?:[.,]\d{2})|\$\s*\d+"
         if require_currency_symbol
-        else r"\$?\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$?\s*\d+(?:[.,]\d{2})"
+        else r"\$\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$\s*\d+(?:[.,]\d{2})|\$\s*\d+|\$?\s*\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d{2})|\$?\s*\d+(?:[.,]\d{2})"
     )
     for match in re.finditer(pattern, text):
         value = _parse_money(match.group(0))
@@ -348,6 +348,14 @@ def _cxc_channel(text: str) -> str | None:
         return "amex"
     if "efectivo" in lower:
         return "efectivo"
+    if "transferencia" in lower or "spei" in lower:
+        return "transferencia"
+    if "paypal" in lower:
+        return "paypal"
+    if "uber" in lower:
+        return "uber"
+    if "rappi" in lower:
+        return "rappi"
     return None
 
 
@@ -357,6 +365,10 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
     total_line = None
     channel = _cxc_channel(text)
     comment_lines = []
+    cxc_charge_amounts = []
+    payment_account = None
+    payment_total = None
+    payment_propina = None
     for line in text.splitlines():
         clean_line = " ".join(line.strip().split())
         lower_clean = clean_line.lower()
@@ -365,12 +377,27 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             or "total" in lower_clean
             or "tarjeta" in lower_clean
             or "cxc" in lower_clean
+            or "pago" in lower_clean
+            or "cuenta" in lower_clean
+            or "propina" in lower_clean
+            or "transferencia" in lower_clean
         ):
             comment_lines.append(clean_line)
         lower_line = line.lower()
         amounts = _line_amounts(line)
+        if "transferencia" in lower_line or "spei" in lower_line:
+            channel = "transferencia"
         if not amounts:
             continue
+        if "cxc" in lower_line and "mov" in lower_line and "pago" not in lower_line:
+            cxc_charge_amounts.append(amounts[-1])
+        if "cuenta" in lower_line:
+            payment_account = amounts[-1]
+        elif "propina" in lower_line:
+            payment_propina = amounts[-1]
+            propina = amounts[-1]
+        elif "total" in lower_line:
+            payment_total = amounts[-1]
         if (
             ("tarjeta" in lower_line or "debito" in lower_line or "dÃ©bito" in lower_line)
             and len(amounts) >= 2
@@ -386,6 +413,29 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             propina = amounts[-1]
         elif "total" in lower_line:
             total_line = amounts[-1]
+    if payment_total is not None and payment_account is not None:
+        propina_value = payment_propina
+        if propina_value is None:
+            propina_value = round(payment_total - payment_account, 2)
+        paypal_amount = round(sum(cxc_charge_amounts) + payment_total - payment_account, 2)
+        return {
+            "document_type": "cxc",
+            "status": "extracted",
+            "values": {
+                "consumo": payment_account,
+                "propina": propina_value,
+                "monto_total": payment_total,
+                "monto_candidates": [paypal_amount],
+                "canal": channel,
+                "comment_lines": comment_lines,
+                "paypal_amount": paypal_amount,
+                "paypal_formula_terms": cxc_charge_amounts + [payment_total, -payment_account],
+            },
+            "confidence": 0.9,
+            "review_reason": None,
+            "notes": "local_ocr_cxc_payment_breakdown",
+            "extractor": "local_ocr",
+        }
     if total_line is not None and (consumo is not None or propina is not None or channel is not None):
         propina_value = propina or 0.0
         consumo_value = consumo if consumo is not None else round(total_line - propina_value, 2)
@@ -440,8 +490,43 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
     }
 
 
+def _extract_detalle_efectivo_totals(text: str) -> dict[str, Any] | None:
+    values: dict[str, float] = {}
+    total_candidates = []
+    for line in text.splitlines():
+        lower = line.lower()
+        amounts = _line_amounts(line)
+        if not amounts:
+            continue
+        amount = amounts[-1]
+        if "efectivo" in lower and ("real" in lower or "contado" in lower):
+            values["efectivo_real"] = amount
+        elif "propina" in lower:
+            values["propina_efectivo"] = amount
+        elif "cortesia" in lower or "cortesÃ­a" in lower or "direccion" in lower or "direcci" in lower:
+            values["cortesia_direccion"] = amount
+        elif "deposito" in lower or "depÃ³sito" in lower:
+            values["deposito"] = amount
+        elif "total" in lower:
+            values["total"] = amount
+            total_candidates.append(amount)
+    if not values:
+        return None
+    if "total" not in values and total_candidates:
+        values["total"] = total_candidates[-1]
+    return {
+        "document_type": "detalle_efectivo",
+        "status": "extracted",
+        "values": values,
+        "confidence": 0.88,
+        "review_reason": None,
+        "notes": "local_ocr_detalle_efectivo",
+        "extractor": "local_ocr",
+    }
+
+
 def _local_ocr_extract(document_type: str, path: Path, cfg: dict[str, Any]) -> dict[str, Any] | None:
-    if not cfg.get("local_ocr_enabled") or document_type not in ("amex", "bancarias", "cxc"):
+    if not cfg.get("local_ocr_enabled") or document_type not in ("amex", "bancarias", "cxc", "detalle_efectivo"):
         return None
     text = _run_tesseract(path, cfg)
     if not text:
@@ -450,6 +535,8 @@ def _local_ocr_extract(document_type: str, path: Path, cfg: dict[str, Any]) -> d
         return _extract_payment_ticket_totals(text, document_type)
     if document_type == "cxc":
         return _extract_cxc_totals(text)
+    if document_type == "detalle_efectivo":
+        return _extract_detalle_efectivo_totals(text)
     return None
 
 

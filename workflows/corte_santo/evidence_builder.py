@@ -111,11 +111,30 @@ def _best_candidate_sum(candidates: list[float], target: float, max_items: int =
 def _vision_by_type(vision_documents: Any) -> dict[str, dict[str, Any]]:
     if not isinstance(vision_documents, list):
         return {}
-    return {
-        str(item.get("document_type")): item
+    documents: dict[str, dict[str, Any]] = {}
+    for item in vision_documents:
+        if not isinstance(item, dict) or not item.get("document_type"):
+            continue
+        document_type = str(item.get("document_type"))
+        if document_type == "cxc":
+            values = item.get("values") if isinstance(item.get("values"), dict) else {}
+            existing = documents.get(document_type)
+            existing_values = existing.get("values") if isinstance(existing, dict) else {}
+            if values.get("paypal_amount") or not existing_values.get("paypal_amount"):
+                documents[document_type] = item
+            continue
+        documents[document_type] = item
+    return documents
+
+
+def _vision_documents_of_type(vision_documents: Any, document_type: str) -> list[dict[str, Any]]:
+    if not isinstance(vision_documents, list):
+        return []
+    return [
+        item
         for item in vision_documents
-        if isinstance(item, dict) and item.get("document_type")
-    }
+        if isinstance(item, dict) and item.get("document_type") == document_type
+    ]
 
 
 def _exception(key: str, details: dict[str, Any]) -> dict[str, Any]:
@@ -126,6 +145,48 @@ def _exception(key: str, details: dict[str, Any]) -> dict[str, Any]:
         "status": "requires_review",
         "details": details,
     }
+
+
+def _channel_from_raw(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    lower = value.lower().strip()
+    if "debito" in lower or "dÃ©bito" in lower:
+        return "debito"
+    if "credito" in lower or "crÃ©dito" in lower:
+        return "credito"
+    if "amex" in lower:
+        return "amex"
+    if "efectivo" in lower:
+        return "efectivo"
+    if "transferencia" in lower or "spei" in lower:
+        return "transferencia"
+    if "paypal" in lower:
+        return "paypal"
+    if "uber" in lower:
+        return "uber"
+    if "rappi" in lower:
+        return "rappi"
+    return None
+
+
+def _formula_from_terms(terms: Any, fallback_total: float) -> str:
+    if not isinstance(terms, list):
+        return f"={fallback_total:g}-{fallback_total:g}"
+    parts = []
+    for item in terms:
+        amount = _amount(item)
+        if amount is None:
+            continue
+        if not parts:
+            parts.append(f"{amount:g}")
+        elif amount < 0:
+            parts.append(f"-{abs(amount):g}")
+        else:
+            parts.append(f"+{amount:g}")
+    if not parts:
+        return f"={fallback_total:g}-{fallback_total:g}"
+    return "=" + "".join(parts)
 
 
 def _cxc_paypal_note(values: dict[str, Any], total: float, channel: str | None) -> dict[str, Any]:
@@ -142,7 +203,7 @@ def _cxc_paypal_note(values: dict[str, Any], total: float, channel: str | None) 
     return {
         "kind": "cxc",
         "amount": total,
-        "formula": f"={total:g}-{total:g}",
+        "formula": _formula_from_terms(values.get("paypal_formula_terms"), total),
         "comment": "\n".join(lines),
     }
 
@@ -164,6 +225,9 @@ def build_canonical_evidence(
     tolerance = _amount(rules.get("evidence_tolerance"))
     if tolerance is None:
         tolerance = 0.0
+    income_photo_override_tolerance = _amount(rules.get("income_photo_override_tolerance"))
+    if income_photo_override_tolerance is None:
+        income_photo_override_tolerance = 0.0
 
     terminal = deepcopy(cierre_terminal or {})
     sistema = deepcopy(cierre_sistema or {})
@@ -171,6 +235,8 @@ def build_canonical_evidence(
     vision = _vision_by_type(vision_documents)
     exceptions: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
+    income_overrides: dict[str, float] = {}
+    tip_overrides: dict[str, float] = {}
 
     for document_type, group in (("amex", "amex"), ("bancarias", "bancos")):
         document = vision.get(document_type)
@@ -198,16 +264,30 @@ def build_canonical_evidence(
             )
             continue
         difference = round(photo_total - excel_total, 2)
+        accepted_difference = abs(difference) <= tolerance
+        if (
+            document_type == "amex"
+            and abs(difference) <= income_photo_override_tolerance
+        ):
+            income_overrides["amex"] = photo_total
+            consumo = _amount(values.get("consumo"))
+            if consumo is None:
+                consumo = _amount(sistema.get("amex", {}).get("consumo"))
+            if consumo is None:
+                consumo = _amount(terminal.get("amex", {}).get("consumo"))
+            if consumo is not None:
+                tip_overrides["amex"] = round(photo_total - consumo, 2)
+            accepted_difference = True
         checks.append(
             {
                 "check_key": f"{document_type}_photo_vs_corte_excel",
                 "photo_total": photo_total,
                 "excel_total": excel_total,
                 "difference": difference,
-                "status": "ok" if abs(difference) <= tolerance else "requires_review",
+                "status": "ok" if accepted_difference else "requires_review",
             }
         )
-        if abs(difference) > tolerance:
+        if not accepted_difference:
             exceptions.append(
                 _exception(
                     f"{document_type}_photo_vs_excel_discrepancy",
@@ -226,7 +306,9 @@ def build_canonical_evidence(
         amex_values = vision["amex"].get("values") or {}
 
     tira_tips = _amount(tira_values.get("propina_total"))
-    amex_tips = _amount(amex_values.get("propina"))
+    amex_tips = tip_overrides.get("amex")
+    if amex_tips is None:
+        amex_tips = _amount(amex_values.get("propina"))
     if amex_tips is None:
         amex_tips = _amount(sistema.get("amex", {}).get("propina"))
     bancarias_tips = _amount(bancarias_values.get("propina"))
@@ -251,6 +333,8 @@ def build_canonical_evidence(
                 "status": "ok",
             }
         )
+    if selected_tips is None and bank_tips is not None and tip_overrides:
+        selected_tips = bank_tips
     if selected_tips is None:
         selected_tips = _tip_total(terminal, "amex", "bancos")
     if selected_tips is None:
@@ -281,6 +365,7 @@ def build_canonical_evidence(
     cxc_note: dict[str, Any] | None = None
     cxc_doc = vision.get("cxc")
     cxc_total = 0.0
+    paypal_cxc_total = 0.0
     if cxc_doc and cxc_doc.get("status") != "extracted":
         exceptions.append(
             _exception(
@@ -293,6 +378,12 @@ def build_canonical_evidence(
         cxc_consumo = _amount(cxc_values.get("consumo")) or 0.0
         cxc_propina = _amount(cxc_values.get("propina")) or 0.0
         cxc_total = _cxc_total(cxc_values)
+        paypal_amount = _amount(cxc_values.get("paypal_amount"))
+        if paypal_amount is not None and paypal_amount > 0:
+            cxc_total = paypal_amount
+            paypal_cxc_total = round(paypal_cxc_total + paypal_amount, 2)
+            if cxc_propina > 0:
+                selected_tips = round((selected_tips or 0.0) + cxc_propina, 2)
         bancos_difference = abs(round(_global(terminal.get("bancos")) - _global(sistema.get("bancos")), 2))
         candidate_cxc_total = _best_candidate_sum(
             _amount_candidates(cxc_values.get("monto_candidates")),
@@ -333,7 +424,7 @@ def build_canonical_evidence(
         if cxc_total > 0:
             cxc_note = _cxc_paypal_note(cxc_values, cxc_total, cxc_channel)
 
-    if cxc_total > 0:
+    if cxc_total > 0 and paypal_cxc_total <= 0:
         bancos_difference = round(_global(terminal.get("bancos")) - _global(sistema.get("bancos")), 2)
         cxc_difference = round(abs(bancos_difference) - cxc_total, 2)
         checks.append(
@@ -369,21 +460,21 @@ def build_canonical_evidence(
         rappi_channel = _optional_group_global(terminal, "rappi")
 
     income_register = {
-        "amex": _global(sistema.get("amex")),
+        "amex": income_overrides.get("amex", _global(sistema.get("amex"))),
         "bancos": _global(sistema.get("bancos")),
         "debito": debit_channel,
         "credito": credit_channel,
         "efectivo": income_cash,
         "transferencia": transferencia_channel,
         "plataformas": _global(terminal.get("plataformas")),
-        "paypal": paypal_channel,
+        "paypal": round((paypal_channel or 0.0) + paypal_cxc_total, 2),
         "uber": uber_channel,
         "rappi": rappi_channel,
         "propinas": selected_tips,
         "cortesia_direccion": courtesy,
     }
 
-    if cxc_propina > 0 and cxc_channel in income_register:
+    if cxc_propina > 0 and paypal_cxc_total <= 0 and cxc_channel in income_register:
         income_register[cxc_channel] = round((income_register.get(cxc_channel) or 0.0) + cxc_propina, 2)
 
     bank_statement = bank_statement if isinstance(bank_statement, dict) else None

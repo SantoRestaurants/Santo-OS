@@ -363,6 +363,21 @@ Activate and validate the Corte two-stage runtime in production:
     the 60-minute lookback window. The Agent Mail cron now uses a 36-hour
     lookback and 50-message limit so delayed/dropped GitHub schedules can still
     pick up unprocessed daily Corte emails through idempotency.
-  - To reduce GitHub Actions minutes while workflows scale, Corte Agent Mail now
-    runs once daily at `09:00 UTC` (`06:00` Argentina) with the 36-hour lookback.
-    Corte Bank Watcher is manual-only for now.
+- To reduce GitHub Actions minutes while workflows scale, Corte Agent Mail now
+  runs once daily at `09:00 UTC` (`06:00` Argentina) with the 36-hour lookback.
+  Corte Bank Watcher is manual-only for now.
+  - Dashboard now includes a `/conciliacion` operator view for the Corte two-stage
+  gate: it shows the Agent Mail output for recent Corte runs, records supervisor
+  approval through `reviews`/`approvals`/`events`, uploads AMEX and Banorte files
+  to the configured Drive bank folder, registers the documents in Supabase and
+  dispatches the `corte-santo-bank-watcher.yml` workflow. Missing Drive or
+  GitHub configuration is recorded as `requires_review` instead of pretending
+  the bank stage ran.
+- Corte Santo evidence rules now handle the 2026-06-20 CXC transfer/PayPal
+  pattern without Gemini: local OCR accepts whole-dollar amounts like `$245`,
+  extracts `CUENTA`/`PROPINA`/`TOTAL`, writes PayPal as `=245+3078-2565`,
+  adds the CXC tip to `propinas`, and skips the bank-difference check for this
+  non-bank CXC path. AMEX can use a configured tiny photo override tolerance
+  (`income_photo_override_tolerance=0.1` in confirmed config), and local OCR now
+  reads `detalle_efectivo` courtesy/direction amounts for cases such as
+  2026-06-19 cash.

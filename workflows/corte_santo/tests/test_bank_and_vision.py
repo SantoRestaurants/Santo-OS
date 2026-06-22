@@ -200,6 +200,43 @@ def test_local_ocr_cxc_prefers_payment_line_with_tip() -> None:
     assert result["values"]["canal"] == "debito"
 
 
+def test_local_ocr_cxc_payment_breakdown_builds_paypal_formula() -> None:
+    text = """
+    CXC MESERO MOV 89972 $245
+    PAGO CXC MOV 87028 TRANSFERENCIA
+    $2565 CUENTA
+    $  513 PROPINA
+    $3078 TOTAL.
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["canal"] == "transferencia"
+    assert result["values"]["consumo"] == 2565.0
+    assert result["values"]["propina"] == 513.0
+    assert result["values"]["monto_total"] == 3078.0
+    assert result["values"]["paypal_amount"] == 758.0
+    assert result["values"]["paypal_formula_terms"] == [245.0, 3078.0, -2565.0]
+    assert "PAGO CXC MOV 87028 TRANSFERENCIA" in result["values"]["comment_lines"]
+
+
+def test_local_ocr_detalle_efectivo_extracts_courtesy() -> None:
+    text = """
+    DETALLE DE EFECTIVO
+    EFECTIVO REAL $3,689.50
+    CORTESIA DIRECCION $3,560.00
+    TOTAL $7,249.50
+    """
+
+    result = vision._extract_detalle_efectivo_totals(text)
+
+    assert result is not None
+    assert result["values"]["efectivo_real"] == 3689.5
+    assert result["values"]["cortesia_direccion"] == 3560.0
+    assert result["values"]["total"] == 7249.5
+
+
 def test_corte_run_skips_vision_when_disabled(monkeypatch, tmp_path: Path) -> None:
     called = []
     monkeypatch.setattr(script, "_load_sibling_module", lambda name: called.append(name) or None)
