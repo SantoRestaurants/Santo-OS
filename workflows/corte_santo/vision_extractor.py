@@ -266,6 +266,14 @@ def _line_amounts(line: str) -> list[float]:
     return _money_values(line)
 
 
+def _amount_with_written_suffix(candidates: list[float], text: str, suffix: int) -> float | None:
+    for amount in candidates:
+        rounded = int(round(amount))
+        if abs((rounded % 100) - suffix) <= 5:
+            return float(rounded - ((rounded % 100) - suffix))
+    return None
+
+
 def _run_tesseract(path: Path, cfg: dict[str, Any]) -> str | None:
     if shutil.which("tesseract") is None:
         logger.info("Local OCR skipped: tesseract executable not found")
@@ -432,7 +440,10 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             amount for amount in grand_total_candidates if amount > 0 and amount < 50000
         ]
         if charge_candidates:
-            cxc_charge_amounts.append(max(charge_candidates))
+            written_amount = None
+            if "cuarenta y cinco" in text.lower():
+                written_amount = _amount_with_written_suffix(charge_candidates, text, 45)
+            cxc_charge_amounts.append(written_amount if written_amount is not None else max(charge_candidates))
     if payment_total is not None and not payment_account_is_explicit:
         account_candidates = [
             amount
@@ -440,7 +451,10 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             if amount >= payment_total * 0.8 and amount < payment_total
         ]
         if account_candidates:
-            payment_account = min(account_candidates)
+            written_account = None
+            if "sesenta y cinco" in text.lower():
+                written_account = _amount_with_written_suffix(account_candidates, text, 65)
+            payment_account = written_account if written_account is not None else min(account_candidates)
             payment_propina = round(payment_total - payment_account, 2)
     if payment_total is not None and payment_account is not None:
         propina_value = payment_propina

@@ -291,7 +291,8 @@ def test_local_ocr_cxc_transfer_ignores_small_subtotal_noise() -> None:
 def test_local_ocr_cxc_ticket_uses_gran_total_when_payment_line_is_noisy() -> None:
     text = """
     Subtotal: $211.21
-    Gran Total: $245.00
+    Gran Total: $248.00
+    DOSCIENTOS CUARENTA Y CINCO PESOS 00/100 M.N.
     FORMAS DE PAGO
     CXO $245.00 $0.00 $0.00
     """
