@@ -54,7 +54,7 @@
     "api_key_env": "CORTE_VISION_API_KEY",
     "confidence_threshold": 0.9,
     "cache_enabled": true,
-    "cache_version": "local-ocr-v5",
+    "cache_version": "local-ocr-v6",
     "cache_dir": ".cache/corte_santo_vision",
     "local_ocr_enabled": true,
     "local_ocr_fallback_to_vision": false,

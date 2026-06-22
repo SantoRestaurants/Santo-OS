@@ -255,6 +255,23 @@ def test_local_ocr_cxc_transfer_line_infers_account_from_tip() -> None:
     assert result["values"]["paypal_formula_terms"] == [3078.0, -2565.0]
 
 
+def test_local_ocr_cxc_transfer_prefers_gran_total_when_tip_digit_is_misread() -> None:
+    text = """
+    Gran Total: $2,565.00
+    FORMAS DE PAGO
+    Nombre Monto Propina Cambio
+    Transferencia $3,078.00 $613.00 $0.00
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["consumo"] == 2565.0
+    assert result["values"]["propina"] == 513.0
+    assert result["values"]["paypal_amount"] == 513.0
+    assert result["values"]["paypal_formula_terms"] == [3078.0, -2565.0]
+
+
 def test_local_ocr_detalle_efectivo_extracts_courtesy() -> None:
     text = """
     DETALLE DE EFECTIVO

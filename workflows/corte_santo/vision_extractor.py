@@ -366,9 +366,11 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
     channel = _cxc_channel(text)
     comment_lines = []
     cxc_charge_amounts = []
+    grand_total_candidates = []
     payment_account = None
     payment_total = None
     payment_propina = None
+    payment_account_is_explicit = False
     for line in text.splitlines():
         clean_line = " ".join(line.strip().split())
         lower_clean = clean_line.lower()
@@ -402,11 +404,14 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             cxc_charge_amounts.append(amounts[0])
         if "cuenta" in lower_line:
             payment_account = amounts[-1]
+            payment_account_is_explicit = True
         elif "propina" in lower_line:
             payment_propina = amounts[-1]
             propina = amounts[-1]
         elif "total" in lower_line:
-            payment_total = amounts[-1]
+            grand_total_candidates.append(amounts[-1])
+            if "gran" not in lower_line and "subtotal" not in lower_line:
+                payment_total = amounts[-1]
         if (
             ("tarjeta" in lower_line or "debito" in lower_line or "dÃ©bito" in lower_line)
             and len(amounts) >= 2
@@ -422,6 +427,13 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             propina = amounts[-1]
         elif "total" in lower_line:
             total_line = amounts[-1]
+    if payment_total is not None and not payment_account_is_explicit:
+        account_candidates = [
+            amount for amount in grand_total_candidates if amount > 0 and amount < payment_total
+        ]
+        if account_candidates:
+            payment_account = min(account_candidates)
+            payment_propina = round(payment_total - payment_account, 2)
     if payment_total is not None and payment_account is not None:
         propina_value = payment_propina
         if propina_value is None:
@@ -823,14 +835,16 @@ def extract_documents(images: list[dict[str, Any]], config: dict[str, Any] | Non
             item.get("document_type"),
             item.get("image_path"),
         )
-        results.append(
-            extract_document(
-                str(item.get("document_type", "")),
-                str(item.get("image_path", "")),
-                config,
-                source_hash=str(item.get("source_hash") or "") or None,
-            )
+        extracted = extract_document(
+            str(item.get("document_type", "")),
+            str(item.get("image_path", "")),
+            config,
+            source_hash=str(item.get("source_hash") or "") or None,
         )
+        for key in ("filename", "document_key", "source_hash"):
+            if item.get(key) is not None:
+                extracted[key] = item.get(key)
+        results.append(extracted)
 
     needs_review = [r for r in results if r["status"] != "extracted"]
     return {
