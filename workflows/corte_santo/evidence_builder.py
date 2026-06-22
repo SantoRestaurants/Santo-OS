@@ -376,12 +376,20 @@ def build_canonical_evidence(
         candidate_propina = _amount(candidate_values.get("propina")) or 0.0
         candidate_channel = _channel_from_raw(candidate_values.get("canal"))
         paypal_cxc_total = round(paypal_cxc_total + candidate_paypal, 2)
-        for line in candidate_values.get("comment_lines") or []:
+        candidate_lines = [str(line).strip() for line in candidate_values.get("comment_lines") or [] if str(line).strip()]
+        candidate_terms = list(candidate_values.get("paypal_formula_terms") or [])
+        if candidate_channel == "cxc":
+            paypal_note_values["comment_lines"] = [
+                line for line in candidate_lines if line not in paypal_note_values["comment_lines"]
+            ] + paypal_note_values["comment_lines"]
+            paypal_note_values["paypal_formula_terms"] = candidate_terms + paypal_note_values["paypal_formula_terms"]
+        else:
+            for term in candidate_terms:
+                paypal_note_values["paypal_formula_terms"].append(term)
+        for line in ([] if candidate_channel == "cxc" else candidate_lines):
             text = str(line).strip()
             if text and text not in paypal_note_values["comment_lines"]:
                 paypal_note_values["comment_lines"].append(text)
-        for term in candidate_values.get("paypal_formula_terms") or []:
-            paypal_note_values["paypal_formula_terms"].append(term)
         if candidate_channel and candidate_channel != "cxc":
             paypal_note_channel = candidate_channel
         if candidate_propina > 0:
