@@ -272,6 +272,37 @@ def test_local_ocr_cxc_transfer_prefers_gran_total_when_tip_digit_is_misread() -
     assert result["values"]["paypal_formula_terms"] == [3078.0, -2565.0]
 
 
+def test_local_ocr_cxc_transfer_ignores_small_subtotal_noise() -> None:
+    text = """
+    Subtotal $2,211 21
+    Gran Total: $2,565.00
+    DOS MIL QUINIENTOS SESENTA Y CINCO PESOS Gran Total: $2,585.00
+    Transferencia $3078.00 $613.00 $006
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["consumo"] == 2565.0
+    assert result["values"]["propina"] == 513.0
+    assert result["values"]["paypal_amount"] == 513.0
+
+
+def test_local_ocr_cxc_ticket_uses_gran_total_when_payment_line_is_noisy() -> None:
+    text = """
+    Subtotal: $211.21
+    Gran Total: $245.00
+    FORMAS DE PAGO
+    CXO $245.00 $0.00 $0.00
+    """
+
+    result = vision._extract_cxc_totals(text)
+
+    assert result is not None
+    assert result["values"]["paypal_amount"] == 245.0
+    assert result["values"]["paypal_formula_terms"] == [245.0]
+
+
 def test_local_ocr_detalle_efectivo_extracts_courtesy() -> None:
     text = """
     DETALLE DE EFECTIVO

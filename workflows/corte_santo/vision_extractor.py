@@ -427,9 +427,17 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
             propina = amounts[-1]
         elif "total" in lower_line:
             total_line = amounts[-1]
+    if payment_total is None and not cxc_charge_amounts and channel not in ("debito", "credito", "amex", "efectivo"):
+        charge_candidates = [
+            amount for amount in grand_total_candidates if amount > 0 and amount < 50000
+        ]
+        if charge_candidates:
+            cxc_charge_amounts.append(max(charge_candidates))
     if payment_total is not None and not payment_account_is_explicit:
         account_candidates = [
-            amount for amount in grand_total_candidates if amount > 0 and amount < payment_total
+            amount
+            for amount in grand_total_candidates
+            if amount >= payment_total * 0.8 and amount < payment_total
         ]
         if account_candidates:
             payment_account = min(account_candidates)
