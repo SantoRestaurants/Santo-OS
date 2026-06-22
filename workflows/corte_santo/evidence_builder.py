@@ -151,6 +151,8 @@ def _channel_from_raw(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     lower = value.lower().strip()
+    if "cxc" in lower:
+        return "cxc"
     if "debito" in lower or "dÃ©bito" in lower:
         return "debito"
     if "credito" in lower or "crÃ©dito" in lower:
