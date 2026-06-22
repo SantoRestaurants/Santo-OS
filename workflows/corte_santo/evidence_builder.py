@@ -366,14 +366,26 @@ def build_canonical_evidence(
     cxc_doc = vision.get("cxc")
     cxc_total = 0.0
     paypal_cxc_total = 0.0
-    if cxc_doc and cxc_doc.get("status") != "extracted":
+    for cxc_candidate in _vision_documents_of_type(vision_documents, "cxc"):
+        candidate_values = cxc_candidate.get("values") if isinstance(cxc_candidate.get("values"), dict) else {}
+        candidate_paypal = _amount(candidate_values.get("paypal_amount"))
+        if candidate_paypal is None or candidate_paypal <= 0:
+            continue
+        candidate_propina = _amount(candidate_values.get("propina")) or 0.0
+        candidate_channel = _channel_from_raw(candidate_values.get("canal"))
+        paypal_cxc_total = round(paypal_cxc_total + candidate_paypal, 2)
+        cxc_note = _cxc_paypal_note(candidate_values, candidate_paypal, candidate_channel)
+        if candidate_propina > 0:
+            selected_tips = round((selected_tips or 0.0) + candidate_propina, 2)
+
+    if paypal_cxc_total <= 0 and cxc_doc and cxc_doc.get("status") != "extracted":
         exceptions.append(
             _exception(
                 "cxc_vision_requires_review",
                 {"reason": cxc_doc.get("review_reason")},
             )
         )
-    elif cxc_doc and cxc_doc.get("status") == "extracted":
+    elif paypal_cxc_total <= 0 and cxc_doc and cxc_doc.get("status") == "extracted":
         cxc_values = cxc_doc.get("values") or {}
         cxc_consumo = _amount(cxc_values.get("consumo")) or 0.0
         cxc_propina = _amount(cxc_values.get("propina")) or 0.0
