@@ -1,7 +1,7 @@
 "use client";
 
 import { Bot } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const INK = "#282521";
 const MUTED = "#766f65";
@@ -13,8 +13,6 @@ export function CorteAiBox({ runId }: { runId: string }) {
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  import { useEffect } from "react";
 
   useEffect(() => {
     setQuestion("");
