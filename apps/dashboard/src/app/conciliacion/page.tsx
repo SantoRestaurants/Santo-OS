@@ -116,13 +116,13 @@ function RunCard({ run }: { run: ReconciliationRun }) {
           <div className="rounded-md border p-4" style={{ borderColor: LINE, background: "#fbfaf7" }}>
             <div className="mb-3 flex items-center gap-2 text-xs" style={{ color: MUTED }}>
               <FileSpreadsheet className="h-4 w-4" />
-              Lo que dejó Agent Mail
+              Revisión automática del correo
             </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
-              <Mini label="Formato" value={run.revision?.formato_corte ?? "-"} />
-              <Mini label="Documentos intake" value={String(run.documents.filter((doc) => doc.source_system === "agent_mail").length)} />
-              <Mini label="Gastos adicionales" value={String(run.revision?.gastos_adicionales?.length ?? 0)} />
-              <Mini label="Excepciones abiertas" value={String(run.exceptions.filter((ex) => ex.status !== "resolved").length)} />
+              <Mini label="Formato de Excel" value={run.revision?.formato_corte ?? "-"} />
+              <Mini label="Archivos adjuntos" value={String(run.documents.filter((doc) => doc.source_system === "agent_mail").length)} />
+              <Mini label="Gastos extra reportados" value={String(run.revision?.gastos_adicionales?.length ?? 0)} />
+              <Mini label="Alertas del sistema" value={String(run.exceptions.filter((ex) => ex.status !== "resolved").length)} />
             </div>
             {run.requires_review_reason && (
               <p className="mt-3 rounded-md px-3 py-2 text-xs" style={{ color: "#E08A3A", background: "#E08A3A11", border: "1px solid #E08A3A33" }}>
