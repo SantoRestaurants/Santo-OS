@@ -176,6 +176,42 @@ def test_ingresos_writes_cxc_paypal_comment_when_note_is_supplied(tmp_path: Path
     assert "MOV 87745" in ws_out["H5"].comment.text
 
 
+def test_ingresos_updates_existing_paypal_note_when_note_is_supplied(tmp_path: Path) -> None:
+    source = tmp_path / "ingresos-paypal-existing-note.xlsx"
+    output = tmp_path / "ingresos-paypal-existing-note-output.xlsx"
+    _ingresos(source)
+    wb = load_workbook(source)
+    ws = wb.active
+    ws["H5"] = "=245-245"
+    ws["H5"].fill = writer.PatternFill("solid", fgColor=writer.RED)
+    ws["H5"].comment = Comment("old OCR note", "SantoOS")
+    wb.save(source)
+    wb.close()
+
+    result = writer.write_ingresos(
+        str(source),
+        str(output),
+        "2026-06-04",
+        VALUES,
+        stage="corte_loaded",
+        dry_run=False,
+        layout=INGRESOS_LAYOUT,
+        cell_notes={
+            "paypal": {
+                "kind": "cxc",
+                "amount": 245.0,
+                "formula": "=245-245",
+                "comment": "CXC\nPago en efectivo de CXC: $245.00\n======",
+            }
+        },
+    )
+
+    assert result["status"] == "written"
+    ws_out = load_workbook(output, data_only=False).active
+    assert ws_out["H5"].value == "=245-245"
+    assert "Pago en efectivo de CXC" in ws_out["H5"].comment.text
+
+
 def test_ingresos_writes_paypal_value_with_cxc_note(tmp_path: Path) -> None:
     source = tmp_path / "ingresos-paypal-value-note.xlsx"
     output = tmp_path / "ingresos-paypal-value-note-output.xlsx"

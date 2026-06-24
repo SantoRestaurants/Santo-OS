@@ -220,7 +220,8 @@ def write_ingresos(
     for key, col in columns.items():
         cell = ws[f"{col}{row}"]
         value = round(float(values[key]), 2)
-        if key == "paypal" and _is_manual_paypal_adjustment(cell, value):
+        note = _paypal_note(cell_notes, value) if key == "paypal" else None
+        if key == "paypal" and note is None and _is_manual_paypal_adjustment(cell, value):
             changes.append(
                 {
                     "cell": cell.coordinate,
@@ -231,7 +232,6 @@ def write_ingresos(
                 }
             )
             continue
-        note = _paypal_note(cell_notes, value) if key == "paypal" else None
         if note:
             formula = str(note.get("formula") or f"{value:g}")
             note_fill = RED if round(float(value), 2) == 0.0 else color
