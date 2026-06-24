@@ -176,6 +176,37 @@ def test_ingresos_writes_cxc_paypal_comment_when_note_is_supplied(tmp_path: Path
     assert "MOV 87745" in ws_out["H5"].comment.text
 
 
+def test_ingresos_writes_paypal_value_with_cxc_note(tmp_path: Path) -> None:
+    source = tmp_path / "ingresos-paypal-value-note.xlsx"
+    output = tmp_path / "ingresos-paypal-value-note-output.xlsx"
+    _ingresos(source)
+    values = {**VALUES, "paypal": 513.0}
+
+    result = writer.write_ingresos(
+        str(source),
+        str(output),
+        "2026-06-04",
+        values,
+        stage="corte_loaded",
+        dry_run=False,
+        layout=INGRESOS_LAYOUT,
+        cell_notes={
+            "paypal": {
+                "kind": "cxc",
+                "amount": 513.0,
+                "formula": "=3078-2565",
+                "comment": "CXC\nCXC MESERO MOV 89972 $245\nPAGO CXC MOV 87028 TRANSFERENCIA\n======",
+            }
+        },
+    )
+
+    assert result["status"] == "written"
+    ws_out = load_workbook(output, data_only=False).active
+    assert ws_out["H5"].value == "=3078-2565"
+    assert ws_out["H5"].fill.fgColor.rgb == writer.YELLOW
+    assert "MOV 89972 $245" in ws_out["H5"].comment.text
+
+
 def test_forecast_write_updates_total_month_formula(tmp_path: Path) -> None:
     source = tmp_path / "forecast.xlsx"
     output = tmp_path / "forecast-output.xlsx"

@@ -373,11 +373,14 @@ Activate and validate the Corte two-stage runtime in production:
   dispatches the `corte-santo-bank-watcher.yml` workflow. Missing Drive or
   GitHub configuration is recorded as `requires_review` instead of pretending
   the bank stage ran.
-- Corte Santo evidence rules now handle the 2026-06-20 CXC transfer/PayPal
-  pattern without Gemini: local OCR accepts whole-dollar amounts like `$245`,
-  extracts `CUENTA`/`PROPINA`/`TOTAL`, writes PayPal as `=245+3078-2565`,
-  adds the CXC tip to `propinas`, and skips the bank-difference check for this
-  non-bank CXC path. AMEX can use a configured tiny photo override tolerance
+- Corte Santo evidence rules now handle the 2026-06-20/22 CXC transfer/PayPal
+  pattern without Gemini: local OCR accepts whole-dollar CXC amounts like
+  `$245`, extracts `CUENTA`/`PROPINA`/`TOTAL`, but treats CXC-only/effective
+  payments as PayPal comments instead of PayPal value. The PayPal cell should
+  contain only the real non-cash delta such as `=3078-2565`, while the `$245`
+  stays in the comment/note as CXC evidence. The CXC tip is still added to
+  `propinas`, and the bank-difference check is skipped for this non-bank CXC
+  path. AMEX can use a configured tiny photo override tolerance
   (`income_photo_override_tolerance=0.1` in confirmed config), and local OCR now
   reads `detalle_efectivo` courtesy/direction amounts for cases such as
   2026-06-19 cash.

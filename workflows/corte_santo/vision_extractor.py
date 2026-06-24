@@ -460,7 +460,8 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
         propina_value = payment_propina
         if propina_value is None:
             propina_value = round(payment_total - payment_account, 2)
-        paypal_amount = round(sum(cxc_charge_amounts) + payment_total - payment_account, 2)
+        paypal_amount = round(payment_total - payment_account, 2)
+        cxc_note_amount = round(sum(cxc_charge_amounts), 2)
         return {
             "document_type": "cxc",
             "status": "extracted",
@@ -472,7 +473,8 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
                 "canal": channel,
                 "comment_lines": comment_lines,
                 "paypal_amount": paypal_amount,
-                "paypal_formula_terms": cxc_charge_amounts + [payment_total, -payment_account],
+                "paypal_formula_terms": [payment_total, -payment_account],
+                "cxc_note_amount": cxc_note_amount,
             },
             "confidence": 0.9,
             "review_reason": None,
@@ -491,8 +493,7 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
                 "monto_candidates": cxc_charge_amounts,
                 "canal": "cxc",
                 "comment_lines": comment_lines,
-                "paypal_amount": paypal_amount,
-                "paypal_formula_terms": cxc_charge_amounts,
+                "cxc_note_amount": paypal_amount,
             },
             "confidence": 0.9,
             "review_reason": None,

@@ -216,8 +216,9 @@ def test_local_ocr_cxc_payment_breakdown_builds_paypal_formula() -> None:
     assert result["values"]["consumo"] == 2565.0
     assert result["values"]["propina"] == 513.0
     assert result["values"]["monto_total"] == 3078.0
-    assert result["values"]["paypal_amount"] == 758.0
-    assert result["values"]["paypal_formula_terms"] == [245.0, 3078.0, -2565.0]
+    assert result["values"]["paypal_amount"] == 513.0
+    assert result["values"]["paypal_formula_terms"] == [3078.0, -2565.0]
+    assert result["values"]["cxc_note_amount"] == 245.0
     assert "PAGO CXC MOV 87028 TRANSFERENCIA" in result["values"]["comment_lines"]
 
 
@@ -233,8 +234,8 @@ def test_local_ocr_cxc_ticket_charge_becomes_paypal_component() -> None:
 
     assert result is not None
     assert result["values"]["canal"] == "cxc"
-    assert result["values"]["paypal_amount"] == 245.0
-    assert result["values"]["paypal_formula_terms"] == [245.0]
+    assert result["values"]["cxc_note_amount"] == 245.0
+    assert "paypal_amount" not in result["values"]
 
 
 def test_local_ocr_cxc_transfer_line_infers_account_from_tip() -> None:
@@ -314,8 +315,8 @@ def test_local_ocr_cxc_ticket_uses_gran_total_when_payment_line_is_noisy() -> No
     result = vision._extract_cxc_totals(text)
 
     assert result is not None
-    assert result["values"]["paypal_amount"] == 245.0
-    assert result["values"]["paypal_formula_terms"] == [245.0]
+    assert result["values"]["cxc_note_amount"] == 245.0
+    assert "paypal_amount" not in result["values"]
 
 
 def test_local_ocr_detalle_efectivo_extracts_courtesy() -> None:

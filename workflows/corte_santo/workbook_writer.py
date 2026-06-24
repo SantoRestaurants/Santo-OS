@@ -140,7 +140,7 @@ def _is_manual_paypal_adjustment(cell: Any, value: float) -> bool:
 
 
 def _paypal_note(cell_notes: dict[str, Any] | None, value: float) -> dict[str, Any] | None:
-    if round(float(value), 2) != 0.0 or not isinstance(cell_notes, dict):
+    if not isinstance(cell_notes, dict):
         return None
     note = cell_notes.get("paypal")
     return note if isinstance(note, dict) and note.get("comment") else None
@@ -233,19 +233,20 @@ def write_ingresos(
             continue
         note = _paypal_note(cell_notes, value) if key == "paypal" else None
         if note:
-            formula = str(note.get("formula") or f"={value:g}-{value:g}")
+            formula = str(note.get("formula") or f"{value:g}")
+            note_fill = RED if round(float(value), 2) == 0.0 else color
             changes.append(
                 {
                     "cell": cell.coordinate,
                     "before": cell.value,
                     "after": formula,
-                    "fill": RED,
+                    "fill": note_fill,
                     "comment": note.get("comment"),
                 }
             )
             if not dry_run:
                 cell.value = formula
-                cell.fill = PatternFill("solid", fgColor=RED)
+                cell.fill = PatternFill("solid", fgColor=note_fill)
                 if Comment is not None:
                     cell.comment = Comment(str(note.get("comment")), "SantoOS")
             continue
