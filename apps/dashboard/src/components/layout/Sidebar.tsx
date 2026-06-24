@@ -5,9 +5,7 @@ import {
   FolderOpen,
   GitCompareArrows,
   HelpCircle,
-  Home,
   Menu,
-  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
@@ -23,18 +21,6 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  {
-    label: "Inicio",
-    href: "/",
-    icon: <Home className="h-4 w-4" />,
-    dataTour: "nav-home",
-  },
-  {
-    label: "Mis pendientes",
-    href: "/reviews",
-    icon: <ShieldCheck className="h-4 w-4" />,
-    dataTour: "nav-reviews",
-  },
   {
     label: "Conciliación",
     href: "/conciliacion",

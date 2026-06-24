@@ -199,9 +199,24 @@ export async function uploadForecast(formData: FormData) {
 }
 
 function setNestedRevisionValue(payload: Record<string, unknown>, field: string, value: number) {
-  const revision = getRevisionContainer(payload);
   const parts = field.split(".").filter(Boolean);
-  if (!revision || parts.length === 0 || parts.some((part) => !/^[a-zA-Z0-9_]+$/.test(part))) return;
+  if (parts.length === 0 || parts.some((part) => !/^[a-zA-Z0-9_]+$/.test(part))) return;
+
+  // Handle income_register and income_channels at the payload level
+  if (parts[0] === "income_register" || parts[0] === "income_channels") {
+    let target: Record<string, unknown> = payload;
+    for (const part of parts.slice(0, -1)) {
+      const next = target[part];
+      if (!next || typeof next !== "object" || Array.isArray(next)) target[part] = {};
+      target = target[part] as Record<string, unknown>;
+    }
+    target[parts[parts.length - 1]] = value;
+    return;
+  }
+
+  // Handle revision_document fields
+  const revision = getRevisionContainer(payload);
+  if (!revision) return;
   let target: Record<string, unknown> = revision;
   for (const part of parts.slice(0, -1)) {
     const next = target[part];

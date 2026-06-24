@@ -352,6 +352,64 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
           </div>
         </div>
 
+        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+            <FileSpreadsheet className="h-4 w-4" />
+            Venta Bruta (Excel)
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${LINE}` }}>
+                  <th className="px-2 py-2 text-left font-semibold" style={{ color: MUTED }}>RESTAURANTE</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Amex</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Debito</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Credito</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>EFECTIVO</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>TOTAL</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>PAYPAL</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>UBEREATS</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>RAPPI</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Propinas</th>
+                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Venta Bruta</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="px-2 py-2 font-semibold" style={{ color: INK }}>Valores</td>
+                  {(() => {
+                    const reg = (run.output_payload?.income_register ?? {}) as Record<string, number>;
+                    const ch = (run.output_payload?.income_channels ?? {}) as Record<string, number>;
+                    const amex = reg.amex ?? ch.amex ?? 0;
+                    const debito = reg.debito ?? ch.debito ?? 0;
+                    const credito = reg.credito ?? ch.credito ?? 0;
+                    const efectivo = reg.efectivo ?? ch.efectivo ?? 0;
+                    const paypal = reg.paypal ?? ch.paypal ?? 0;
+                    const uber = reg.uber ?? ch.uber ?? 0;
+                    const rappi = reg.rappi ?? ch.rappi ?? 0;
+                    const propinas = reg.propinas ?? ch.propinas ?? 0;
+                    const totalRest = amex + debito + credito + efectivo;
+                    return (
+                      <>
+                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(amex)}</td>
+                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(debito)}</td>
+                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(credito)}</td>
+                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(efectivo)}</td>
+                        <td className="px-2 py-2 text-right font-semibold" style={{ color: GOLD }}>{money(totalRest)}</td>
+                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(paypal)}</td>
+                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(uber)}</td>
+                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(rappi)}</td>
+                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(propinas)}</td>
+                        <td className="px-2 py-2 text-right font-semibold" style={{ color: GOLD }}>{money(runTotal(run))}</td>
+                      </>
+                    );
+                  })()}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <CorteAiBox runId={run.id} />
         <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
@@ -368,11 +426,25 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
             <input type="hidden" name="workflowRunId" value={run.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
             <select name="field" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
-              <option value="vta_al_dia.venta_real">Venta real</option>
-              <option value="vta_al_dia.meta_vta">Meta forecast</option>
-              <option value="reconciliation_totals.total_real">Total real</option>
-              <option value="reconciliation_totals.total_sistema">Total sistema</option>
-              <option value="reconciliation_totals.difference">Diferencia</option>
+              <optgroup label="Canales de venta">
+                <option value="income_register.amex">Amex</option>
+                <option value="income_register.debito">Debito</option>
+                <option value="income_register.credito">Credito</option>
+                <option value="income_register.efectivo">Efectivo</option>
+                <option value="income_register.paypal">PayPal</option>
+                <option value="income_register.uber">Uber Eats</option>
+                <option value="income_register.rappi">Rappi</option>
+                <option value="income_register.propinas">Propinas</option>
+              </optgroup>
+              <optgroup label="Conciliación">
+                <option value="reconciliation_totals.total_real">Total real</option>
+                <option value="reconciliation_totals.total_sistema">Total sistema</option>
+                <option value="reconciliation_totals.difference">Diferencia</option>
+              </optgroup>
+              <optgroup label="Forecast">
+                <option value="vta_al_dia.meta_vta">Meta forecast</option>
+                <option value="vta_al_dia.venta_real">Venta real forecast</option>
+              </optgroup>
             </select>
             <input name="value" inputMode="decimal" placeholder="Valor" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
             <input name="note" placeholder="Motivo" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
