@@ -193,6 +193,8 @@ def _formula_from_terms(terms: Any, fallback_total: float) -> str:
 
 def _cxc_paypal_note(values: dict[str, Any], total: float, channel: str | None) -> dict[str, Any]:
     lines = ["CXC"]
+    if channel in ("efectivo", "cxc") and total > 0:
+        lines.append(f"Pago en efectivo de CXC: ${total:,.2f}")
     for line in values.get("comment_lines") or []:
         text = str(line).strip()
         if text and text not in lines:

@@ -121,6 +121,32 @@ def test_cxc_adjustment_is_checked_against_bancos_difference() -> None:
     )
 
 
+def test_cxc_cash_adjustment_writes_explanatory_paypal_note() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 1000.0, "propina": 0.0}},
+        {"bancos": {"consumo": 1000.0, "propina": 0.0}},
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "monto_total": 245.0,
+                    "canal": "efectivo",
+                    "comment_lines": ["CXC MOV 89972 $245"],
+                },
+            }
+        ],
+        income_channels={"paypal": 0.0},
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["income_register"]["paypal"] == 0.0
+    note = result["income_cell_notes"]["paypal"]
+    assert note["formula"] == "=245-245"
+    assert "Pago en efectivo de CXC: $245.00" in note["comment"]
+    assert "CXC MOV 89972 $245" in note["comment"]
+
+
 def test_ocr_total_candidates_can_match_excel_total() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"amex": {"consumo": 17262.0, "propina": 0.0}},
