@@ -159,3 +159,36 @@ function extractDateFromText(value: string) {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
+
+export function getMonthlyTotals(monthRuns: RunLike[], selectedMonth: string) {
+  const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
+  const latestRunWithForecast = monthRuns.find((run) => run.revision?.vta_por_dia && run.revision.vta_por_dia.length > 0);
+
+  if (forecastReady && latestRunWithForecast?.revision?.vta_por_dia) {
+    const vta = latestRunWithForecast.revision.vta_por_dia;
+    const monthMeta = vta.reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
+
+    let monthTotal = vta.reduce((sum, item) => {
+      const date = item.fecha;
+      const runForDay = date ? monthRuns.find(r => r.business_date === date) : null;
+      if (runForDay) {
+        return sum + dailySales(runForDay);
+      }
+      return sum + (typeof item.venta_real === "number" ? item.venta_real : 0);
+    }, 0);
+
+    const datesInVta = new Set(vta.map(item => item.fecha).filter(Boolean));
+    for (const run of monthRuns) {
+      if (run.business_date && !datesInVta.has(run.business_date)) {
+        monthTotal += dailySales(run);
+      }
+    }
+
+    return { monthTotal, monthMeta };
+  }
+
+  const monthTotal = monthRuns.reduce((sum, run) => sum + dailySales(run), 0);
+  const monthMeta = forecastReady ? monthRuns.reduce((sum, run) => sum + (dailyForecastMeta(run) ?? 0), 0) : null;
+  
+  return { monthTotal, monthMeta };
+}

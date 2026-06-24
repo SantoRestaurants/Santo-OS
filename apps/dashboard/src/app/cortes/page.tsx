@@ -11,7 +11,7 @@ import {
 import Link from "next/link";
 
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth } from "@/lib/corte-dashboard-utils";
+import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
 import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/conciliacion/actions";
 import { saveCorteComment, saveManualCorrection, uploadForecast } from "./actions";
 import { CorteAiBox } from "./CorteAiBox";
@@ -518,9 +518,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const weekRuns = monthRuns.filter((run) => weekKey(run.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
   const returnTo = `/cortes?unit=${selectedUnit}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
-  const monthTotal = monthRuns.reduce((sum, run) => sum + runTotal(run), 0);
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
-  const monthMeta = forecastReady ? monthRuns.reduce((sum, run) => sum + (runMeta(run) ?? 0), 0) : null;
+  const { monthTotal, monthMeta } = getMonthlyTotals(monthRuns, selectedMonth);
   const monthDiff = monthMeta == null ? null : monthTotal - monthMeta;
 
   return (
