@@ -12,7 +12,7 @@ const MUTED = "#766f65";
 const LINE = "#ded7ca";
 const PAPER = "#fbfaf7";
 const PANEL = "#ffffff";
-const GOLD = "#9b7a22";
+const GOLD = "#e8463b";
 const AMBER = "#b8782d";
 const RED = "#b84a3a";
 const GREEN = "#2e7d55";
@@ -57,7 +57,7 @@ function MonthNav({ months, selected }: { months: string[]; selected: string }) 
   return (
     <div className="flex gap-2 overflow-x-auto pb-1">
       {months.map((month) => (
-        <Link key={month} href={`/archivos?month=${month}`} className="shrink-0 rounded-md border px-3 py-2 text-sm" style={{ borderColor: selected === month ? GOLD : LINE, background: selected === month ? "#fff8df" : PANEL, color: selected === month ? GOLD : INK }}>
+        <Link key={month} href={`/archivos?month=${month}`} className="shrink-0 rounded-md border px-3 py-2 text-sm" style={{ borderColor: selected === month ? GOLD : LINE, background: selected === month ? "#fdf2f2" : PANEL, color: selected === month ? GOLD : INK }}>
           {monthLabel(month)}
         </Link>
       ))}

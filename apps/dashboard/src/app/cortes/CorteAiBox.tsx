@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 const INK = "#282521";
 const MUTED = "#766f65";
 const LINE = "#ded7ca";
-const GOLD = "#9b7a22";
+const GOLD = "#e8463b";
 
 export function CorteAiBox({ runId }: { runId: string }) {
   const [question, setQuestion] = useState("");

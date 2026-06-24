@@ -82,7 +82,7 @@ export function Sidebar() {
           <div className="flex items-center gap-2">
             <img src="/logo.png" alt="Santo" className="h-10 w-10 object-contain" />
             <div>
-              <p className="text-sm font-semibold" style={{ color: "#9b7a22", letterSpacing: "2px", textTransform: "uppercase" }}>
+              <p className="text-sm font-semibold" style={{ color: "#e8463b", letterSpacing: "2px", textTransform: "uppercase" }}>
                 Santo OS
               </p>
               <p className="text-[10px]" style={{ color: "#766f65" }}>Panel de cortes</p>
@@ -110,8 +110,8 @@ export function Sidebar() {
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition"
                 style={{
-                  background: isActive ? "#fff8df" : "transparent",
-                  color: isActive ? "#9b7a22" : "#766f65",
+                  background: isActive ? "#fdf2f2" : "transparent",
+                  color: isActive ? "#e8463b" : "#766f65",
                 }}
                 onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#fbfaf7"; }}
                 onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}

@@ -10,7 +10,7 @@ const MUTED = "#766f65";
 const LINE = "#ded7ca";
 const PAPER = "#fbfaf7";
 const PANEL = "#ffffff";
-const GOLD = "#9b7a22";
+const GOLD = "#e8463b";
 const GREEN = "#2e7d55";
 const RED = "#b84a3a";
 
@@ -99,7 +99,7 @@ function RunCard({ run }: { run: ReconciliationRun }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-md px-2.5 py-1 text-xs" style={{ background: "#fbfaf7", color: MUTED, border: `1px solid ${LINE}` }}>{statusLabel(run.status)}</span>
-          <span className="rounded-md px-2.5 py-1 text-xs" style={{ background: approved ? "#f1fbf5" : "#fff8df", color: approved ? GREEN : GOLD, border: `1px solid ${approved ? "#b8dbc9" : "#e4c58f"}` }}>
+          <span className="rounded-md px-2.5 py-1 text-xs" style={{ background: approved ? "#f1fbf5" : "#fdf2f2", color: approved ? GREEN : GOLD, border: `1px solid ${approved ? "#b8dbc9" : "#e4c58f"}` }}>
             {approved ? "Aprobado por supervisora" : "Pendiente de aprobación"}
           </span>
         </div>

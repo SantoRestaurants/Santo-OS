@@ -23,7 +23,7 @@ const MUTED = "#766f65";
 const LINE = "#ded7ca";
 const PAPER = "#fbfaf7";
 const PANEL = "#ffffff";
-const GOLD = "#9b7a22";
+const GOLD = "#e8463b";
 const GREEN = "#2e7d55";
 const RED = "#b84a3a";
 const AMBER = "#b8782d";
@@ -142,7 +142,7 @@ function UnitSelector({ units, selected, month, week, day }: { units: string[]; 
           key={unit}
           href={`/cortes?unit=${unit}&month=${month}&week=${week}${day ? `&day=${day}` : ""}`}
           className="rounded-md border px-4 py-2 text-sm font-semibold"
-          style={{ borderColor: unit === selected ? GOLD : LINE, background: unit === selected ? "#fff8df" : PANEL, color: unit === selected ? GOLD : INK }}
+          style={{ borderColor: unit === selected ? GOLD : LINE, background: unit === selected ? "#fdf2f2" : PANEL, color: unit === selected ? GOLD : INK }}
         >
           {unit}
         </Link>
@@ -159,7 +159,7 @@ function MonthSelector({ months, selected, unit }: { months: string[]; selected:
           key={month}
           href={`/cortes?unit=${unit}&month=${month}`}
           className="shrink-0 rounded-md border px-3 py-2 text-sm"
-          style={{ borderColor: month === selected ? GOLD : LINE, background: month === selected ? "#fff8df" : PANEL, color: month === selected ? GOLD : INK }}
+          style={{ borderColor: month === selected ? GOLD : LINE, background: month === selected ? "#fdf2f2" : PANEL, color: month === selected ? GOLD : INK }}
         >
           {monthLabel(month)}
         </Link>
@@ -176,7 +176,7 @@ function WeekSelector({ weeks, selected, unit, month }: { weeks: string[]; selec
           key={week}
           href={`/cortes?unit=${unit}&month=${month}&week=${week}`}
           className="rounded-md border px-3 py-3 text-sm"
-          style={{ borderColor: week === selected ? GOLD : LINE, background: week === selected ? "#fff8df" : PANEL, color: INK }}
+          style={{ borderColor: week === selected ? GOLD : LINE, background: week === selected ? "#fdf2f2" : PANEL, color: INK }}
         >
           <span className="block text-[11px] font-semibold uppercase" style={{ color: MUTED }}>Semana {index + 1}</span>
           <span className="mt-1 block font-semibold">{dateLabel(week, "short")}</span>
@@ -197,7 +197,7 @@ function DayList({ runs, selectedId, unit, month, week }: { runs: Reconciliation
             key={run.id}
             href={`/cortes?unit=${unit}&month=${month}&week=${week}&day=${run.id}`}
             className="flex items-center justify-between border-b px-4 py-3 last:border-b-0"
-            style={{ borderColor: LINE, background: selected ? "#fff8df" : PANEL, color: INK }}
+            style={{ borderColor: LINE, background: selected ? "#fdf2f2" : PANEL, color: INK }}
           >
             <div>
               <div className="font-semibold">{dateLabel(run.business_date, "short")}</div>
