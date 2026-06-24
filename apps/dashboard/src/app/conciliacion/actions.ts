@@ -127,14 +127,14 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
     uploads = await Promise.all([
       uploadToDrive({
         accessToken: token,
-        folderId: folderId,
+        folderId: folderId!,
         file: amexFile,
         documentType: "amex_statement",
         businessDate,
       }),
       uploadToDrive({
         accessToken: token,
-        folderId: folderId,
+        folderId: folderId!,
         file: banorteFile,
         documentType: "banorte_statement",
         businessDate,
