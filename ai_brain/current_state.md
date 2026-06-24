@@ -58,8 +58,18 @@ resume in a fresh conversation.
     capture, bank-validation status and bank upload/approval actions.
   - `/archivos` now presents a Drive-oriented files view grouped by Cortes,
     Bancos, monthly Excel and Forecast, with monthly forecast upload.
-  - Gemini-style question UI is present as a disabled placeholder until the AI
-    query endpoint, model policy and API key routing are confirmed.
+  - The dashboard now treats forecast as a real monthly source: it recognizes
+    registered forecast documents and workflow `drive_file_ids.forecast`, uses
+    the matching daily forecast row instead of the accumulated monthly target,
+    and avoids showing forecast deltas when the source is missing.
+  - Duplicate Agent Mail runs for the same business date are collapsed in the
+    supervisor views to the most complete run, while still warning that
+    duplicates exist.
+  - `/archivos` now keeps the monthly forecast above the day folders and groups
+    daily Corte/Bancos/Excel/Evidencia by inferred business date.
+  - Gemini question UI now calls a server-side `/api/cortes/ai` endpoint using
+    `GEMINI_API_KEY`; it answers about the selected corte only and does not
+    approve or execute any external action.
 - PR 4 shared command handler core has been implemented:
   - Python package under `services/command_handler/`.
   - Structured command envelope validation for dashboard, Agent Mail, scheduler and future WhatsApp.

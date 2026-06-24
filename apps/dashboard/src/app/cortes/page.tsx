@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  Bot,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -12,8 +11,10 @@ import {
 import Link from "next/link";
 
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
+import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth } from "@/lib/corte-dashboard-utils";
 import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/conciliacion/actions";
 import { saveCorteComment, saveManualCorrection, uploadForecast } from "./actions";
+import { CorteAiBox } from "./CorteAiBox";
 
 type SearchParams = Promise<{ unit?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
 
@@ -96,16 +97,17 @@ function hasApproval(run: ReconciliationRun) {
   return run.reviews.some((review) => review.review_key === APPROVAL_REVIEW_KEY && review.status === "approved");
 }
 
-function forecastExistsForMonth(runs: ReconciliationRun[], month: string) {
-  return runs.some((run) => run.documents.some((doc) => doc.document_type === "forecast_workbook" || String(doc.metadata?.month ?? "").startsWith(month)));
-}
-
 function runTotal(run: ReconciliationRun) {
-  return run.revision?.vta_al_dia?.venta_real ?? run.revision?.reconciliation_totals?.total_real ?? 0;
+  return dailySales(run);
 }
 
 function runMeta(run: ReconciliationRun) {
-  return run.revision?.vta_al_dia?.meta_vta ?? 0;
+  return dailyForecastMeta(run);
+}
+
+function runDiff(run: ReconciliationRun) {
+  const meta = runMeta(run);
+  return meta == null ? null : runTotal(run) - meta;
 }
 
 function Flash({ success, error }: { success?: string; error?: string }) {
@@ -123,12 +125,11 @@ function Flash({ success, error }: { success?: string; error?: string }) {
     </div>
   );
 }
-
 function SummaryTile({ label, value, tone = INK }: { label: string; value: string; tone?: string }) {
   return (
     <div className="rounded-md border px-4 py-3" style={{ background: PANEL, borderColor: LINE }}>
       <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{label}</div>
-      <div className="mt-1 text-lg font-semibold" style={{ color: tone }}>{value}</div>
+      <div className="mt-1 break-words text-base font-semibold sm:text-lg" style={{ color: tone }}>{value}</div>
     </div>
   );
 }
@@ -190,7 +191,7 @@ function DayList({ runs, selectedId, unit, month, week }: { runs: Reconciliation
     <div className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
       {runs.map((run) => {
         const selected = run.id === selectedId;
-        const diff = (run.revision?.vta_al_dia?.diferencia ?? runTotal(run) - runMeta(run));
+        const diff = runDiff(run);
         return (
           <Link
             key={run.id}
@@ -204,7 +205,7 @@ function DayList({ runs, selectedId, unit, month, week }: { runs: Reconciliation
             </div>
             <div className="text-right">
               <div className="font-semibold">{money(runTotal(run))}</div>
-              <div className="text-xs" style={{ color: diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>{diff >= 0 ? "+" : ""}{money(diff)}</div>
+              <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>{diff == null ? "Sin forecast" : `${diff >= 0 ? "+" : ""}${money(diff)}`}</div>
             </div>
           </Link>
         );
@@ -307,7 +308,8 @@ function BankUploadPanel({ run, returnTo }: { run: ReconciliationRun; returnTo: 
 
 function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: string; returnTo: string }) {
   const revision = run.revision;
-  const diff = revision?.vta_al_dia?.diferencia ?? runTotal(run) - runMeta(run);
+  const meta = runMeta(run);
+  const diff = runDiff(run);
   const openExceptions = run.exceptions.filter((item) => item.status !== "resolved");
   const comments = Array.isArray(run.output_payload?.dashboard_comments) ? run.output_payload.dashboard_comments as Array<Record<string, unknown>> : [];
   const corrections = Array.isArray(run.output_payload?.dashboard_manual_corrections) ? run.output_payload.dashboard_manual_corrections as Array<Record<string, unknown>> : [];
@@ -329,8 +331,8 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-4">
             <SummaryTile label="Venta real" value={money(runTotal(run))} tone={GOLD} />
-            <SummaryTile label="Meta forecast" value={money(runMeta(run))} />
-            <SummaryTile label="Diferencia" value={`${diff >= 0 ? "+" : ""}${money(diff)}`} tone={diff >= 0 ? GREEN : RED} />
+            <SummaryTile label="Meta forecast" value={money(meta)} />
+            <SummaryTile label="Diferencia" value={diff == null ? "-" : `${diff >= 0 ? "+" : ""}${money(diff)}`} tone={diff == null || diff >= 0 ? GREEN : RED} />
             <SummaryTile label="Total sistema" value={money(revision?.reconciliation_totals?.total_sistema)} />
           </div>
         </div>
@@ -343,24 +345,14 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
           <div className="grid gap-2 md:grid-cols-2">
             <DataRow label="Total real" value={money(revision?.reconciliation_totals?.total_real)} />
             <DataRow label="Venta real" value={money(runTotal(run))} />
-            <DataRow label="Forecast día" value={money(runMeta(run))} />
-            <DataRow label="Diferencia forecast" value={`${diff >= 0 ? "+" : ""}${money(diff)}`} />
+            <DataRow label="Forecast día" value={money(meta)} />
+            <DataRow label="Diferencia forecast" value={diff == null ? "-" : `${diff >= 0 ? "+" : ""}${money(diff)}`} />
             <DataRow label="Formato corte" value={revision?.formato_corte ?? "-"} />
             <DataRow label="Falta por entrar" value={money(Object.values(revision?.falta_por_entrar ?? {}).reduce((sum, value) => sum + Number(value || 0), 0))} />
           </div>
         </div>
 
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-            <Bot className="h-4 w-4" />
-            Preguntas para IA
-          </div>
-          <textarea rows={3} placeholder="Ejemplo: ¿por qué la venta real quedó arriba del forecast?" className="w-full rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
-          <button disabled className="mt-2 rounded-md px-4 py-2 text-sm font-semibold opacity-60" style={{ background: "#c8c0b4", color: "white" }}>
-            Próximamente con Gemini
-          </button>
-        </div>
-
+        <CorteAiBox runId={run.id} />
         <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
             <MessageSquareText className="h-4 w-4" />
@@ -421,9 +413,9 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
 
 function DataRow({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
   return (
-    <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: muted ? "#aaa298" : INK }}>
-      <span>{label}</span>
-      <span className="font-semibold">{value}</span>
+    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: muted ? "#aaa298" : INK }}>
+      <span className="shrink-0">{label}</span>
+      <span className="min-w-0 break-words text-right font-semibold">{value}</span>
     </div>
   );
 }
@@ -440,7 +432,9 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
     );
   }
 
-  const runs = data.runs.filter((run) => run.business_date);
+  const allRuns = data.runs.filter((run) => run.business_date);
+  const runs = dedupeRunsByDay(allRuns);
+  const duplicateDates = duplicateRunsByDay(allRuns);
   const units = Array.from(new Set(runs.map(getUnit))).sort();
   const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
   const unitRuns = runs.filter((run) => getUnit(run) === selectedUnit);
@@ -453,8 +447,9 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
   const returnTo = `/cortes?unit=${selectedUnit}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
   const monthTotal = monthRuns.reduce((sum, run) => sum + runTotal(run), 0);
-  const monthMeta = monthRuns.reduce((sum, run) => sum + runMeta(run), 0);
-  const forecastReady = forecastExistsForMonth(monthRuns, selectedMonth) || monthRuns.some((run) => run.revision?.vta_por_dia?.some((row) => row.meta_vta > 0));
+  const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
+  const monthMeta = forecastReady ? monthRuns.reduce((sum, run) => sum + (runMeta(run) ?? 0), 0) : null;
+  const monthDiff = monthMeta == null ? null : monthTotal - monthMeta;
 
   return (
     <main className="min-h-screen" style={{ background: PAPER, color: INK }}>
@@ -490,10 +485,16 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
 
         {!forecastReady && <ForecastMissingPanel month={selectedMonth} returnTo={returnTo} />}
 
+        {duplicateDates.length > 0 && (
+          <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
+            Hay cortes duplicados para {duplicateDates.map(([date]) => dateLabel(date, "short")).join(", ")}. Se muestra solo la versión más completa de cada día.
+          </div>
+        )}
+
         <div className="grid gap-3 md:grid-cols-4">
           <SummaryTile label="Venta mes" value={money(monthTotal)} tone={GOLD} />
           <SummaryTile label="Forecast mes" value={money(monthMeta)} />
-          <SummaryTile label="Diferencia mes" value={`${monthTotal - monthMeta >= 0 ? "+" : ""}${money(monthTotal - monthMeta)}`} tone={monthTotal >= monthMeta ? GREEN : RED} />
+          <SummaryTile label="Diferencia mes" value={monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`} tone={monthDiff == null || monthDiff >= 0 ? GREEN : RED} />
           <SummaryTile label="Cortes del mes" value={String(monthRuns.length)} />
         </div>
 

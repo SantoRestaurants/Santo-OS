@@ -1,0 +1,161 @@
+type DocumentLike = {
+  document_type?: string | null;
+  document_key?: string | null;
+  source_uri?: string | null;
+  drive_file_id?: string | null;
+  created_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+  workflow_runs?: { business_date: string | null } | Array<{ business_date: string | null }> | null;
+};
+
+type RunLike = {
+  business_date: string | null;
+  created_at: string;
+  status: string;
+  output_payload?: Record<string, unknown> | null;
+  revision?: {
+    vta_por_dia?: Array<{ fecha?: string | null; meta_vta?: number | null; venta_real?: number | null }>;
+    vta_al_dia?: { venta_real?: number | null; meta_vta?: number | null };
+    reconciliation_totals?: { total_real?: number | null; total_sistema?: number | null; difference?: number | null };
+  } | null;
+  documents?: DocumentLike[];
+  exceptions?: unknown[];
+  reviews?: unknown[];
+};
+
+const SPANISH_MONTHS: Record<string, string> = {
+  enero: "01",
+  febrero: "02",
+  marzo: "03",
+  abril: "04",
+  mayo: "05",
+  junio: "06",
+  julio: "07",
+  agosto: "08",
+  septiembre: "09",
+  setiembre: "09",
+  octubre: "10",
+  noviembre: "11",
+  diciembre: "12",
+};
+
+export function docName(doc: DocumentLike) {
+  return String(doc.metadata?.name ?? doc.metadata?.original_filename ?? doc.document_key ?? doc.document_type ?? "Archivo");
+}
+
+export function driveUrl(fileId: string | null | undefined) {
+  return fileId ? `https://drive.google.com/file/d/${fileId}/view` : null;
+}
+
+export function extractDateFromDocument(doc: DocumentLike): string | null {
+  const relation = doc.workflow_runs;
+  const linkedDate = Array.isArray(relation) ? relation[0]?.business_date : relation?.business_date;
+  if (linkedDate) return linkedDate;
+
+  const explicit = doc.metadata?.business_date ?? doc.metadata?.date;
+  if (typeof explicit === "string" && /^\d{4}-\d{2}-\d{2}$/.test(explicit)) return explicit;
+
+  return extractDateFromText(docName(doc)) ?? extractDateFromText(String(doc.document_key ?? ""));
+}
+
+export function extractMonthFromDocument(doc: DocumentLike) {
+  const explicit = String(doc.metadata?.month ?? "");
+  if (/^\d{4}-\d{2}$/.test(explicit)) return explicit;
+
+  const date = extractDateFromDocument(doc);
+  if (date) return date.slice(0, 7);
+
+  const text = `${docName(doc)} ${doc.document_key ?? ""}`.toLowerCase();
+  const yearMatch = text.match(/\b(20\d{2})\b/);
+  const month = Object.entries(SPANISH_MONTHS).find(([name]) => text.includes(name))?.[1];
+  if (yearMatch && month) return `${yearMatch[1]}-${month}`;
+
+  return doc.created_at?.slice(0, 7) ?? new Date().toISOString().slice(0, 7);
+}
+
+export function hasForecastSourceForMonth(runs: RunLike[], month: string) {
+  return runs.some((run) => {
+    const payload = run.output_payload ?? {};
+    const driveIds = payload.drive_file_ids;
+    const workbookPaths = payload.workbook_paths;
+    if (isRecord(driveIds) && typeof driveIds.forecast === "string" && driveIds.forecast) return true;
+    if (isRecord(workbookPaths) && typeof workbookPaths.forecast === "string" && workbookPaths.forecast) return true;
+    return (run.documents ?? []).some((doc) => {
+      if (doc.document_type !== "forecast_workbook") return false;
+      return extractMonthFromDocument(doc) === month;
+    });
+  });
+}
+
+export function dailyForecastMeta(run: RunLike) {
+  const date = run.business_date;
+  if (!date) return null;
+  const row = run.revision?.vta_por_dia?.find((item) => item.fecha === date);
+  return typeof row?.meta_vta === "number" ? row.meta_vta : null;
+}
+
+export function dailySales(run: RunLike) {
+  const total = run.revision?.reconciliation_totals?.total_real;
+  if (typeof total === "number") return total;
+
+  const date = run.business_date;
+  const row = run.revision?.vta_por_dia?.find((item) => item.fecha === date);
+  if (typeof row?.venta_real === "number" && row.venta_real > 0) return row.venta_real;
+
+  return run.revision?.vta_al_dia?.venta_real ?? 0;
+}
+
+export function dedupeRunsByDay<T extends RunLike>(runs: T[]) {
+  const byDay = new Map<string, T[]>();
+  for (const run of runs) {
+    if (!run.business_date) continue;
+    const current = byDay.get(run.business_date) ?? [];
+    current.push(run);
+    byDay.set(run.business_date, current);
+  }
+
+  return Array.from(byDay.values())
+    .map((items) => items.sort(compareRunQuality)[0])
+    .sort((a, b) => String(b.business_date).localeCompare(String(a.business_date)));
+}
+
+export function duplicateRunsByDay<T extends RunLike>(runs: T[]) {
+  return Array.from(
+    runs.reduce((map, run) => {
+      if (!run.business_date) return map;
+      const current = map.get(run.business_date) ?? [];
+      current.push(run);
+      map.set(run.business_date, current);
+      return map;
+    }, new Map<string, T[]>())
+  ).filter(([, items]) => items.length > 1);
+}
+
+function compareRunQuality(a: RunLike, b: RunLike) {
+  return scoreRun(b) - scoreRun(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+}
+
+function scoreRun(run: RunLike) {
+  let score = 0;
+  if (run.revision?.reconciliation_totals?.total_real) score += 100;
+  if (dailyForecastMeta(run) != null) score += 20;
+  if ((run.documents ?? []).length) score += 10;
+  if ((run.reviews ?? []).length) score += 5;
+  if ((run.exceptions ?? []).length) score += 2;
+  if (run.status === "completed" || run.status === "bank_validated") score += 15;
+  return score;
+}
+
+function extractDateFromText(value: string) {
+  const text = value.toLowerCase();
+  const iso = text.match(/\b(20\d{2})[-_ ]?(\d{2})[-_ ]?(\d{2})\b/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const spanish = text.match(/\b(\d{1,2})\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s+(20\d{2})\b/);
+  if (!spanish) return null;
+  return `${spanish[3]}-${SPANISH_MONTHS[spanish[2]]}-${spanish[1].padStart(2, "0")}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}

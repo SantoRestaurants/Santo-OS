@@ -2,9 +2,10 @@ import { AlertTriangle, Building2, ChevronRight, FileSpreadsheet, FolderOpen, La
 import Link from "next/link";
 
 import { uploadForecast } from "@/app/cortes/actions";
+import { docName, extractDateFromDocument, extractMonthFromDocument } from "@/lib/corte-dashboard-utils";
 import { getFileData, type DriveDocument } from "@/lib/file-data";
 
-type SearchParams = Promise<{ month?: string; success?: string; error?: string }>;
+type SearchParams = Promise<{ month?: string; day?: string; success?: string; error?: string }>;
 
 const INK = "#282521";
 const MUTED = "#766f65";
@@ -16,32 +17,31 @@ const AMBER = "#b8782d";
 const RED = "#b84a3a";
 const GREEN = "#2e7d55";
 
-function parseMonth(doc: DriveDocument) {
-  const explicit = String(doc.metadata?.month ?? "");
-  if (/^\d{4}-\d{2}$/.test(explicit)) return explicit;
-  const relation = doc.workflow_runs;
-  const date = Array.isArray(relation) ? relation[0]?.business_date : relation?.business_date;
-  if (date) return date.slice(0, 7);
-  return doc.created_at.slice(0, 7);
-}
-
 function monthLabel(key: string) {
   const date = new Date(`${key}-01T00:00:00`);
   if (Number.isNaN(date.getTime())) return key;
   return new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" }).format(date);
 }
 
-function docName(doc: DriveDocument) {
-  return String(doc.metadata?.name ?? doc.metadata?.original_filename ?? doc.document_key ?? doc.document_type);
+function dayLabel(key: string) {
+  const date = new Date(`${key}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return key;
+  return new Intl.DateTimeFormat("es-MX", { weekday: "long", day: "2-digit", month: "short" }).format(date);
 }
 
 function groupDocs(docs: DriveDocument[]) {
   return [
-    { key: "cortes", label: "Cortes", icon: FileSpreadsheet, docs: docs.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report"].includes(doc.document_type)) },
-    { key: "bancos", label: "Bancos", icon: Landmark, docs: docs.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type)) },
-    { key: "excels", label: "Excel mensual", icon: Building2, docs: docs.filter((doc) => ["income_workbook", "ingresos_workbook", "forecast_workbook"].includes(doc.document_type) || docName(doc).toLowerCase().includes("ingresos")) },
-    { key: "evidencia", label: "Evidencia", icon: FolderOpen, docs: docs.filter((doc) => !["corte_excel", "daily_sales_report", "revision_report", "amex_statement", "banorte_statement", "forecast_workbook"].includes(doc.document_type)) },
+    { key: "corte", label: "Corte", icon: FileSpreadsheet, docs: docs.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report", "email_attachment"].includes(doc.document_type) && docName(doc).toLowerCase().includes("corte")) },
+    { key: "bancos", label: "Bancos", icon: Landmark, docs: docs.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type) || /amex|bancaria|banorte/i.test(docName(doc))) },
+    { key: "excel", label: "Excel", icon: Building2, docs: docs.filter((doc) => ["income_workbook", "ingresos_workbook"].includes(doc.document_type) || /ingresos|descuentos/i.test(docName(doc))) },
+    { key: "evidencia", label: "Evidencia", icon: FolderOpen, docs: docs.filter((doc) => !isInKnownDailyGroup(doc)) },
   ];
+}
+
+function isInKnownDailyGroup(doc: DriveDocument) {
+  const name = docName(doc).toLowerCase();
+  return ["corte_excel", "daily_sales_report", "revision_report", "amex_statement", "banorte_statement", "income_workbook", "ingresos_workbook"].includes(doc.document_type)
+    || /corte|amex|bancaria|banorte|ingresos|descuentos/i.test(name);
 }
 
 function Flash({ success, error }: { success?: string; error?: string }) {
@@ -65,34 +65,6 @@ function MonthNav({ months, selected }: { months: string[]; selected: string }) 
   );
 }
 
-function FolderSection({ label, docs, icon: Icon }: { label: string; docs: DriveDocument[]; icon: React.ComponentType<{ className?: string }> }) {
-  return (
-    <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
-      <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-        <Icon className="h-4 w-4" />
-        {label}
-      </div>
-      {docs.length === 0 ? (
-        <div className="rounded-md border px-3 py-3 text-sm" style={{ borderColor: LINE, color: MUTED }}>
-          Sin archivos registrados.
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {docs.map((doc) => (
-            <a key={doc.id} href={doc.source_uri ?? "#"} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK, pointerEvents: doc.source_uri ? "auto" : "none" }}>
-              <div>
-                <div className="font-semibold">{docName(doc)}</div>
-                <div className="text-xs" style={{ color: MUTED }}>{doc.document_type} · {doc.status}</div>
-              </div>
-              <ChevronRight className="h-4 w-4" />
-            </a>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
 function ForecastUpload({ month }: { month: string }) {
   return (
     <form action={uploadForecast} className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
@@ -102,7 +74,7 @@ function ForecastUpload({ month }: { month: string }) {
         <AlertTriangle className="mt-0.5 h-5 w-5" style={{ color: AMBER }} />
         <div>
           <div className="font-semibold" style={{ color: INK }}>Falta forecast de {monthLabel(month)}</div>
-          <p className="mt-1 text-sm" style={{ color: MUTED }}>El forecast se sube una vez al mes y queda guardado para todos los cortes de ese mes.</p>
+          <p className="mt-1 text-sm" style={{ color: MUTED }}>El forecast se sube una vez al mes y queda arriba del mes, no dentro de un día.</p>
           <input name="forecastFile" type="file" accept=".xlsx,.xls" className="mt-3 block w-full text-sm" style={{ color: MUTED }} />
           <button className="mt-3 inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>
             <UploadCloud className="h-4 w-4" />
@@ -111,6 +83,73 @@ function ForecastUpload({ month }: { month: string }) {
         </div>
       </div>
     </form>
+  );
+}
+
+function ForecastPanel({ month, docs }: { month: string; docs: DriveDocument[] }) {
+  if (docs.length === 0) return <ForecastUpload month={month} />;
+  return (
+    <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+      <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+        <FileSpreadsheet className="h-4 w-4" />
+        Forecast del mes
+      </div>
+      <FileList docs={docs} />
+    </section>
+  );
+}
+
+function FileList({ docs }: { docs: DriveDocument[] }) {
+  if (docs.length === 0) {
+    return <div className="rounded-md border px-3 py-3 text-sm" style={{ borderColor: LINE, color: MUTED }}>Sin archivos registrados.</div>;
+  }
+  return (
+    <div className="space-y-2">
+      {docs.map((doc) => (
+        <a key={doc.id} href={doc.source_uri ?? "#"} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK, pointerEvents: doc.source_uri ? "auto" : "none" }}>
+          <div className="min-w-0">
+            <div className="truncate font-semibold">{docName(doc)}</div>
+            <div className="text-xs" style={{ color: MUTED }}>{doc.document_type} · {doc.status}</div>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function DayFolders({ selectedMonth, selectedDay, dayDocs }: { selectedMonth: string; selectedDay: string; dayDocs: Map<string, DriveDocument[]> }) {
+  const days = Array.from(dayDocs.keys()).sort().reverse();
+  const docs = dayDocs.get(selectedDay) ?? [];
+  const folders = groupDocs(docs);
+  return (
+    <section className="grid gap-4 lg:grid-cols-[260px_1fr]">
+      <div>
+        <div className="mb-3 font-semibold">Días</div>
+        <div className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
+          {days.map((day) => (
+            <Link key={day} href={`/archivos?month=${selectedMonth}&day=${day}`} className="block border-b px-4 py-3 text-sm last:border-b-0" style={{ borderColor: LINE, background: day === selectedDay ? "#fff8df" : PANEL, color: day === selectedDay ? GOLD : INK }}>
+              <div className="font-semibold">{dayLabel(day)}</div>
+              <div className="text-xs" style={{ color: MUTED }}>{dayDocs.get(day)?.length ?? 0} archivos</div>
+            </Link>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {folders.map((folder) => {
+          const Icon = folder.icon;
+          return (
+            <section key={folder.key} className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+              <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+                <Icon className="h-4 w-4" />
+                {folder.label}
+              </div>
+              <FileList docs={folder.docs} />
+            </section>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -126,11 +165,21 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Sea
     );
   }
 
-  const months = Array.from(new Set(data.documents.map(parseMonth))).sort().reverse();
+  const months = Array.from(new Set(data.documents.map(extractMonthFromDocument))).sort().reverse();
   const selectedMonth = params.month && months.includes(params.month) ? params.month : months[0] ?? new Date().toISOString().slice(0, 7);
-  const docs = data.documents.filter((doc) => parseMonth(doc) === selectedMonth);
+  const docs = data.documents.filter((doc) => extractMonthFromDocument(doc) === selectedMonth);
   const forecastDocs = docs.filter((doc) => doc.document_type === "forecast_workbook");
-  const folders = groupDocs(docs);
+  const dailyDocs = docs.filter((doc) => doc.document_type !== "forecast_workbook" && extractDateFromDocument(doc));
+  const byDay = dailyDocs.reduce((map, doc) => {
+    const day = extractDateFromDocument(doc);
+    if (!day) return map;
+    const current = map.get(day) ?? [];
+    current.push(doc);
+    map.set(day, current);
+    return map;
+  }, new Map<string, DriveDocument[]>());
+  const days = Array.from(byDay.keys()).sort().reverse();
+  const selectedDay = params.day && byDay.has(params.day) ? params.day : days[0] ?? "";
 
   return (
     <main className="min-h-screen" style={{ background: PAPER, color: INK }}>
@@ -139,7 +188,7 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Sea
           <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Archivos</div>
           <h1 className="mt-1 text-3xl font-semibold">Drive de cortes</h1>
           <p className="mt-2 max-w-3xl text-sm" style={{ color: MUTED }}>
-            Vista simple de la carpeta de cortes: bancos, Excel mensual, forecast y evidencia registrada por SantoOS.
+            Primero el forecast mensual. Después, cada día con su corte, bancos, Excel y evidencia.
           </p>
         </header>
 
@@ -159,13 +208,13 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Sea
           <MonthNav months={months.length ? months : [selectedMonth]} selected={selectedMonth} />
         </section>
 
-        {forecastDocs.length === 0 && <ForecastUpload month={selectedMonth} />}
+        <ForecastPanel month={selectedMonth} docs={forecastDocs} />
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {folders.map((folder) => (
-            <FolderSection key={folder.key} label={folder.label} docs={folder.docs} icon={folder.icon} />
-          ))}
-        </div>
+        {days.length > 0 ? (
+          <DayFolders selectedMonth={selectedMonth} selectedDay={selectedDay} dayDocs={byDay} />
+        ) : (
+          <div className="rounded-md border p-8 text-center text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>No hay archivos diarios registrados para este mes.</div>
+        )}
       </div>
     </main>
   );

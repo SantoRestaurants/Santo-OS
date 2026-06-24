@@ -69,11 +69,11 @@ export function Sidebar() {
       <button
         onClick={() => setMobileOpen(true)}
         className="fixed left-4 top-4 z-40 rounded-xl border p-2 shadow-sm lg:hidden"
-        style={{ borderColor: "#222", background: "#111" }}
+        style={{ borderColor: "#ded7ca", background: "#ffffff" }}
         aria-label="Abrir menú"
         type="button"
       >
-        <Menu className="h-5 w-5" style={{ color: "#E8E0D0" }} />
+        <Menu className="h-5 w-5" style={{ color: "#282521" }} />
       </button>
 
       {/* Mobile overlay */}
@@ -90,25 +90,25 @@ export function Sidebar() {
         data-tour="sidebar"
         className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r transition-transform duration-200 lg:relative lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
           }`}
-        style={{ borderColor: "#222", background: "#0c0c0c" }}
+        style={{ borderColor: "#ded7ca", background: "#ffffff" }}
       >
         {/* Brand header */}
-        <div className="flex items-center justify-between border-b px-4 py-4" style={{ borderColor: "#1a1a1a" }}>
+        <div className="flex items-center justify-between border-b px-4 py-4" style={{ borderColor: "#eee8dd" }}>
           <div className="flex items-center gap-2.5">
-            <span className="rounded-xl p-2" style={{ background: "#C9A84C", color: "#080808" }}>
+            <span className="rounded-xl p-2" style={{ background: "#9b7a22", color: "#ffffff" }}>
               <Sparkles className="h-4 w-4" />
             </span>
             <div>
-              <p className="text-sm font-semibold" style={{ color: "#C9A84C", letterSpacing: "2px", textTransform: "uppercase" }}>
+              <p className="text-sm font-semibold" style={{ color: "#9b7a22", letterSpacing: "2px", textTransform: "uppercase" }}>
                 Santo OS
               </p>
-              <p className="text-[10px]" style={{ color: "#666" }}>Panel de cortes</p>
+              <p className="text-[10px]" style={{ color: "#766f65" }}>Panel de cortes</p>
             </div>
           </div>
           <button
             onClick={() => setMobileOpen(false)}
             className="rounded-lg p-1 lg:hidden"
-            style={{ color: "#666" }}
+            style={{ color: "#766f65" }}
             type="button"
           >
             <X className="h-4 w-4" />
@@ -127,10 +127,10 @@ export function Sidebar() {
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition"
                 style={{
-                  background: isActive ? "#C9A84C" : "transparent",
-                  color: isActive ? "#080808" : "#888",
+                  background: isActive ? "#fff8df" : "transparent",
+                  color: isActive ? "#9b7a22" : "#766f65",
                 }}
-                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#161616"; }}
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#fbfaf7"; }}
                 onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
               >
                 {item.icon}
@@ -141,13 +141,13 @@ export function Sidebar() {
         </nav>
 
         {/* Help button */}
-        <div className="border-t p-3" style={{ borderColor: "#1a1a1a" }}>
+        <div className="border-t p-3" style={{ borderColor: "#eee8dd" }}>
           <button
             data-tour="help-button"
             onClick={handleRestartTour}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium transition"
-            style={{ color: "#666" }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#161616"; }}
+            style={{ color: "#766f65" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#fbfaf7"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             type="button"
           >

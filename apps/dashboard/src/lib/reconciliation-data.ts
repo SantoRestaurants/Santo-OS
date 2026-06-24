@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseServerClient, getSupabasePublicConfig } from "@/lib/supabase/server";
+import { extractDateFromDocument } from "@/lib/corte-dashboard-utils";
 import { extractRevisionDocument, type RevisionDocument } from "@/lib/corte-data";
 
 export type ReconciliationStatus = "ready" | "requires_config" | "auth_required" | "query_failed";
@@ -22,6 +23,7 @@ export type ReconciliationRun = {
   } | null;
   documents: Array<{
     id: string;
+    document_key: string;
     document_type: string;
     source_system: string;
     source_uri: string | null;
@@ -90,7 +92,8 @@ export async function getReconciliationData(): Promise<ReconciliationData> {
     .select("id,business_date,status,source_channel,requires_review_reason,created_at,output_payload")
     .eq("source_channel", "agent_mail")
     .order("business_date", { ascending: false })
-    .limit(12);
+    .order("created_at", { ascending: false })
+    .limit(60);
 
   if (runsResult.error) {
     return { status: "query_failed", missingConfig: [], error: runsResult.error.message, runs: [] };
@@ -111,8 +114,8 @@ export async function getReconciliationData(): Promise<ReconciliationData> {
       .order("received_at", { ascending: false }),
     supabase
       .from("documents")
-      .select("id,workflow_run_id,document_type,source_system,source_uri,drive_file_id,status,created_at,metadata")
-      .in("workflow_run_id", runIds)
+      .select("id,workflow_run_id,document_key,document_type,source_system,source_uri,drive_file_id,status,created_at,metadata,workflow_runs(business_date)")
+      .or(`workflow_run_id.in.(${runIds.join(",")}),workflow_run_id.is.null`)
       .order("created_at", { ascending: false }),
     supabase
       .from("reviews")
@@ -138,6 +141,7 @@ export async function getReconciliationData(): Promise<ReconciliationData> {
 
   const emailsByRun = groupByRunId(emailsResult.data ?? []);
   const documentsByRun = groupByRunId(documentsResult.data ?? []);
+  const documentsByDate = groupByDocumentDate(documentsResult.data ?? []);
   const reviewsByRun = groupByRunId(reviewsResult.data ?? []);
   const exceptionsByRun = groupByRunId(exceptionsResult.data ?? []);
 
@@ -145,14 +149,18 @@ export async function getReconciliationData(): Promise<ReconciliationData> {
     status: "ready",
     missingConfig: [],
     error: null,
-    runs: runs.map((run) => ({
-      ...run,
-      revision: extractRevisionDocument({ ...run, business_date: run.business_date ?? "" }),
-      email: firstForRun(emailsByRun, run.id) as ReconciliationRun["email"],
-      documents: (documentsByRun.get(run.id) ?? []) as ReconciliationRun["documents"],
-      reviews: (reviewsByRun.get(run.id) ?? []) as ReconciliationRun["reviews"],
-      exceptions: (exceptionsByRun.get(run.id) ?? []) as ReconciliationRun["exceptions"],
-    })),
+    runs: runs.map((run) => {
+      const linkedDocs = documentsByRun.get(run.id) ?? [];
+      const dateDocs = run.business_date ? documentsByDate.get(run.business_date) ?? [] : [];
+      return {
+        ...run,
+        revision: extractRevisionDocument({ ...run, business_date: run.business_date ?? "" }),
+        email: firstForRun(emailsByRun, run.id) as ReconciliationRun["email"],
+        documents: dedupeDocuments([...linkedDocs, ...dateDocs]) as ReconciliationRun["documents"],
+        reviews: (reviewsByRun.get(run.id) ?? []) as ReconciliationRun["reviews"],
+        exceptions: (exceptionsByRun.get(run.id) ?? []) as ReconciliationRun["exceptions"],
+      };
+    }),
   };
 }
 
@@ -169,4 +177,26 @@ function groupByRunId<T extends { workflow_run_id?: string | null }>(rows: T[]) 
 
 function firstForRun<T>(grouped: Map<string, T[]>, runId: string) {
   return (grouped.get(runId) ?? [null])[0];
+}
+
+function groupByDocumentDate<T extends { workflow_run_id?: string | null }>(rows: T[]) {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    if (row.workflow_run_id) continue;
+    const date = extractDateFromDocument(row as unknown as ReconciliationRun["documents"][number]);
+    if (!date) continue;
+    const current = grouped.get(date) ?? [];
+    current.push(row);
+    grouped.set(date, current);
+  }
+  return grouped;
+}
+
+function dedupeDocuments<T extends { id: string }>(docs: T[]) {
+  const seen = new Set<string>();
+  return docs.filter((doc) => {
+    if (seen.has(doc.id)) return false;
+    seen.add(doc.id);
+    return true;
+  });
 }
