@@ -101,12 +101,18 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
     redirect(withQuery(returnTo, "error", "agent_mail_stage_not_approved"));
   }
 
+  const folderId = process.env.CORTE_SANTO_DRIVE_FOLDER_ID || process.env.CORTE_SANTO_BANK_UPLOAD_FOLDER_ID;
+
   const missingDriveConfig = missingConfirmed([
     "GOOGLE_DRIVE_CLIENT_ID",
     "GOOGLE_DRIVE_CLIENT_SECRET",
     "GOOGLE_DRIVE_REFRESH_TOKEN",
-    "CORTE_SANTO_BANK_UPLOAD_FOLDER_ID",
   ]);
+  
+  if (!folderId || folderId.includes("[CONFIRM]")) {
+    missingDriveConfig.push("CORTE_SANTO_DRIVE_FOLDER_ID");
+  }
+
   if (missingDriveConfig.length > 0) {
     await markUploadBlocked(serviceClient, workflowRunId, user.email ?? null, {
       reason: "dashboard_bank_upload_drive_config_missing",
@@ -121,14 +127,14 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
     uploads = await Promise.all([
       uploadToDrive({
         accessToken: token,
-        folderId: process.env.CORTE_SANTO_BANK_UPLOAD_FOLDER_ID!,
+        folderId: folderId,
         file: amexFile,
         documentType: "amex_statement",
         businessDate,
       }),
       uploadToDrive({
         accessToken: token,
-        folderId: process.env.CORTE_SANTO_BANK_UPLOAD_FOLDER_ID!,
+        folderId: folderId,
         file: banorteFile,
         documentType: "banorte_statement",
         businessDate,
