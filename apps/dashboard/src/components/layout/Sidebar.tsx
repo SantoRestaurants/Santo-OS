@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  FolderOpen,
   GitCompareArrows,
   HelpCircle,
   Home,
@@ -45,6 +46,11 @@ const NAV_ITEMS: NavItem[] = [
     href: "/cortes",
     icon: <BarChart3 className="h-4 w-4" />,
     dataTour: "nav-cortes",
+  },
+  {
+    label: "Archivos",
+    href: "/archivos",
+    icon: <FolderOpen className="h-4 w-4" />,
   },
 ];
 

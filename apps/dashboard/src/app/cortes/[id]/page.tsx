@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 
 import { getCorteById, extractRevisionDocument } from "@/lib/corte-data";
 import { RevisionDetailView } from "./RevisionDetailView";
@@ -25,7 +26,7 @@ export default async function CorteDetailPage({ params }: { params: Promise<{ id
     return (
       <div style={{ background: "#080808", color: "#E8E0D0", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
         <p style={{ fontSize: 14 }}>Este corte no tiene datos de revisión</p>
-        <a href="/cortes" style={{ fontSize: 12, color: "#C9A84C" }}>Volver al historial</a>
+        <Link href="/cortes" style={{ fontSize: 12, color: "#C9A84C" }}>Volver al historial</Link>
       </div>
     );
   }

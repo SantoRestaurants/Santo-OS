@@ -28,6 +28,7 @@ export type ReconciliationRun = {
     drive_file_id: string | null;
     status: string;
     created_at: string;
+    metadata: Record<string, unknown>;
   }>;
   reviews: Array<{
     id: string;
@@ -110,7 +111,7 @@ export async function getReconciliationData(): Promise<ReconciliationData> {
       .order("received_at", { ascending: false }),
     supabase
       .from("documents")
-      .select("id,workflow_run_id,document_type,source_system,source_uri,drive_file_id,status,created_at")
+      .select("id,workflow_run_id,document_type,source_system,source_uri,drive_file_id,status,created_at,metadata")
       .in("workflow_run_id", runIds)
       .order("created_at", { ascending: false }),
     supabase

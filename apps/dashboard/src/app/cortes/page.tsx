@@ -1,406 +1,523 @@
-import { ArrowLeft, Calendar, Play, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  FileSpreadsheet,
+  FolderOpen,
+  MessageSquareText,
+  UploadCloud,
+} from "lucide-react";
 import Link from "next/link";
 
-import { getCorteList, extractRevisionDocument, type CorteDetail, type RevisionDocument } from "@/lib/corte-data";
+import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
+import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/conciliacion/actions";
+import { saveCorteComment, saveManualCorrection, uploadForecast } from "./actions";
 
-const GOLD = "#C9A84C";
-const CREAM = "#E8E0D0";
+type SearchParams = Promise<{ unit?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
 
-function formatCurrency(value: number | undefined | null): string {
-  if (value == null) return "-";
-  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(value);
+const INK = "#282521";
+const MUTED = "#766f65";
+const LINE = "#ded7ca";
+const PAPER = "#fbfaf7";
+const PANEL = "#ffffff";
+const GOLD = "#9b7a22";
+const GREEN = "#2e7d55";
+const RED = "#b84a3a";
+const AMBER = "#b8782d";
+
+function money(value: number | undefined | null) {
+  if (value == null || Number.isNaN(value)) return "-";
+  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(value);
 }
 
-function formatDate(date: string | null): string {
-  if (!date) return "-";
-  const parsed = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return date;
-  return new Intl.DateTimeFormat("es-MX", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(parsed);
+function parseDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function formatDateShort(date: string | null): string {
-  if (!date) return "-";
-  const parsed = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return date;
-  return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short" }).format(parsed);
+function monthKey(date: string | null | undefined) {
+  return date ? date.slice(0, 7) : "sin-fecha";
 }
 
-function statusLabel(status: string): string {
-  const map: Record<string, string> = {
-    completed: "Completado",
-    requires_review: "Revisión",
-    ready_for_approval: "Listo",
-    waiting_for_input: "Faltan datos",
-    bank_validated: "Validado",
+function weekKey(date: string | null | undefined) {
+  const parsed = parseDate(date);
+  if (!parsed) return "sin-semana";
+  const d = new Date(parsed);
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - day + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function dateLabel(value: string | null | undefined, mode: "short" | "long" = "long") {
+  const parsed = parseDate(value);
+  if (!parsed) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-MX", {
+    weekday: mode === "long" ? "long" : undefined,
+    day: "2-digit",
+    month: mode === "long" ? "long" : "short",
+    year: mode === "long" ? "numeric" : undefined,
+  }).format(parsed);
+}
+
+function monthLabel(key: string) {
+  const date = parseDate(`${key}-01`);
+  if (!date) return key;
+  return new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" }).format(date);
+}
+
+function getUnit(run: ReconciliationRun) {
+  return (run.revision?.unidad || run.revision?.restaurant_key || "SANTO").toUpperCase();
+}
+
+function statusText(run: ReconciliationRun) {
+  const bankValidated = isBankValidated(run);
+  if (bankValidated) return "Validado con bancos";
+  if (run.status === "requires_review") return "Necesita revisión";
+  if (run.status === "waiting_for_input") return "Faltan bancos";
+  if (run.status === "completed") return "Corte cargado";
+  return run.status;
+}
+
+function statusColor(run: ReconciliationRun) {
+  if (isBankValidated(run)) return GREEN;
+  if (run.status === "requires_review") return AMBER;
+  if (run.status === "waiting_for_input") return RED;
+  return MUTED;
+}
+
+function isBankValidated(run: ReconciliationRun) {
+  return run.status === "completed" || run.status === "bank_validated" || run.documents.some((doc) => doc.document_type === "amex_statement" || doc.document_type === "banorte_statement");
+}
+
+function hasApproval(run: ReconciliationRun) {
+  return run.reviews.some((review) => review.review_key === APPROVAL_REVIEW_KEY && review.status === "approved");
+}
+
+function forecastExistsForMonth(runs: ReconciliationRun[], month: string) {
+  return runs.some((run) => run.documents.some((doc) => doc.document_type === "forecast_workbook" || String(doc.metadata?.month ?? "").startsWith(month)));
+}
+
+function runTotal(run: ReconciliationRun) {
+  return run.revision?.vta_al_dia?.venta_real ?? run.revision?.reconciliation_totals?.total_real ?? 0;
+}
+
+function runMeta(run: ReconciliationRun) {
+  return run.revision?.vta_al_dia?.meta_vta ?? 0;
+}
+
+function Flash({ success, error }: { success?: string; error?: string }) {
+  if (!success && !error) return null;
+  const labels: Record<string, string> = {
+    agent_mail_approved: "Corte aprobado. Ya se pueden subir bancos.",
+    bank_watcher_triggered: "Bancos subidos. La validación bancaria quedó disparada.",
+    comment_saved: "Comentario guardado.",
+    manual_correction_saved: "Corrección guardada y auditada.",
+    forecast_uploaded: "Forecast subido y registrado para el mes.",
   };
-  return map[status] ?? status;
-}
-
-function statusColor(status: string): string {
-  if (status === "completed" || status === "bank_validated") return "#4CAF82";
-  if (status === "requires_review") return "#E08A3A";
-  if (status === "ready_for_approval") return "#5A8AE0";
-  if (status === "waiting_for_input") return "#E05A5A";
-  return "#666666";
-}
-
-function differenceColor(value: number): string {
-  if (value > 0) return "#4CAF82";
-  if (value < 0) return "#E05A5A";
-  return "#666666";
-}
-
-// --- REVISION Detail View ---
-function RevisionView({ revision, corte }: { revision: RevisionDocument; corte: CorteDetail }) {
   return (
-    <div style={{ background: "#080808", color: CREAM, minHeight: "100vh", fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
-      {/* Header */}
-      <div style={{ padding: "32px 40px 24px", borderBottom: "1px solid #222", display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
-        <div>
-          <Link href="/cortes" style={{ fontSize: "11px", letterSpacing: "1px", color: "#666", textDecoration: "none", display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
-            <ArrowLeft style={{ width: 12, height: 12 }} /> VOLVER
+    <div className="rounded-md border px-4 py-3 text-sm" style={{ borderColor: error ? "#e8b4aa" : "#b8dbc9", background: error ? "#fff4f1" : "#f1fbf5", color: error ? RED : GREEN }}>
+      {error ? decodeURIComponent(error) : labels[success ?? ""] ?? "Guardado."}
+    </div>
+  );
+}
+
+function SummaryTile({ label, value, tone = INK }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="rounded-md border px-4 py-3" style={{ background: PANEL, borderColor: LINE }}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{label}</div>
+      <div className="mt-1 text-lg font-semibold" style={{ color: tone }}>{value}</div>
+    </div>
+  );
+}
+
+function UnitSelector({ units, selected, month, week, day }: { units: string[]; selected: string; month: string; week: string; day?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {units.map((unit) => (
+        <Link
+          key={unit}
+          href={`/cortes?unit=${unit}&month=${month}&week=${week}${day ? `&day=${day}` : ""}`}
+          className="rounded-md border px-4 py-2 text-sm font-semibold"
+          style={{ borderColor: unit === selected ? GOLD : LINE, background: unit === selected ? "#fff8df" : PANEL, color: unit === selected ? GOLD : INK }}
+        >
+          {unit}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function MonthSelector({ months, selected, unit }: { months: string[]; selected: string; unit: string }) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1">
+      {months.map((month) => (
+        <Link
+          key={month}
+          href={`/cortes?unit=${unit}&month=${month}`}
+          className="shrink-0 rounded-md border px-3 py-2 text-sm"
+          style={{ borderColor: month === selected ? GOLD : LINE, background: month === selected ? "#fff8df" : PANEL, color: month === selected ? GOLD : INK }}
+        >
+          {monthLabel(month)}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function WeekSelector({ weeks, selected, unit, month }: { weeks: string[]; selected: string; unit: string; month: string }) {
+  return (
+    <div className="grid gap-2 md:grid-cols-4">
+      {weeks.map((week, index) => (
+        <Link
+          key={week}
+          href={`/cortes?unit=${unit}&month=${month}&week=${week}`}
+          className="rounded-md border px-3 py-3 text-sm"
+          style={{ borderColor: week === selected ? GOLD : LINE, background: week === selected ? "#fff8df" : PANEL, color: INK }}
+        >
+          <span className="block text-[11px] font-semibold uppercase" style={{ color: MUTED }}>Semana {index + 1}</span>
+          <span className="mt-1 block font-semibold">{dateLabel(week, "short")}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function DayList({ runs, selectedId, unit, month, week }: { runs: ReconciliationRun[]; selectedId?: string; unit: string; month: string; week: string }) {
+  return (
+    <div className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
+      {runs.map((run) => {
+        const selected = run.id === selectedId;
+        const diff = (run.revision?.vta_al_dia?.diferencia ?? runTotal(run) - runMeta(run));
+        return (
+          <Link
+            key={run.id}
+            href={`/cortes?unit=${unit}&month=${month}&week=${week}&day=${run.id}`}
+            className="flex items-center justify-between border-b px-4 py-3 last:border-b-0"
+            style={{ borderColor: LINE, background: selected ? "#fff8df" : PANEL, color: INK }}
+          >
+            <div>
+              <div className="font-semibold">{dateLabel(run.business_date, "short")}</div>
+              <div className="mt-1 text-xs" style={{ color: statusColor(run) }}>{statusText(run)}</div>
+            </div>
+            <div className="text-right">
+              <div className="font-semibold">{money(runTotal(run))}</div>
+              <div className="text-xs" style={{ color: diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>{diff >= 0 ? "+" : ""}{money(diff)}</div>
+            </div>
           </Link>
-          <h1 style={{ fontSize: "28px", fontWeight: 300, letterSpacing: "6px", textTransform: "uppercase", color: GOLD }}>
-            REVISION
-          </h1>
-          <p style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: "#666", marginTop: "4px" }}>
-            {revision.unidad ?? "SANTO"}
-          </p>
-        </div>
-        <div style={{ textAlign: "right", fontSize: "11px", color: "#666", letterSpacing: "1px" }}>
-          <span style={{ fontSize: "13px", color: CREAM }}>{formatDate(corte.business_date)}</span>
-          <div style={{ marginTop: "4px" }}>
-            <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 600, letterSpacing: "0.5px", background: statusColor(corte.status) + "22", color: statusColor(corte.status), border: `1px solid ${statusColor(corte.status)}44` }}>
-              {statusLabel(corte.status)}
-            </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function DocumentsPanel({ run }: { run: ReconciliationRun }) {
+  const groups = [
+    { label: "Corte", docs: run.documents.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report"].includes(doc.document_type)) },
+    { label: "Bancos", docs: run.documents.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type)) },
+    { label: "Evidencia", docs: run.documents.filter((doc) => !["corte_excel", "daily_sales_report", "revision_report", "amex_statement", "banorte_statement"].includes(doc.document_type)) },
+  ];
+  return (
+    <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+      <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+        <FolderOpen className="h-4 w-4" />
+        Archivos de este día
+      </div>
+      <div className="space-y-3">
+        {groups.map((group) => (
+          <div key={group.label}>
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{group.label}</div>
+            {group.docs.length === 0 ? (
+              <div className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: LINE, color: MUTED }}>Sin archivos registrados</div>
+            ) : group.docs.slice(0, 4).map((doc) => (
+              <a
+                key={doc.id}
+                href={doc.source_uri ?? "#"}
+                className="mb-1 flex items-center justify-between rounded-md border px-3 py-2 text-xs"
+                style={{ borderColor: LINE, color: INK, pointerEvents: doc.source_uri ? "auto" : "none" }}
+              >
+                <span>{String(doc.metadata?.name ?? doc.metadata?.original_filename ?? doc.document_type)}</span>
+                <ChevronRight className="h-3 w-3" />
+              </a>
+            ))}
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ForecastMissingPanel({ month, returnTo }: { month: string; returnTo: string }) {
+  return (
+    <form action={uploadForecast} className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
+      <input type="hidden" name="month" value={month} />
+      <input type="hidden" name="returnTo" value={returnTo} />
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5" style={{ color: AMBER }} />
+        <div>
+          <div className="font-semibold" style={{ color: INK }}>Falta forecast de {monthLabel(month)}</div>
+          <p className="mt-1 text-sm" style={{ color: MUTED }}>Subilo una vez y queda registrado para todo el mes.</p>
+          <input name="forecastFile" type="file" accept=".xlsx,.xls" className="mt-3 block w-full text-sm" style={{ color: MUTED }} />
+          <button className="mt-3 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Subir forecast</button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function BankUploadPanel({ run, returnTo }: { run: ReconciliationRun; returnTo: string }) {
+  const approved = hasApproval(run);
+  const validated = isBankValidated(run);
+  return (
+    <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+      <div className="flex items-center gap-2 font-semibold" style={{ color: INK }}>
+        {validated ? <CheckCircle2 className="h-4 w-4" style={{ color: GREEN }} /> : <UploadCloud className="h-4 w-4" style={{ color: AMBER }} />}
+        Bancos
+      </div>
+      <p className="mt-2 text-sm" style={{ color: validated ? GREEN : MUTED }}>
+        {validated ? "Este corte ya tiene archivos bancarios registrados." : "Todavía no está validado con bancos."}
+      </p>
+      {!approved && !validated && (
+        <form action={approveAgentMailStage} className="mt-3">
+          <input type="hidden" name="workflowRunId" value={run.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <textarea name="notes" rows={2} placeholder="Comentario de aprobación" className="w-full rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
+          <button className="mt-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Aprobar corte</button>
+        </form>
+      )}
+      {!validated && (
+        <form action={uploadBankFilesAndTrigger} className="mt-4 space-y-2">
+          <input type="hidden" name="workflowRunId" value={run.id} />
+          <input type="hidden" name="businessDate" value={run.business_date ?? ""} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <label className="block text-xs font-semibold" style={{ color: MUTED }}>AMEX</label>
+          <input name="amexFile" type="file" accept=".xls,.xlsx" className="block w-full text-sm" disabled={!approved} />
+          <label className="block text-xs font-semibold" style={{ color: MUTED }}>Banorte</label>
+          <input name="banorteFile" type="file" accept=".csv,.xls,.xlsx" className="block w-full text-sm" disabled={!approved} />
+          <button disabled={!approved} className="rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50" style={{ background: approved ? GREEN : "#bdb6aa", color: "white" }}>
+            Subir bancos
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: string; returnTo: string }) {
+  const revision = run.revision;
+  const diff = revision?.vta_al_dia?.diferencia ?? runTotal(run) - runMeta(run);
+  const openExceptions = run.exceptions.filter((item) => item.status !== "resolved");
+  const comments = Array.isArray(run.output_payload?.dashboard_comments) ? run.output_payload.dashboard_comments as Array<Record<string, unknown>> : [];
+  const corrections = Array.isArray(run.output_payload?.dashboard_manual_corrections) ? run.output_payload.dashboard_manual_corrections as Array<Record<string, unknown>> : [];
+  return (
+    <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
+      <div className="space-y-4">
+        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>{getUnit(run)}</div>
+              <h2 className="mt-1 text-2xl font-semibold" style={{ color: INK }}>{dateLabel(run.business_date)}</h2>
+              <div className="mt-2 inline-flex rounded-md border px-2.5 py-1 text-sm font-semibold" style={{ borderColor: statusColor(run), color: statusColor(run), background: `${statusColor(run)}12` }}>
+                {statusText(run)}
+              </div>
+            </div>
+            <Link href={`/cortes/${run.id}`} className="rounded-md border px-3 py-2 text-sm font-semibold" style={{ borderColor: LINE, color: INK }}>
+              Ver detalle completo
+            </Link>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <SummaryTile label="Venta real" value={money(runTotal(run))} tone={GOLD} />
+            <SummaryTile label="Meta forecast" value={money(runMeta(run))} />
+            <SummaryTile label="Diferencia" value={`${diff >= 0 ? "+" : ""}${money(diff)}`} tone={diff >= 0 ? GREEN : RED} />
+            <SummaryTile label="Total sistema" value={money(revision?.reconciliation_totals?.total_sistema)} />
+          </div>
+        </div>
+
+        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+            <FileSpreadsheet className="h-4 w-4" />
+            Datos principales
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            <DataRow label="Total real" value={money(revision?.reconciliation_totals?.total_real)} />
+            <DataRow label="Venta real" value={money(runTotal(run))} />
+            <DataRow label="Forecast día" value={money(runMeta(run))} />
+            <DataRow label="Diferencia forecast" value={`${diff >= 0 ? "+" : ""}${money(diff)}`} />
+            <DataRow label="Formato corte" value={revision?.formato_corte ?? "-"} />
+            <DataRow label="Falta por entrar" value={money(Object.values(revision?.falta_por_entrar ?? {}).reduce((sum, value) => sum + Number(value || 0), 0))} />
+          </div>
+        </div>
+
+        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+            <Bot className="h-4 w-4" />
+            Preguntas para IA
+          </div>
+          <textarea rows={3} placeholder="Ejemplo: ¿por qué la venta real quedó arriba del forecast?" className="w-full rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
+          <button disabled className="mt-2 rounded-md px-4 py-2 text-sm font-semibold opacity-60" style={{ background: "#c8c0b4", color: "white" }}>
+            Próximamente con Gemini
+          </button>
+        </div>
+
+        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+            <MessageSquareText className="h-4 w-4" />
+            Comentarios y correcciones
+          </div>
+          <form action={saveCorteComment} className="mb-4">
+            <input type="hidden" name="workflowRunId" value={run.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <textarea name="comment" rows={2} placeholder="Comentario de supervisora" className="w-full rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
+            <button className="mt-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: INK, color: "white" }}>Guardar comentario</button>
+          </form>
+          <form action={saveManualCorrection} className="grid gap-2 md:grid-cols-[1fr_120px_1fr_auto]">
+            <input type="hidden" name="workflowRunId" value={run.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <select name="field" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+              <option value="vta_al_dia.venta_real">Venta real</option>
+              <option value="vta_al_dia.meta_vta">Meta forecast</option>
+              <option value="reconciliation_totals.total_real">Total real</option>
+              <option value="reconciliation_totals.total_sistema">Total sistema</option>
+              <option value="reconciliation_totals.difference">Diferencia</option>
+            </select>
+            <input name="value" inputMode="decimal" placeholder="Valor" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
+            <input name="note" placeholder="Motivo" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
+            <button className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Corregir</button>
+          </form>
+          {(comments.length > 0 || corrections.length > 0) && (
+            <div className="mt-4 space-y-2 text-sm" style={{ color: MUTED }}>
+              {comments.slice(-3).map((comment, index) => <div key={`c-${index}`}>Comentario: {String(comment.comment ?? "")}</div>)}
+              {corrections.slice(-3).map((correction, index) => <div key={`m-${index}`}>Corrección: {String(correction.field)} = {String(correction.value)}</div>)}
+            </div>
+          )}
         </div>
       </div>
 
-      <div style={{ padding: "32px 40px", maxWidth: 1400 }}>
-        {/* KPI Strip */}
-        {revision.vta_al_dia && (
-          <>
-            <div style={{ fontSize: "10px", letterSpacing: "3px", textTransform: "uppercase", color: GOLD, marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-              VTA AL DÍA
-              <span style={{ flex: 1, height: 1, background: "#222" }} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 1, background: "#222", border: "1px solid #222", borderRadius: 8, overflow: "hidden", marginBottom: 40 }}>
-              <KpiCard value={formatCurrency(revision.vta_al_dia.meta_vta)} label="META DE VTA" />
-              <KpiCard value={formatCurrency(revision.vta_al_dia.venta_real)} label="VENTA REAL" />
-              <KpiCard value={formatCurrency(revision.vta_al_dia.diferencia)} label="DIFERENCIA" color={differenceColor(revision.vta_al_dia.diferencia)} />
-              <KpiCard value={revision.vta_al_dia.pct_diferencia != null ? `${revision.vta_al_dia.pct_diferencia}%` : "-"} label="% DIFERENCIA" color={differenceColor(revision.vta_al_dia.pct_diferencia ?? 0)} />
-            </div>
-          </>
-        )}
-
-        {/* VTA META DEL MES */}
-        {revision.vta_meta_mes && (
-          <>
-            <div style={{ fontSize: "10px", letterSpacing: "3px", textTransform: "uppercase", color: GOLD, marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-              VTA META DEL MES
-              <span style={{ flex: 1, height: 1, background: "#222" }} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: "#222", border: "1px solid #222", borderRadius: 8, overflow: "hidden", marginBottom: 40 }}>
-              <KpiCard value={formatCurrency(revision.vta_meta_mes.meta_vta)} label="META MES" />
-              <KpiCard value={formatCurrency(revision.vta_meta_mes.venta_real)} label="VENTA REAL" />
-              <KpiCard value={formatCurrency(revision.vta_meta_mes.diferencia)} label="DIFERENCIA" color={differenceColor(revision.vta_meta_mes.diferencia)} />
-            </div>
-          </>
-        )}
-
-        {/* Format + Reconciliation */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 40 }}>
-          <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: 20 }}>
-            <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "#666", marginBottom: 16 }}>FORMATO DE CORTE</div>
-            <div style={{ fontSize: "24px", fontWeight: 700, color: revision.formato_corte === "BIEN" ? "#4CAF82" : "#E05A5A" }}>
-              {revision.formato_corte ?? "-"}
-            </div>
-          </div>
-          {revision.reconciliation_totals && (
-            <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: 20 }}>
-              <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "#666", marginBottom: 16 }}>CONCILIACIÓN</div>
-              <div style={{ display: "flex", gap: 24 }}>
-                <div>
-                  <div style={{ fontSize: "10px", color: "#666", letterSpacing: "1px" }}>TOTAL REAL</div>
-                  <div style={{ fontSize: "18px", fontWeight: 600, color: GOLD }}>{formatCurrency(revision.reconciliation_totals.total_real)}</div>
+      <aside className="space-y-4">
+        <BankUploadPanel run={run} returnTo={returnTo} />
+        <DocumentsPanel run={run} />
+        {openExceptions.length > 0 && (
+          <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
+            <div className="font-semibold" style={{ color: INK }}>Pendientes por resolver</div>
+            <div className="mt-2 space-y-2">
+              {openExceptions.slice(0, 4).map((item) => (
+                <div key={item.id} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#e4c58f", color: MUTED }}>
+                  {item.exception_key}
                 </div>
-                <div>
-                  <div style={{ fontSize: "10px", color: "#666", letterSpacing: "1px" }}>TOTAL SISTEMA</div>
-                  <div style={{ fontSize: "18px", fontWeight: 600, color: CREAM }}>{formatCurrency(revision.reconciliation_totals.total_sistema)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: "10px", color: "#666", letterSpacing: "1px" }}>DIFERENCIA</div>
-                  <div style={{ fontSize: "18px", fontWeight: 600, color: differenceColor(revision.reconciliation_totals.difference) }}>{formatCurrency(revision.reconciliation_totals.difference)}</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* VTA POR DIA */}
-        {revision.vta_por_dia && revision.vta_por_dia.length > 0 && (
-          <>
-            <div style={{ fontSize: "10px", letterSpacing: "3px", textTransform: "uppercase", color: GOLD, marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-              VTA POR DIA
-              <span style={{ flex: 1, height: 1, background: "#222" }} />
-            </div>
-            <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, overflow: "hidden", marginBottom: 40 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr>
-                    <Th>DÍA</Th>
-                    <Th>FECHA</Th>
-                    <Th align="right">META DE VTA</Th>
-                    <Th align="right">VENTA REAL</Th>
-                    <Th align="right">DIFERENCIA</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {revision.vta_por_dia.map((row, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #1a1a1a" }}>
-                      <Td>{row.dia}</Td>
-                      <Td>{formatDateShort(row.fecha)}</Td>
-                      <Td align="right" color="#666">{formatCurrency(row.meta_vta)}</Td>
-                      <Td align="right" color={row.venta_real > 0 ? GOLD : "#333"}>{formatCurrency(row.venta_real)}</Td>
-                      <Td align="right" color={differenceColor(row.diferencia)}>{formatCurrency(row.diferencia)}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 40 }}>
-          {/* SALDOS */}
-          {revision.saldos && (
-            <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: 20 }}>
-              <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "#666", marginBottom: 16 }}>SALDOS</div>
-              <SaldoRow label="PROV. AGUINALDOS" value={revision.saldos.prov_aguinaldos} />
-              <SaldoRow label="SALDO BANORTE" value={revision.saldos.saldo_banorte} />
-              <SaldoRow label="PROV. UTILIDADES" value={revision.saldos.prov_utilidades} />
-              <div style={{ borderTop: "1px solid #222", marginTop: 8, paddingTop: 8 }}>
-                <SaldoRow label="TOTAL" value={revision.saldos.total} bold />
-              </div>
-            </div>
-          )}
-
-          {/* FALTA POR ENTRAR */}
-          {revision.falta_por_entrar && Object.keys(revision.falta_por_entrar).length > 0 && (
-            <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: 20 }}>
-              <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "#666", marginBottom: 16 }}>FALTA POR ENTRAR</div>
-              {Object.entries(revision.falta_por_entrar).map(([key, value]) => (
-                <SaldoRow key={key} label={key.toUpperCase().replace(/_/g, " ")} value={value} />
               ))}
             </div>
-          )}
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 40 }}>
-          {/* GASTOS ADICIONALES */}
-          <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: 20 }}>
-            <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "#666", marginBottom: 16 }}>GASTOS ADICIONALES</div>
-            {(!revision.gastos_adicionales || revision.gastos_adicionales.length === 0) ? (
-              <div style={{ fontSize: 12, color: "#333", fontStyle: "italic" }}>Sin gastos adicionales</div>
-            ) : (
-              revision.gastos_adicionales.map((g, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1a1a1a", fontSize: 12 }}>
-                  <span style={{ color: CREAM }}>{g.concepto}</span>
-                  <span style={{ color: GOLD, fontWeight: 600 }}>{formatCurrency(g.importe)}</span>
-                </div>
-              ))
-            )}
           </div>
+        )}
+        <Link href={`/archivos?month=${month}`} className="flex items-center justify-between rounded-md border px-4 py-3 text-sm font-semibold" style={{ borderColor: LINE, background: PANEL, color: INK }}>
+          Ver archivos del mes
+          <ChevronRight className="h-4 w-4" />
+        </Link>
+      </aside>
+    </section>
+  );
+}
 
-          {/* AJUSTES DEL DIA */}
-          <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: 20 }}>
-            <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: "#666", marginBottom: 16 }}>AJUSTES DEL DÍA</div>
-            {(!revision.ajustes_del_dia || revision.ajustes_del_dia.length === 0) ? (
-              <div style={{ fontSize: 12, color: "#333", fontStyle: "italic" }}>Sin ajustes</div>
-            ) : (
-              revision.ajustes_del_dia.map((a, i) => (
-                <div key={i} style={{ padding: "8px 0", borderBottom: "1px solid #1a1a1a", fontSize: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: CREAM }}>{a.concepto}</span>
-                    <span style={{ color: GOLD, fontWeight: 600 }}>{formatCurrency(a.importe)}</span>
-                  </div>
-                  {a.observaciones && <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{a.observaciones}</div>}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+function DataRow({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: muted ? "#aaa298" : INK }}>
+      <span>{label}</span>
+      <span className="font-semibold">{value}</span>
     </div>
   );
 }
 
-function KpiCard({ value, label, color }: { value: string; label: string; color?: string }) {
-  return (
-    <div style={{ background: "#111", padding: "20px 16px", textAlign: "center" }}>
-      <span style={{ fontSize: 20, fontWeight: 600, color: color ?? GOLD, display: "block" }}>{value}</span>
-      <span style={{ fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color: "#666", marginTop: 4, display: "block" }}>{label}</span>
-    </div>
-  );
-}
+export default async function CortesPage({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const data = await getReconciliationData();
 
-function Th({ children, align }: { children: React.ReactNode; align?: "left" | "right" }) {
-  return (
-    <th style={{ textAlign: align ?? "left", fontSize: 9, letterSpacing: "1.5px", textTransform: "uppercase", color: "#666", padding: "8px 10px", borderBottom: "1px solid #222" }}>
-      {children}
-    </th>
-  );
-}
-
-function Td({ children, align, color }: { children: React.ReactNode; align?: "left" | "right"; color?: string }) {
-  return (
-    <td style={{ padding: "10px 10px", borderBottom: "1px solid #1a1a1a", verticalAlign: "middle", textAlign: align ?? "left", color: color ?? CREAM }}>
-      {children}
-    </td>
-  );
-}
-
-function SaldoRow({ label, value, bold }: { label: string; value: number; bold?: boolean }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #1a1a1a", fontSize: 12 }}>
-      <span style={{ color: "#666", fontWeight: bold ? 700 : 400 }}>{label}</span>
-      <span style={{ color: value >= 0 ? GOLD : "#E05A5A", fontWeight: bold ? 700 : 600 }}>{formatCurrency(value)}</span>
-    </div>
-  );
-}
-
-// --- Corte List Card ---
-function CorteCard({ corte }: { corte: CorteDetail }) {
-  const revision = extractRevisionDocument(corte);
-  const ventaReal = revision?.vta_al_dia?.venta_real;
-  const diferencia = revision?.vta_al_dia?.diferencia;
-  const formato = revision?.formato_corte;
-
-  return (
-    <Link href={`/cortes/${corte.id}`} className="corte-card" style={{ textDecoration: "none" }}>
-      <div className="corte-card-inner" style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "border-color 0.2s", cursor: "pointer" }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: CREAM }}>{formatDate(corte.business_date)}</div>
-          <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
-            {corte.source_channel === "agent_mail" ? "Email" : corte.source_channel}
-            {formato && <span style={{ marginLeft: 12, color: formato === "BIEN" ? "#4CAF82" : "#E05A5A" }}>{formato}</span>}
-          </div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          {ventaReal != null && (
-            <div style={{ fontSize: 18, fontWeight: 600, color: GOLD }}>{formatCurrency(ventaReal)}</div>
-          )}
-          {diferencia != null && (
-            <div style={{ fontSize: 11, color: differenceColor(diferencia), marginTop: 2 }}>
-              {diferencia >= 0 ? "+" : ""}{formatCurrency(diferencia)}
-            </div>
-          )}
-          <div style={{ marginTop: 6 }}>
-            <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 4, fontSize: 10, fontWeight: 600, background: statusColor(corte.status) + "22", color: statusColor(corte.status), border: `1px solid ${statusColor(corte.status)}44` }}>
-              {statusLabel(corte.status)}
-            </span>
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-// --- Workflow Trigger Buttons ---
-function WorkflowTriggers() {
-  return (
-    <div style={{ display: "flex", gap: 12 }}>
-      <TriggerButton label="Agent Mail" icon={<Play style={{ width: 12, height: 12 }} />} />
-      <TriggerButton label="Bank Watcher" icon={<RefreshCw style={{ width: 12, height: 12 }} />} />
-    </div>
-  );
-}
-
-function TriggerButton({ label, icon }: { label: string; icon: React.ReactNode }) {
-  return (
-    <button
-      className="trigger-btn"
-      style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 6, background: "#111", border: "1px solid #222", color: CREAM, fontSize: 11, letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer", transition: "border-color 0.2s" }}
-    >
-      {icon} {label}
-    </button>
-  );
-}
-
-// --- Main Page ---
-export default async function CortesPage() {
-  const { status, cortes, error } = await getCorteList();
-
-  if (status === "auth_required") {
+  if (data.status === "auth_required") {
     return (
-      <div style={{ background: "#080808", color: CREAM, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 14, color: CREAM }}>Inicia sesión para ver los cortes</p>
-          <Link href="/auth/sign-in" style={{ display: "inline-block", marginTop: 16, padding: "10px 24px", borderRadius: 8, background: GOLD, color: "#080808", fontSize: 12, fontWeight: 600, textDecoration: "none" }}>Iniciar sesión</Link>
-        </div>
-      </div>
+      <main className="flex min-h-screen items-center justify-center" style={{ background: PAPER, color: INK }}>
+        <Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Iniciar sesión</Link>
+      </main>
     );
   }
 
+  const runs = data.runs.filter((run) => run.business_date);
+  const units = Array.from(new Set(runs.map(getUnit))).sort();
+  const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
+  const unitRuns = runs.filter((run) => getUnit(run) === selectedUnit);
+  const months = Array.from(new Set(unitRuns.map((run) => monthKey(run.business_date)))).sort().reverse();
+  const selectedMonth = params.month && months.includes(params.month) ? params.month : months[0] ?? new Date().toISOString().slice(0, 7);
+  const monthRuns = unitRuns.filter((run) => monthKey(run.business_date) === selectedMonth);
+  const weeks = Array.from(new Set(monthRuns.map((run) => weekKey(run.business_date)))).sort();
+  const selectedWeek = params.week && weeks.includes(params.week) ? params.week : weeks[weeks.length - 1] ?? "sin-semana";
+  const weekRuns = monthRuns.filter((run) => weekKey(run.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
+  const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
+  const returnTo = `/cortes?unit=${selectedUnit}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
+  const monthTotal = monthRuns.reduce((sum, run) => sum + runTotal(run), 0);
+  const monthMeta = monthRuns.reduce((sum, run) => sum + runMeta(run), 0);
+  const forecastReady = forecastExistsForMonth(monthRuns, selectedMonth) || monthRuns.some((run) => run.revision?.vta_por_dia?.some((row) => row.meta_vta > 0));
+
   return (
-    <div style={{ background: "#080808", color: CREAM, minHeight: "100vh", fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
-      <style>{`
-        .corte-card-inner:hover, .corte-card:hover .corte-card-inner { border-color: ${GOLD} !important; }
-        .trigger-btn:hover { border-color: ${GOLD} !important; }
-      `}</style>
-      {/* Header */}
-      <div style={{ padding: "32px 40px 24px", borderBottom: "1px solid #222", display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 300, letterSpacing: 6, textTransform: "uppercase", color: GOLD }}>CORTES</h1>
-          <p style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", color: "#666", marginTop: 4 }}>SANTO — Historial de cortes diarios</p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <WorkflowTriggers />
-          <div style={{ textAlign: "right", fontSize: 11, color: "#666", letterSpacing: 1 }}>
-            <span style={{ fontSize: 13, color: CREAM }}>{cortes.length} cortes</span>
-          </div>
-        </div>
-      </div>
+    <main className="min-h-screen" style={{ background: PAPER, color: INK }}>
+      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+        <header className="pl-10 lg:pl-0">
+          <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Cortes</div>
+          <h1 className="mt-1 text-3xl font-semibold">Ventas por unidad</h1>
+          <p className="mt-2 max-w-3xl text-sm" style={{ color: MUTED }}>
+            Vista simple para revisar el corte, compararlo contra forecast y subir bancos cuando esté aprobado.
+          </p>
+        </header>
 
-      <div style={{ padding: "32px 40px", maxWidth: 1400 }}>
-        {/* Filter bar */}
-        <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 6, background: "#111", border: "1px solid #222", fontSize: 11, color: "#666" }}>
-            <Calendar style={{ width: 12, height: 12 }} />
-            <span>Todos los días</span>
-          </div>
-        </div>
+        <Flash success={params.success} error={params.error} />
 
-        {/* Section title */}
-        <div style={{ fontSize: 10, letterSpacing: 3, textTransform: "uppercase", color: GOLD, marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
-          HISTORIAL
-          <span style={{ flex: 1, height: 1, background: "#222" }} />
-        </div>
-
-        {/* Error state */}
-        {error && (
-          <div style={{ background: "#1a0a0a", border: "1px solid #4a2a2a", borderRadius: 8, padding: 20, fontSize: 12, color: "#E05A5A" }}>
-            Error: {error}
+        {data.status === "requires_config" && (
+          <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
+            Falta conectar Supabase: {data.missingConfig.join(", ")}
           </div>
         )}
-
-        {/* Empty state */}
-        {cortes.length === 0 && !error && (
-          <div style={{ textAlign: "center", padding: "60px 0" }}>
-            <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.2 }}>&#9744;</div>
-            <p style={{ fontSize: 14, color: "#666" }}>Todavía no hay cortes</p>
-            <p style={{ fontSize: 12, color: "#444", marginTop: 8 }}>Los cortes aparecerán aquí cuando se procesen</p>
-          </div>
+        {data.error && (
+          <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e8b4aa", background: "#fff4f1", color: RED }}>{data.error}</div>
         )}
 
-        {/* Corte list */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {cortes.map((corte) => (
-            <CorteCard key={corte.id} corte={corte} />
-          ))}
+        <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 flex items-center gap-2 font-semibold"><CalendarDays className="h-4 w-4" /> Unidad</div>
+          <UnitSelector units={units.length ? units : ["SANTO"]} selected={selectedUnit} month={selectedMonth} week={selectedWeek} day={selectedRun?.id} />
+        </section>
+
+        <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 font-semibold">Mes</div>
+          <MonthSelector months={months.length ? months : [selectedMonth]} selected={selectedMonth} unit={selectedUnit} />
+        </section>
+
+        {!forecastReady && <ForecastMissingPanel month={selectedMonth} returnTo={returnTo} />}
+
+        <div className="grid gap-3 md:grid-cols-4">
+          <SummaryTile label="Venta mes" value={money(monthTotal)} tone={GOLD} />
+          <SummaryTile label="Forecast mes" value={money(monthMeta)} />
+          <SummaryTile label="Diferencia mes" value={`${monthTotal - monthMeta >= 0 ? "+" : ""}${money(monthTotal - monthMeta)}`} tone={monthTotal >= monthMeta ? GREEN : RED} />
+          <SummaryTile label="Cortes del mes" value={String(monthRuns.length)} />
         </div>
+
+        <section>
+          <div className="mb-3 font-semibold">Semanas</div>
+          <WeekSelector weeks={weeks.length ? weeks : [selectedWeek]} selected={selectedWeek} unit={selectedUnit} month={selectedMonth} />
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-[320px_1fr]">
+          <div>
+            <div className="mb-3 font-semibold">Días</div>
+            {weekRuns.length > 0 ? (
+              <DayList runs={weekRuns} selectedId={selectedRun?.id} unit={selectedUnit} month={selectedMonth} week={selectedWeek} />
+            ) : (
+              <div className="rounded-md border p-5 text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>No hay cortes en esta semana.</div>
+            )}
+          </div>
+          {selectedRun ? (
+            <DetailPanel run={selectedRun} month={selectedMonth} returnTo={returnTo} />
+          ) : (
+            <div className="rounded-md border p-8 text-center text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>Elegí un día para ver el corte.</div>
+          )}
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

@@ -28,9 +28,10 @@ async function requireAuth() {
 export async function approveAgentMailStage(formData: FormData) {
   const workflowRunId = String(formData.get("workflowRunId") || "");
   const notes = String(formData.get("notes") || "Aprobado por supervisora desde dashboard").trim();
+  const returnTo = safeReturnTo(String(formData.get("returnTo") || "/conciliacion"));
   const { user, serviceClient } = await requireAuth();
 
-  if (!workflowRunId) redirect("/conciliacion?error=workflow_run_missing");
+  if (!workflowRunId) redirect(withQuery(returnTo, "error", "workflow_run_missing"));
 
   const { data: review, error: reviewError } = await serviceClient
     .from("reviews")
@@ -78,8 +79,9 @@ export async function approveAgentMailStage(formData: FormData) {
   });
 
   revalidatePath("/conciliacion");
+  revalidatePath("/cortes");
   revalidatePath("/");
-  redirect("/conciliacion?success=agent_mail_approved");
+  redirect(withQuery(returnTo, "success", "agent_mail_approved"));
 }
 
 export async function uploadBankFilesAndTrigger(formData: FormData) {
@@ -87,15 +89,16 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
   const businessDate = String(formData.get("businessDate") || "");
   const amexFile = formData.get("amexFile");
   const banorteFile = formData.get("banorteFile");
+  const returnTo = safeReturnTo(String(formData.get("returnTo") || "/conciliacion"));
   const { user, serviceClient } = await requireAuth();
 
-  if (!workflowRunId || !businessDate) redirect("/conciliacion?error=workflow_run_missing");
-  if (!(amexFile instanceof File) || amexFile.size === 0) redirect("/conciliacion?error=amex_file_missing");
-  if (!(banorteFile instanceof File) || banorteFile.size === 0) redirect("/conciliacion?error=banorte_file_missing");
+  if (!workflowRunId || !businessDate) redirect(withQuery(returnTo, "error", "workflow_run_missing"));
+  if (!(amexFile instanceof File) || amexFile.size === 0) redirect(withQuery(returnTo, "error", "amex_file_missing"));
+  if (!(banorteFile instanceof File) || banorteFile.size === 0) redirect(withQuery(returnTo, "error", "banorte_file_missing"));
 
   const approved = await hasSupervisorApproval(serviceClient, workflowRunId);
   if (!approved) {
-    redirect("/conciliacion?error=agent_mail_stage_not_approved");
+    redirect(withQuery(returnTo, "error", "agent_mail_stage_not_approved"));
   }
 
   const missingDriveConfig = missingConfirmed([
@@ -109,7 +112,7 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
       reason: "dashboard_bank_upload_drive_config_missing",
       missing: missingDriveConfig,
     });
-    redirect(`/conciliacion?error=${encodeURIComponent(`Falta config de Drive: ${missingDriveConfig.join(", ")}`)}`);
+    redirect(withQuery(returnTo, "error", `Falta config de Drive: ${missingDriveConfig.join(", ")}`));
   }
 
   let uploads: Array<Awaited<ReturnType<typeof uploadToDrive>>>;
@@ -137,7 +140,7 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
       reason: "dashboard_bank_upload_drive_failed",
       error: message,
     });
-    redirect(`/conciliacion?error=${encodeURIComponent(`No pude subir a Drive: ${message}`)}`);
+    redirect(withQuery(returnTo, "error", `No pude subir a Drive: ${message}`));
   }
 
   for (const uploaded of uploads) {
@@ -166,12 +169,12 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
       reason: "bank_watcher_trigger_failed",
       trigger_error: trigger.error,
     });
-    redirect(`/conciliacion?error=${encodeURIComponent(`Archivos subidos, pero no pude disparar bank-watcher: ${trigger.error}`)}`);
+    redirect(withQuery(returnTo, "error", `Archivos subidos, pero no pude disparar bank-watcher: ${trigger.error}`));
   }
 
   revalidatePath("/conciliacion");
   revalidatePath("/cortes");
-  redirect("/conciliacion?success=bank_watcher_triggered");
+  redirect(withQuery(returnTo, "success", "bank_watcher_triggered"));
 }
 
 async function hasSupervisorApproval(serviceClient: ServiceClient, workflowRunId: string) {
@@ -370,4 +373,14 @@ async function triggerBankWatcher(businessDate: string): Promise<{ ok: true } | 
 
 function sanitizeFilename(value: string) {
   return value.replace(/[^\w.\- ]+/g, "_").slice(0, 140);
+}
+
+function safeReturnTo(value: string) {
+  if (!value.startsWith("/") || value.startsWith("//")) return "/conciliacion";
+  return value;
+}
+
+function withQuery(path: string, key: "success" | "error", value: string) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}${key}=${encodeURIComponent(value)}`;
 }

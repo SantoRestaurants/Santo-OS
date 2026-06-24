@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-06-21.
+Last updated: 2026-06-24.
 
 ## Active Handoff
 
@@ -52,6 +52,14 @@ resume in a fresh conversation.
   - Missing Supabase config displays as `requires_config`/review state instead of failing silently.
   - Magic-link sign-in route and auth callback route exist.
   - `postcss` override patches the current `npm audit` advisory without downgrading Next.
+- Dashboard Corte Santo supervisor simplification is in progress:
+  - `/cortes` now presents a unit -> month -> week -> day supervisor flow with
+    simple daily figures, forecast comparison, comments, manual correction
+    capture, bank-validation status and bank upload/approval actions.
+  - `/archivos` now presents a Drive-oriented files view grouped by Cortes,
+    Bancos, monthly Excel and Forecast, with monthly forecast upload.
+  - Gemini-style question UI is present as a disabled placeholder until the AI
+    query endpoint, model policy and API key routing are confirmed.
 - PR 4 shared command handler core has been implemented:
   - Python package under `services/command_handler/`.
   - Structured command envelope validation for dashboard, Agent Mail, scheduler and future WhatsApp.
