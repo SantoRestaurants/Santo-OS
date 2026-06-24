@@ -129,7 +129,7 @@ function SummaryTile({ label, value, tone = INK }: { label: string; value: strin
   return (
     <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
       <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>{label}</div>
-      <div className="mt-1 truncate text-xl font-bold tracking-tight sm:text-2xl" style={{ color: tone }}>{value}</div>
+      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: tone }}>{value}</div>
     </div>
   );
 }
@@ -422,10 +422,10 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
             <textarea name="comment" rows={2} placeholder="Comentario de supervisora" className="w-full rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
             <button className="mt-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: INK, color: "white" }}>Guardar comentario</button>
           </form>
-          <form action={saveManualCorrection} className="grid gap-2 md:grid-cols-[1fr_120px_1fr_auto]">
+          <form action={saveManualCorrection} className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="workflowRunId" value={run.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
-            <select name="field" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+            <select name="field" className="flex-1 min-w-[150px] rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
               <optgroup label="Canales de venta">
                 <option value="income_register.amex">Amex</option>
                 <option value="income_register.debito">Debito</option>
@@ -446,9 +446,9 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
                 <option value="vta_al_dia.venta_real">Venta real forecast</option>
               </optgroup>
             </select>
-            <input name="value" inputMode="decimal" placeholder="Valor" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
-            <input name="note" placeholder="Motivo" className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
-            <button className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Corregir</button>
+            <input name="value" inputMode="decimal" placeholder="Valor" className="w-24 sm:w-32 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
+            <input name="note" placeholder="Motivo" className="flex-1 min-w-[150px] rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
+            <button className="rounded-md px-4 py-2 text-sm font-semibold whitespace-nowrap" style={{ background: GOLD, color: "white" }}>Corregir</button>
           </form>
           {(comments.length > 0 || corrections.length > 0) && (
             <div className="mt-4 space-y-2 text-sm" style={{ color: MUTED }}>
@@ -525,7 +525,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
 
   return (
     <main className="min-h-screen" style={{ background: PAPER, color: INK, overflowX: "hidden" }}>
-      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
         <header className="pl-10 lg:pl-0">
           <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Cortes</div>
           <h1 className="mt-1 text-3xl font-semibold">Ventas por unidad</h1>
