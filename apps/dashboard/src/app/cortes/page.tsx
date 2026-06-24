@@ -127,9 +127,9 @@ function Flash({ success, error }: { success?: string; error?: string }) {
 }
 function SummaryTile({ label, value, tone = INK }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-md border px-4 py-3" style={{ background: PANEL, borderColor: LINE }}>
-      <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{label}</div>
-      <div className="mt-1 break-words text-xl font-bold tracking-tight sm:text-2xl" style={{ color: tone }}>{value}</div>
+    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>{label}</div>
+      <div className="mt-1 truncate text-xl font-bold tracking-tight sm:text-2xl" style={{ color: tone }}>{value}</div>
     </div>
   );
 }
@@ -203,8 +203,8 @@ function DayList({ runs, selectedId, unit, month, week }: { runs: Reconciliation
               <div className="font-semibold">{dateLabel(run.business_date, "short")}</div>
               <div className="mt-1 text-xs" style={{ color: statusColor(run) }}>{statusText(run)}</div>
             </div>
-            <div className="text-right">
-              <div className="text-lg font-bold tracking-tight">{money(runTotal(run))}</div>
+            <div className="text-right shrink-0 ml-3">
+              <div className="text-base font-bold tracking-tight">{money(runTotal(run))}</div>
               <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>{diff == null ? "Sin forecast" : `${diff >= 0 ? "+" : ""}${money(diff)}`}</div>
             </div>
           </Link>
@@ -487,7 +487,7 @@ function DataRow({ label, value, muted = false }: { label: string; value: string
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: muted ? "#aaa298" : INK }}>
       <span className="shrink-0">{label}</span>
-      <span className="min-w-0 break-words text-right text-base font-semibold">{value}</span>
+      <span className="min-w-0 truncate text-right font-semibold">{value}</span>
     </div>
   );
 }
