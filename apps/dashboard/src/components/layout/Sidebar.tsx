@@ -6,7 +6,6 @@ import {
   GitCompareArrows,
   HelpCircle,
   Menu,
-  Sparkles,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -80,10 +79,8 @@ export function Sidebar() {
       >
         {/* Brand header */}
         <div className="flex items-center justify-between border-b px-4 py-4" style={{ borderColor: "#eee8dd" }}>
-          <div className="flex items-center gap-2.5">
-            <span className="rounded-xl p-2" style={{ background: "#9b7a22", color: "#ffffff" }}>
-              <Sparkles className="h-4 w-4" />
-            </span>
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="Santo" className="h-10 w-10 object-contain" />
             <div>
               <p className="text-sm font-semibold" style={{ color: "#9b7a22", letterSpacing: "2px", textTransform: "uppercase" }}>
                 Santo OS
