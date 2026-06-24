@@ -314,8 +314,8 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
   const comments = Array.isArray(run.output_payload?.dashboard_comments) ? run.output_payload.dashboard_comments as Array<Record<string, unknown>> : [];
   const corrections = Array.isArray(run.output_payload?.dashboard_manual_corrections) ? run.output_payload.dashboard_manual_corrections as Array<Record<string, unknown>> : [];
   return (
-    <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
-      <div className="space-y-4">
+    <section className="grid gap-4 lg:grid-cols-[1fr_360px] overflow-hidden">
+      <div className="space-y-4 min-w-0">
         <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
