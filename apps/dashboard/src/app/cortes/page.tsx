@@ -129,7 +129,7 @@ function SummaryTile({ label, value, tone = INK }: { label: string; value: strin
   return (
     <div className="rounded-md border px-4 py-3" style={{ background: PANEL, borderColor: LINE }}>
       <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{label}</div>
-      <div className="mt-1 break-words text-base font-semibold sm:text-lg" style={{ color: tone }}>{value}</div>
+      <div className="mt-1 break-words text-xl font-bold tracking-tight sm:text-2xl" style={{ color: tone }}>{value}</div>
     </div>
   );
 }
@@ -204,7 +204,7 @@ function DayList({ runs, selectedId, unit, month, week }: { runs: Reconciliation
               <div className="mt-1 text-xs" style={{ color: statusColor(run) }}>{statusText(run)}</div>
             </div>
             <div className="text-right">
-              <div className="font-semibold">{money(runTotal(run))}</div>
+              <div className="text-lg font-bold tracking-tight">{money(runTotal(run))}</div>
               <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>{diff == null ? "Sin forecast" : `${diff >= 0 ? "+" : ""}${money(diff)}`}</div>
             </div>
           </Link>
@@ -320,7 +320,7 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>{getUnit(run)}</div>
-              <h2 className="mt-1 text-2xl font-semibold" style={{ color: INK }}>{dateLabel(run.business_date)}</h2>
+              <h2 className="mt-1 text-3xl font-bold tracking-tight" style={{ color: INK }}>{dateLabel(run.business_date)}</h2>
               <div className="mt-2 inline-flex rounded-md border px-2.5 py-1 text-sm font-semibold" style={{ borderColor: statusColor(run), color: statusColor(run), background: `${statusColor(run)}12` }}>
                 {statusText(run)}
               </div>
@@ -487,7 +487,7 @@ function DataRow({ label, value, muted = false }: { label: string; value: string
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: muted ? "#aaa298" : INK }}>
       <span className="shrink-0">{label}</span>
-      <span className="min-w-0 break-words text-right font-semibold">{value}</span>
+      <span className="min-w-0 break-words text-right text-base font-semibold">{value}</span>
     </div>
   );
 }

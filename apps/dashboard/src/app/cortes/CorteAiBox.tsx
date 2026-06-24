@@ -14,6 +14,14 @@ export function CorteAiBox({ runId }: { runId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  import { useEffect } from "react";
+
+  useEffect(() => {
+    setQuestion("");
+    setAnswer("");
+    setError("");
+  }, [runId]);
+
   async function ask() {
     const trimmed = question.trim();
     if (!trimmed || loading) return;
