@@ -6,9 +6,9 @@ import { TutorialProvider } from "@/components/tutorial/TutorialProvider";
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <TutorialProvider>
-      <div className="flex min-h-screen" style={{ background: "#080808" }}>
+      <div className="flex min-h-screen" style={{ background: "#fbfaf7" }}>
         <Sidebar />
-        <div className="flex-1 lg:ml-0">{children}</div>
+        <div className="flex-1 lg:ml-0 overflow-x-hidden">{children}</div>
       </div>
     </TutorialProvider>
   );

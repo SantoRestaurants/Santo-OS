@@ -524,7 +524,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const monthDiff = monthMeta == null ? null : monthTotal - monthMeta;
 
   return (
-    <main className="min-h-screen" style={{ background: PAPER, color: INK }}>
+    <main className="min-h-screen" style={{ background: PAPER, color: INK, overflowX: "hidden" }}>
       <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
         <header className="pl-10 lg:pl-0">
           <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Cortes</div>
