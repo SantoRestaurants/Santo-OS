@@ -34,7 +34,7 @@ function groupDocs(docs: DriveDocument[]) {
     { key: "corte", label: "Corte", icon: FileSpreadsheet, docs: docs.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report", "email_attachment"].includes(doc.document_type) && docName(doc).toLowerCase().includes("corte")) },
     { key: "bancos", label: "Bancos", icon: Landmark, docs: docs.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type) || /amex|bancaria|banorte/i.test(docName(doc))) },
     { key: "excel", label: "Excel", icon: Building2, docs: docs.filter((doc) => ["income_workbook", "ingresos_workbook"].includes(doc.document_type) || /ingresos|descuentos/i.test(docName(doc))) },
-    { key: "evidencia", label: "Evidencia", icon: FolderOpen, docs: docs.filter((doc) => !isInKnownDailyGroup(doc)) },
+    { key: "evidencia", label: "Evidencia", icon: FolderOpen, docs: docs.filter((doc) => doc.document_type === "daily_folder" || (!isInKnownDailyGroup(doc) && doc.document_type !== "daily_folder")) },
   ];
 }
 

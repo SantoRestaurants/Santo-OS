@@ -99,8 +99,33 @@ function documentsFromRuns(rows: unknown[]): DriveDocument[] {
     if (typeof driveIds.ingresos === "string" && driveIds.ingresos) {
       docs.push(syntheticDoc(run, "income_workbook", "Excel mensual de ingresos", driveIds.ingresos, run.business_date?.slice(0, 7)));
     }
+    if (typeof driveIds.folder_id === "string" && driveIds.folder_id) {
+      docs.push(syntheticFolder(run, "daily_folder", "Carpeta de evidencia (Drive)", driveIds.folder_id, run.business_date?.slice(0, 7)));
+    }
   }
   return docs;
+}
+
+function syntheticFolder(
+  run: { id: string; business_date: string | null; created_at: string },
+  documentType: string,
+  name: string,
+  driveFolderId: string,
+  month?: string,
+): DriveDocument {
+  return {
+    id: `synthetic:${documentType}:${driveFolderId}:${month ?? "unknown"}`,
+    workflow_run_id: run.id,
+    document_key: `${documentType}:${month ?? run.business_date ?? driveFolderId}`,
+    document_type: documentType,
+    source_system: "workflow_payload",
+    source_uri: `https://drive.google.com/drive/folders/${driveFolderId}`,
+    drive_file_id: driveFolderId,
+    status: "registered",
+    created_at: run.created_at,
+    metadata: { name, month },
+    workflow_runs: { business_date: run.business_date },
+  };
 }
 
 function syntheticDoc(
