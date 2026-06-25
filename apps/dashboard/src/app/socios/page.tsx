@@ -131,7 +131,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   };
 
   /* Chart data generation */
-  const chartData = weekRuns.map(r => {
+  const weekChartData = weekRuns.map(r => {
     const vta = runTotal(r);
     const meta = dailyForecastMeta(r) ?? getMetaForDay(r.business_date);
     const dateStr = r.business_date ? r.business_date.slice(8) : "";
@@ -143,6 +143,38 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
       hasVenta: vta > 0 || r.status === "completed" || r.status === "bank_validated",
     };
   });
+
+  const monthChartData = forecastArray.map(f => {
+    const date = f.fecha;
+    if (!date) return null;
+    const run = monthRuns.find(r => r.business_date === date);
+    const vta = run ? runTotal(run) : (typeof f.venta_real === "number" ? f.venta_real : 0);
+    const meta = typeof f.meta_vta === "number" ? f.meta_vta : 0;
+    return {
+      fecha: date,
+      label: date.slice(8),
+      venta: vta,
+      meta: meta,
+      hasVenta: vta > 0 || (run && (run.status === "completed" || run.status === "bank_validated"))
+    };
+  }).filter(Boolean) as { fecha: string; label: string; venta: number; meta: number; hasVenta: boolean }[];
+
+  if (monthChartData.length === 0) {
+    monthRuns.forEach(r => {
+      const vta = runTotal(r);
+      const meta = dailyForecastMeta(r) ?? getMetaForDay(r.business_date);
+      if (r.business_date) {
+        monthChartData.push({
+          fecha: r.business_date,
+          label: r.business_date.slice(8),
+          venta: vta,
+          meta: meta,
+          hasVenta: vta > 0 || r.status === "completed" || r.status === "bank_validated"
+        });
+      }
+    });
+    monthChartData.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  }
 
   /* Mock saldos if empty */
   const latestRun = runs[0];
@@ -348,8 +380,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
               
               {/* Chart */}
               <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px" }}>
-                <div style={{ fontSize: "11px", fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>Comparativa Ventas vs Meta (Semana)</div>
-                <SociosChart data={chartData} />
+                <SociosChart monthData={monthChartData} weekData={weekChartData} />
               </div>
 
               {/* detail panel */}
