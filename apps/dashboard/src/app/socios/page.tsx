@@ -274,7 +274,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
           {/* ── MONTH SELECTOR ───────────────────────────── */}
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "32px" }}>
-            {monthsArr.slice(0, 6).map(m => {
+            {monthsArr.map(m => {
               const d = parseDate(`${m}-01`);
               const label = d ? new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" }).format(d) : m;
               return (
@@ -292,7 +292,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
               <div className="kpi-value display-font">{money(monthMeta)}</div>
             </div>
             <div className="kpi-card" style={{ border: "none" }}>
-              <div className="kpi-label">Venta del mes</div>
+              <div className="kpi-label">Venta Real</div>
               <div className="kpi-value display-font santo">{money(monthTotal)}</div>
             </div>
             <div className="kpi-card" style={{ border: "none" }}>

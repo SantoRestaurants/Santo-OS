@@ -104,7 +104,7 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     .eq("source_channel", "agent_mail")
     .order("business_date", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(60);
+    .limit(500);
 
   if (runsResult.error) {
     return { status: "query_failed", missingConfig: [], error: runsResult.error.message, runs: [] };
