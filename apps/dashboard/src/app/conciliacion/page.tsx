@@ -207,6 +207,16 @@ export default async function ConciliacionPage({ searchParams }: { searchParams:
     );
   }
 
+  if (data.status === "unauthorized") {
+    return (
+      <main className="flex min-h-screen items-center justify-center flex-col gap-4" style={{ background: PAPER, color: INK }}>
+        <div className="text-xl font-bold">Acceso Denegado</div>
+        <div className="text-sm">Necesitas permisos de supervisor para ver este panel.</div>
+        <Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Volver al login</Link>
+      </main>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: PAPER, color: INK }}>
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">

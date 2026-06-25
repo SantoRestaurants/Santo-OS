@@ -189,6 +189,72 @@ def _load_stage1_run(
     return output
 
 
+def _load_previous_pending_collections(
+    supabase_url: str,
+    restaurant_key: str,
+    current_date: str,
+) -> list[dict[str, Any]]:
+    """Fetch pending collections from the most recent run of previous days (up to 30 days)."""
+    import httpx
+    from datetime import datetime, timedelta
+    service_key = _env("SUPABASE_SERVICE_KEY") or _env("SUPABASE_SERVICE_ROLE_KEY")
+    if not service_key:
+        return []
+        
+    try:
+        curr = datetime.strptime(current_date, "%Y-%m-%d").date()
+    except ValueError:
+        return []
+        
+    start_date = (curr - timedelta(days=30)).isoformat()
+    
+    resp = httpx.get(
+        f"{supabase_url}/rest/v1/workflow_runs",
+        params={
+            "select": "id,business_date,output_payload,status",
+            "business_date": f"lt.{current_date}",
+            "restaurant_key": f"eq.{restaurant_key}",
+            "source_channel": "eq.agent_mail",
+            "order": "created_at.desc",
+            "limit": "100",
+        },
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        },
+        timeout=15.0,
+    )
+    if resp.status_code >= 400:
+        return []
+        
+    data = resp.json()
+    if not isinstance(data, list):
+        return []
+        
+    pending = []
+    seen_dates = set()
+    for row in data:
+        bdate = row.get("business_date")
+        if not bdate or bdate < start_date or bdate in seen_dates:
+            continue
+        seen_dates.add(bdate)
+        
+        output = row.get("output_payload") or {}
+        
+        # If bank stage was completed, get its pending items
+        bank_result = output.get("bank_reconciliation") or (output.get("bank_stage") or {}).get("bank_reconciliation")
+        if bank_result and isinstance(bank_result.get("pending_items"), list):
+            pending.extend(bank_result["pending_items"])
+            continue
+            
+        # Otherwise if stuck in stage 1, get expected_collections
+        expected = output.get("expected_collections")
+        if isinstance(expected, list):
+            pending.extend(expected)
+            
+    return pending
+
+
 def run_bank_watcher_once(
     *,
     config_path: str,
@@ -329,7 +395,7 @@ def run_bank_watcher_once(
             "documents": list(docs_by_type.values()),
             "income_channels": _safe(stage1.get("income_channels"), {}),
             "income_register": _safe(stage1.get("income_register"), {}),
-            "expected_collections": _safe(stage1.get("expected_collections"), []),
+            "expected_collections": _safe(stage1.get("expected_collections"), []) + _load_previous_pending_collections(supabase_url, restaurant_key, effective_date),
             "revision_document": _safe(stage1.get("revision_document"), {}),
             "workbook_paths": workbook_paths or _safe(stage1.get("workbook_paths"), {}),
             "workbook_outputs": workbook_outputs or _safe(stage1.get("workbook_outputs"), {}),

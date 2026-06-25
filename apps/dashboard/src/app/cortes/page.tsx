@@ -15,6 +15,7 @@ import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, has
 import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/conciliacion/actions";
 import { saveCorteComment, saveManualCorrection, uploadForecast } from "./actions";
 import { CorteAiBox } from "./CorteAiBox";
+import { InlineEditTable } from "./InlineEditTable";
 
 type SearchParams = Promise<{ unit?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
 
@@ -205,7 +206,12 @@ function DayList({ runs, selectedId, unit, month, week }: { runs: Reconciliation
             </div>
             <div className="text-right shrink-0 ml-3">
               <div className="text-base font-bold tracking-tight">{money(runTotal(run))}</div>
-              <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>{diff == null ? "Sin forecast" : `${diff >= 0 ? "+" : ""}${money(diff)}`}</div>
+              <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>
+                {(() => {
+                  const meta = runMeta(run);
+                  return diff == null || meta == null ? "Sin forecast" : `${diff >= 0 ? "+" : ""}${((diff / meta) * 100).toFixed(1)}% / ${diff >= 0 ? "+" : ""}${money(diff)}`;
+                })()}
+              </div>
             </div>
           </Link>
         );
@@ -332,7 +338,11 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
           <div className="mt-5 grid gap-3 md:grid-cols-4">
             <SummaryTile label="Venta real" value={money(runTotal(run))} tone={GOLD} />
             <SummaryTile label="Meta forecast" value={money(meta)} />
-            <SummaryTile label="Diferencia" value={diff == null ? "-" : `${diff >= 0 ? "+" : ""}${money(diff)}`} tone={diff == null || diff >= 0 ? GREEN : RED} />
+            <SummaryTile 
+              label="Diferencia" 
+              value={diff == null || meta == null ? "-" : `${diff >= 0 ? "+" : ""}${((diff / meta) * 100).toFixed(1)}% / ${diff >= 0 ? "+" : ""}${money(diff)}`} 
+              tone={diff == null || diff >= 0 ? GREEN : RED} 
+            />
             <SummaryTile label="Total sistema" value={money(revision?.reconciliation_totals?.total_sistema)} />
           </div>
         </div>
@@ -357,57 +367,34 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
             <FileSpreadsheet className="h-4 w-4" />
             Venta Bruta (Excel)
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${LINE}` }}>
-                  <th className="px-2 py-2 text-left font-semibold" style={{ color: MUTED }}>RESTAURANTE</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Amex</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Debito</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Credito</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>EFECTIVO</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>TOTAL</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>PAYPAL</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>UBEREATS</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>RAPPI</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Propinas</th>
-                  <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Venta Bruta</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="px-2 py-2 font-semibold" style={{ color: INK }}>Valores</td>
-                  {(() => {
-                    const reg = (run.output_payload?.income_register ?? {}) as Record<string, number>;
-                    const ch = (run.output_payload?.income_channels ?? {}) as Record<string, number>;
-                    const amex = reg.amex ?? ch.amex ?? 0;
-                    const debito = reg.debito ?? ch.debito ?? 0;
-                    const credito = reg.credito ?? ch.credito ?? 0;
-                    const efectivo = reg.efectivo ?? ch.efectivo ?? 0;
-                    const paypal = reg.paypal ?? ch.paypal ?? 0;
-                    const uber = reg.uber ?? ch.uber ?? 0;
-                    const rappi = reg.rappi ?? ch.rappi ?? 0;
-                    const propinas = reg.propinas ?? ch.propinas ?? 0;
-                    const totalRest = amex + debito + credito + efectivo;
-                    return (
-                      <>
-                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(amex)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(debito)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(credito)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(efectivo)}</td>
-                        <td className="px-2 py-2 text-right font-semibold" style={{ color: GOLD }}>{money(totalRest)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(paypal)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(uber)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(rappi)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: INK }}>{money(propinas)}</td>
-                        <td className="px-2 py-2 text-right font-semibold" style={{ color: GOLD }}>{money(runTotal(run))}</td>
-                      </>
-                    );
-                  })()}
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          {(() => {
+            const reg = (run.output_payload?.income_register ?? {}) as Record<string, number>;
+            const ch = (run.output_payload?.income_channels ?? {}) as Record<string, number>;
+            const amex = reg.amex ?? ch.amex ?? 0;
+            const debito = reg.debito ?? ch.debito ?? 0;
+            const credito = reg.credito ?? ch.credito ?? 0;
+            const efectivo = reg.efectivo ?? ch.efectivo ?? 0;
+            const paypal = reg.paypal ?? ch.paypal ?? 0;
+            const uber = reg.uber ?? ch.uber ?? 0;
+            const rappi = reg.rappi ?? ch.rappi ?? 0;
+            const propinas = reg.propinas ?? ch.propinas ?? 0;
+
+            return (
+              <InlineEditTable
+                runId={run.id}
+                returnTo={returnTo}
+                amex={amex}
+                debito={debito}
+                credito={credito}
+                efectivo={efectivo}
+                paypal={paypal}
+                uber={uber}
+                rappi={rappi}
+                propinas={propinas}
+                total={runTotal(run)}
+              />
+            );
+          })()}
         </div>
 
         <CorteAiBox runId={run.id} />
@@ -422,34 +409,7 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
             <textarea name="comment" rows={2} placeholder="Comentario de supervisora" className="w-full rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
             <button className="mt-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: INK, color: "white" }}>Guardar comentario</button>
           </form>
-          <form action={saveManualCorrection} className="flex flex-wrap items-center gap-2">
-            <input type="hidden" name="workflowRunId" value={run.id} />
-            <input type="hidden" name="returnTo" value={returnTo} />
-            <select name="field" className="flex-1 min-w-[150px] rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
-              <optgroup label="Canales de venta">
-                <option value="income_register.amex">Amex</option>
-                <option value="income_register.debito">Debito</option>
-                <option value="income_register.credito">Credito</option>
-                <option value="income_register.efectivo">Efectivo</option>
-                <option value="income_register.paypal">PayPal</option>
-                <option value="income_register.uber">Uber Eats</option>
-                <option value="income_register.rappi">Rappi</option>
-                <option value="income_register.propinas">Propinas</option>
-              </optgroup>
-              <optgroup label="Conciliación">
-                <option value="reconciliation_totals.total_real">Total real</option>
-                <option value="reconciliation_totals.total_sistema">Total sistema</option>
-                <option value="reconciliation_totals.difference">Diferencia</option>
-              </optgroup>
-              <optgroup label="Forecast">
-                <option value="vta_al_dia.meta_vta">Meta forecast</option>
-                <option value="vta_al_dia.venta_real">Venta real forecast</option>
-              </optgroup>
-            </select>
-            <input name="value" inputMode="decimal" placeholder="Valor" className="w-24 sm:w-32 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
-            <input name="note" placeholder="Motivo" className="flex-1 min-w-[150px] rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
-            <button className="rounded-md px-4 py-2 text-sm font-semibold whitespace-nowrap" style={{ background: GOLD, color: "white" }}>Corregir</button>
-          </form>
+
           {(comments.length > 0 || corrections.length > 0) && (
             <div className="mt-4 space-y-2 text-sm" style={{ color: MUTED }}>
               {comments.slice(-3).map((comment, index) => <div key={`c-${index}`}>Comentario: {String(comment.comment ?? "")}</div>)}
@@ -471,6 +431,20 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
                   {item.exception_key}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+        {!!run.output_payload?.saldos && (
+          <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+            <div className="mb-3 font-semibold" style={{ color: INK }}>Saldos al cierre</div>
+            <div className="space-y-2 text-sm">
+              <DataRow label="Banorte" value={money((run.output_payload.saldos as Record<string, number>).banorte)} />
+              <DataRow label="AMEX" value={money((run.output_payload.saldos as Record<string, number>).amex)} />
+              <DataRow label="Efectivo" value={money((run.output_payload.saldos as Record<string, number>).efectivo)} />
+              <div className="pt-2 mt-2 border-t" style={{ borderColor: LINE }}>
+                <DataRow label="Aguinaldos" value={money((run.output_payload.saldos as Record<string, number>).aguinaldos)} />
+                <DataRow label="Utilidades" value={money((run.output_payload.saldos as Record<string, number>).utilidades)} />
+              </div>
             </div>
           </div>
         )}
@@ -504,6 +478,16 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
     );
   }
 
+  if (data.status === "unauthorized") {
+    return (
+      <main className="flex min-h-screen items-center justify-center flex-col gap-4" style={{ background: PAPER, color: INK }}>
+        <div className="text-xl font-bold">Acceso Denegado</div>
+        <div className="text-sm">Necesitas permisos de supervisor para ver este panel.</div>
+        <Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Volver al login</Link>
+      </main>
+    );
+  }
+
   const allRuns = data.runs.filter((run) => run.business_date);
   const runs = dedupeRunsByDay(allRuns);
   const duplicateDates = duplicateRunsByDay(allRuns);
@@ -525,12 +509,35 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   return (
     <main className="min-h-screen" style={{ background: PAPER, color: INK, overflowX: "hidden" }}>
       <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="pl-10 lg:pl-0">
-          <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Cortes</div>
-          <h1 className="mt-1 text-3xl font-semibold">Ventas por unidad</h1>
-          <p className="mt-2 max-w-3xl text-sm" style={{ color: MUTED }}>
-            Vista simple para revisar el corte, compararlo contra forecast y subir bancos cuando esté aprobado.
-          </p>
+        <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 pl-10 lg:pl-0">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Control</div>
+            <h1 className="mt-1 text-3xl font-semibold">Cortes de Caja</h1>
+            <p className="mt-2 max-w-3xl text-sm" style={{ color: MUTED }}>
+              Vista simple para revisar el corte, compararlo contra forecast y subir bancos cuando esté aprobado.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link 
+              href={`/socios?month=${selectedMonth}`} 
+              target="_blank"
+              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition-colors hover:bg-gray-50"
+              style={{ borderColor: LINE, color: INK }}
+            >
+              <UploadCloud className="h-4 w-4" />
+              Vista para Socios
+            </Link>
+            <button 
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/socios?month=${selectedMonth}`);
+                alert("Enlace copiado al portapapeles");
+              }}
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+              style={{ background: GOLD, color: "white" }}
+            >
+              Compartir enlace
+            </button>
+          </div>
         </header>
 
         <Flash success={params.success} error={params.error} />
@@ -565,7 +572,11 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
         <div className="grid gap-3 md:grid-cols-4">
           <SummaryTile label="Venta mes" value={money(monthTotal)} tone={GOLD} />
           <SummaryTile label="Forecast mes" value={money(monthMeta)} />
-          <SummaryTile label="Diferencia mes" value={monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`} tone={monthDiff == null || monthDiff >= 0 ? GREEN : RED} />
+          <SummaryTile 
+            label="Diferencia mes" 
+            value={monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta!) * 100).toFixed(1)}% / ${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`} 
+            tone={monthDiff == null || monthDiff >= 0 ? GREEN : RED} 
+          />
           <SummaryTile label="Cortes del mes" value={String(monthRuns.length)} />
         </div>
 

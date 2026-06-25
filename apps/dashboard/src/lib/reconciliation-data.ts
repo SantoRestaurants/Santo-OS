@@ -4,7 +4,7 @@ import { createSupabaseServerClient, getSupabasePublicConfig } from "@/lib/supab
 import { extractDateFromDocument } from "@/lib/corte-dashboard-utils";
 import { extractRevisionDocument, type RevisionDocument } from "@/lib/corte-data";
 
-export type ReconciliationStatus = "ready" | "requires_config" | "auth_required" | "query_failed";
+export type ReconciliationStatus = "ready" | "requires_config" | "auth_required" | "unauthorized" | "query_failed";
 
 export type ReconciliationRun = {
   id: string;
@@ -85,6 +85,15 @@ export async function getReconciliationData(): Promise<ReconciliationData> {
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) {
     return { status: "auth_required", missingConfig: [], error: null, runs: [] };
+  }
+
+  const role = user.app_metadata?.role;
+  if (role !== "supervisor") {
+    // Falback to people table if app_metadata is not yet set
+    const { data: person } = await supabase.from("people").select("role_key").eq("email", user.email).single();
+    if (!person || person.role_key !== "supervisor") {
+      return { status: "unauthorized", missingConfig: [], error: null, runs: [] };
+    }
   }
 
   const runsResult = await supabase

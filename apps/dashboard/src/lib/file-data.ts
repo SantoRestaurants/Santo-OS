@@ -18,7 +18,7 @@ export type DriveDocument = {
 };
 
 export type FileData = {
-  status: "ready" | "requires_config" | "auth_required" | "query_failed";
+  status: "ready" | "requires_config" | "auth_required" | "unauthorized" | "query_failed";
   missingConfig: string[];
   error: string | null;
   documents: DriveDocument[];
@@ -38,6 +38,14 @@ export async function getFileData(): Promise<FileData> {
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) {
     return { status: "auth_required", missingConfig: [], error: null, documents: [] };
+  }
+
+  const role = user.app_metadata?.role;
+  if (role !== "supervisor") {
+    const { data: person } = await supabase.from("people").select("role_key").eq("email", user.email).single();
+    if (!person || person.role_key !== "supervisor") {
+      return { status: "unauthorized", missingConfig: [], error: null, documents: [] };
+    }
   }
 
   const [documentsResult, runsResult] = await Promise.all([

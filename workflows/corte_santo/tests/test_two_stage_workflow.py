@@ -294,7 +294,10 @@ def test_bank_matching_allows_legitimate_pending_collections() -> None:
             "deposits": [{"source": "amex", "amount": 100.0}],
             "domiciled_expenses": [],
         },
-        {"status": "ok", "payments": []},
+        {
+            "status": "ok",
+            "payments": [{"amount": 100.0, "gross_amount": 100.0}]
+        },
     )
     assert result["status"] == "bank_validated"
     assert result["pending_collections"]["amex"] == 50.0
@@ -316,7 +319,18 @@ def test_bank_matching_groups_amex_payments_by_expected_payment_date() -> None:
             "deposits": [{"source": "amex", "amount": 151131.91, "operation_date": "17/06/2026"}],
             "domiciled_expenses": [],
         },
-        {"status": "ok", "payments": []},
+        {
+            "status": "ok", 
+            "payments": [
+                {"amount": 18437.66, "gross_amount": 18437.66, "source_date": "12/6/2026", "payment_date": "17/6/2026"},
+                {"amount": 62832.78, "gross_amount": 62832.78, "source_date": "13/6/2026", "payment_date": "17/6/2026"},
+                {"amount": 37299.77, "gross_amount": 37299.77, "source_date": "14/6/2026", "payment_date": "17/6/2026"},
+                {"amount": 689.89, "gross_amount": 689.89, "source_date": "14/6/2026", "payment_date": "17/6/2026"},
+                {"amount": 94.47, "gross_amount": 94.47, "source_date": "12/6/2026", "payment_date": "17/6/2026"},
+                {"amount": 7467.54, "gross_amount": 7467.54, "source_date": "14/6/2026", "payment_date": "17/6/2026"},
+                {"amount": 24309.8, "gross_amount": 24309.8, "source_date": "14/6/2026", "payment_date": "17/6/2026"},
+            ]
+        },
     )
     assert result["status"] == "bank_validated"
     assert result["pending_collections"] == {}

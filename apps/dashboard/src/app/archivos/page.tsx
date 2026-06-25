@@ -165,6 +165,16 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Sea
     );
   }
 
+  if (data.status === "unauthorized") {
+    return (
+      <main className="flex min-h-screen items-center justify-center flex-col gap-4" style={{ background: PAPER, color: INK }}>
+        <div className="text-xl font-bold">Acceso Denegado</div>
+        <div className="text-sm">Necesitas permisos de supervisor para ver este panel.</div>
+        <Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Volver al login</Link>
+      </main>
+    );
+  }
+
   const months = Array.from(new Set(data.documents.map(extractMonthFromDocument))).sort().reverse();
   const selectedMonth = params.month && months.includes(params.month) ? params.month : months[0] ?? new Date().toISOString().slice(0, 7);
   const docs = data.documents.filter((doc) => extractMonthFromDocument(doc) === selectedMonth);

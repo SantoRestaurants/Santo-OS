@@ -114,9 +114,30 @@ export function dedupeRunsByDay<T extends RunLike>(runs: T[]) {
     byDay.set(run.business_date, current);
   }
 
-  return Array.from(byDay.values())
-    .map((items) => items.sort(compareRunQuality)[0])
-    .sort((a, b) => String(b.business_date).localeCompare(String(a.business_date)));
+  const dedupedRuns = Array.from(byDay.values())
+    .map((items) => items.sort(compareRunQuality)[0]);
+
+  // Inject "today" stub if it doesn't exist
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  if (!byDay.has(today)) {
+    const stubRun = {
+      id: "stub-today",
+      business_date: today,
+      created_at: new Date().toISOString(),
+      status: "pending_corte",
+      source_channel: "system",
+      requires_review_reason: null,
+      output_payload: {},
+      revision: null,
+      email: null,
+      documents: [],
+      reviews: [],
+      exceptions: []
+    } as unknown as T;
+    dedupedRuns.push(stubRun);
+  }
+
+  return dedupedRuns.sort((a, b) => String(b.business_date).localeCompare(String(a.business_date)));
 }
 
 export function duplicateRunsByDay<T extends RunLike>(runs: T[]) {

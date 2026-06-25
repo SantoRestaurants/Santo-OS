@@ -37,6 +37,16 @@ const NAV_ITEMS: NavItem[] = [
     href: "/archivos",
     icon: <FolderOpen className="h-4 w-4" />,
   },
+  {
+    label: "Saldos",
+    href: "/saldos",
+    icon: <BarChart3 className="h-4 w-4" />,
+  },
+  {
+    label: "Logs",
+    href: "/logs",
+    icon: <FolderOpen className="h-4 w-4" />,
+  },
 ];
 
 export function Sidebar() {
