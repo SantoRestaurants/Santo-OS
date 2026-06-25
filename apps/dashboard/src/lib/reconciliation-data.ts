@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createSupabaseServerClient, getSupabasePublicConfig } from "@/lib/supabase/server";
+import { createSupabaseServerClient, createSupabaseServiceClient, getSupabasePublicConfig } from "@/lib/supabase/server";
 import { extractDateFromDocument } from "@/lib/corte-dashboard-utils";
 import { extractRevisionDocument, type RevisionDocument } from "@/lib/corte-data";
 
@@ -71,28 +71,30 @@ const APPROVAL_REVIEW_KEY = "corte_agent_mail_supervisor_approval";
 
 export { APPROVAL_REVIEW_KEY };
 
-export async function getReconciliationData(): Promise<ReconciliationData> {
+export async function getReconciliationData(skipAuth: boolean = false): Promise<ReconciliationData> {
   const config = getSupabasePublicConfig();
   if (!config.configured) {
     return { status: "requires_config", missingConfig: config.missing, error: null, runs: [] };
   }
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = skipAuth ? createSupabaseServiceClient() : await createSupabaseServerClient();
   if (!supabase) {
     return { status: "requires_config", missingConfig: config.missing, error: null, runs: [] };
   }
 
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) {
-    return { status: "auth_required", missingConfig: [], error: null, runs: [] };
-  }
+  if (!skipAuth) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { status: "auth_required", missingConfig: [], error: null, runs: [] };
+    }
 
-  const role = user.app_metadata?.role;
-  if (role !== "supervisor") {
-    // Falback to people table if app_metadata is not yet set
-    const { data: person } = await supabase.from("people").select("role_key").eq("email", user.email).single();
-    if (!person || person.role_key !== "supervisor") {
-      return { status: "unauthorized", missingConfig: [], error: null, runs: [] };
+    const role = user.app_metadata?.role;
+    if (role !== "supervisor") {
+      // Falback to people table if app_metadata is not yet set
+      const { data: person } = await supabase.from("people").select("role_key").eq("email", user.email).single();
+      if (!person || person.role_key !== "supervisor") {
+        return { status: "unauthorized", missingConfig: [], error: null, runs: [] };
+      }
     }
   }
 

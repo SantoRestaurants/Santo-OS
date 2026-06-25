@@ -28,7 +28,7 @@ export default async function SociosPage({
   searchParams: Promise<{ month?: string }>;
 }) {
   const params = await searchParams;
-  const data = await getReconciliationData();
+  const data = await getReconciliationData(true);
   
   if (data.status === "requires_config") {
     return (
@@ -240,9 +240,14 @@ export default async function SociosPage({
       <div className="hud">
         {/* LEFT COLUMN: IDENT & MONTHS */}
         <div className="flex flex-col gap-6">
-          <div className="wordmark">
-            <span className="name">S.A.N.T.O.</span>
-            <span className="expansion">System Analytics & Node Terminal Output</span>
+          <div className="flex items-center gap-4 mb-6">
+            <div className="flex-none w-14 h-14 rounded-full flex items-center justify-center font-bold text-3xl shadow-glow" style={{ background: "var(--ember)", color: "var(--bg)", boxShadow: "0 0 20px var(--ember)" }}>
+              S
+            </div>
+            <div className="wordmark" style={{ marginBottom: 0 }}>
+              <span className="name">S.A.N.T.O.</span>
+              <span className="expansion">System Analytics & Node Terminal Output</span>
+            </div>
           </div>
 
           <div>

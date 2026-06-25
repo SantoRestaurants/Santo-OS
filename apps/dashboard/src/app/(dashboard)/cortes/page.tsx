@@ -12,7 +12,7 @@ import Link from "next/link";
 
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
-import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/conciliacion/actions";
+import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/(dashboard)/conciliacion/actions";
 import { saveCorteComment, saveManualCorrection, uploadForecast } from "./actions";
 import { CorteAiBox } from "./CorteAiBox";
 import { InlineEditTable } from "./InlineEditTable";

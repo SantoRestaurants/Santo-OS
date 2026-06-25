@@ -1,7 +1,7 @@
 import { AlertTriangle, Building2, ChevronRight, FileSpreadsheet, FolderOpen, Landmark, UploadCloud } from "lucide-react";
 import Link from "next/link";
 
-import { uploadForecast } from "@/app/cortes/actions";
+import { uploadForecast } from "@/app/(dashboard)/cortes/actions";
 import { docName, extractDateFromDocument, extractMonthFromDocument } from "@/lib/corte-dashboard-utils";
 import { getFileData, type DriveDocument } from "@/lib/file-data";
 
