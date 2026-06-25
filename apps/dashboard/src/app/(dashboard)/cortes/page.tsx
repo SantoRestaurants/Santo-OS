@@ -17,7 +17,7 @@ import { saveCorteComment, saveManualCorrection, uploadForecast } from "./action
 import { CorteAiBox } from "./CorteAiBox";
 import { InlineEditTable } from "./InlineEditTable";
 
-type SearchParams = Promise<{ unit?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
+type SearchParams = Promise<{ unit?: string; year?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
 
 const INK = "#282521";
 const MUTED = "#766f65";
@@ -68,6 +68,27 @@ function monthLabel(key: string) {
   const date = parseDate(`${key}-01`);
   if (!date) return key;
   return new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" }).format(date);
+}
+
+function yearKey(date: string | null | undefined) {
+  return date ? date.slice(0, 4) : "sin-ano";
+}
+
+function YearSelector({ years, selected, unit }: { years: string[]; selected: string; unit: string }) {
+  return (
+    <div className="flex gap-2">
+      {years.map((year) => (
+        <Link
+          key={year}
+          href={`/cortes?unit=${unit}&year=${year}`}
+          className="shrink-0 rounded-md border px-4 py-2 text-sm font-semibold"
+          style={{ borderColor: year === selected ? GOLD : LINE, background: year === selected ? "#fdf2f2" : PANEL, color: year === selected ? GOLD : INK }}
+        >
+          {year}
+        </Link>
+      ))}
+    </div>
+  );
 }
 
 function getUnit(run: ReconciliationRun) {
@@ -135,13 +156,13 @@ function SummaryTile({ label, value, tone = INK }: { label: string; value: strin
   );
 }
 
-function UnitSelector({ units, selected, month, week, day }: { units: string[]; selected: string; month: string; week: string; day?: string }) {
+function UnitSelector({ units, selected, year, month, week, day }: { units: string[]; selected: string; year: string; month: string; week: string; day?: string }) {
   return (
     <div className="flex flex-wrap gap-2">
       {units.map((unit) => (
         <Link
           key={unit}
-          href={`/cortes?unit=${unit}&month=${month}&week=${week}${day ? `&day=${day}` : ""}`}
+          href={`/cortes?unit=${unit}&year=${year}&month=${month}&week=${week}${day ? `&day=${day}` : ""}`}
           className="rounded-md border px-4 py-2 text-sm font-semibold"
           style={{ borderColor: unit === selected ? GOLD : LINE, background: unit === selected ? "#fdf2f2" : PANEL, color: unit === selected ? GOLD : INK }}
         >
@@ -152,13 +173,13 @@ function UnitSelector({ units, selected, month, week, day }: { units: string[]; 
   );
 }
 
-function MonthSelector({ months, selected, unit }: { months: string[]; selected: string; unit: string }) {
+function MonthSelector({ months, selected, unit, year }: { months: string[]; selected: string; unit: string; year: string }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-1">
       {months.map((month) => (
         <Link
           key={month}
-          href={`/cortes?unit=${unit}&month=${month}`}
+          href={`/cortes?unit=${unit}&year=${year}&month=${month}`}
           className="shrink-0 rounded-md border px-3 py-2 text-sm"
           style={{ borderColor: month === selected ? GOLD : LINE, background: month === selected ? "#fdf2f2" : PANEL, color: month === selected ? GOLD : INK }}
         >
@@ -494,14 +515,17 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const units = Array.from(new Set(runs.map(getUnit))).sort();
   const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
   const unitRuns = runs.filter((run) => getUnit(run) === selectedUnit);
-  const months = Array.from(new Set(unitRuns.map((run) => monthKey(run.business_date)))).sort().reverse();
-  const selectedMonth = params.month && months.includes(params.month) ? params.month : months[0] ?? new Date().toISOString().slice(0, 7);
-  const monthRuns = unitRuns.filter((run) => monthKey(run.business_date) === selectedMonth);
+  const years = Array.from(new Set(unitRuns.map((run) => yearKey(run.business_date)))).sort().reverse();
+  const selectedYear = params.year && years.includes(params.year) ? params.year : years[0] ?? new Date().toISOString().slice(0, 4);
+  const yearRuns = unitRuns.filter((run) => yearKey(run.business_date) === selectedYear);
+  const months = Array.from(new Set(yearRuns.map((run) => monthKey(run.business_date)))).sort().reverse();
+  const selectedMonth = params.month && months.includes(params.month) ? params.month : months[0] ?? `${selectedYear}-01`;
+  const monthRuns = yearRuns.filter((run) => monthKey(run.business_date) === selectedMonth);
   const weeks = Array.from(new Set(monthRuns.map((run) => weekKey(run.business_date)))).sort();
   const selectedWeek = params.week && weeks.includes(params.week) ? params.week : weeks[weeks.length - 1] ?? "sin-semana";
   const weekRuns = monthRuns.filter((run) => weekKey(run.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
-  const returnTo = `/cortes?unit=${selectedUnit}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
+  const returnTo = `/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
   const { monthTotal, monthMeta } = getMonthlyTotals(monthRuns, selectedMonth);
   const monthDiff = monthMeta == null ? null : monthTotal - monthMeta;
@@ -553,12 +577,17 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
 
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 flex items-center gap-2 font-semibold"><CalendarDays className="h-4 w-4" /> Unidad</div>
-          <UnitSelector units={units.length ? units : ["SANTO"]} selected={selectedUnit} month={selectedMonth} week={selectedWeek} day={selectedRun?.id} />
+          <UnitSelector units={units.length ? units : ["SANTO"]} selected={selectedUnit} year={selectedYear} month={selectedMonth} week={selectedWeek} day={selectedRun?.id} />
+        </section>
+
+        <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 font-semibold">Año</div>
+          <YearSelector years={years.length ? years : [selectedYear]} selected={selectedYear} unit={selectedUnit} />
         </section>
 
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 font-semibold">Mes</div>
-          <MonthSelector months={months.length ? months : [selectedMonth]} selected={selectedMonth} unit={selectedUnit} />
+          <MonthSelector months={months.length ? months : [selectedMonth]} selected={selectedMonth} unit={selectedUnit} year={selectedYear} />
         </section>
 
         {!forecastReady && <ForecastMissingPanel month={selectedMonth} returnTo={returnTo} />}
