@@ -3,6 +3,7 @@ import { dailyForecastMeta, dailySales, dedupeRunsByDay, getMonthlyTotals } from
 import Link from "next/link";
 import Image from "next/image";
 import { SociosChart } from "./SociosChart";
+import { SociosAiBox } from "./SociosAiBox";
 
 export const dynamic = "force-dynamic";
 
@@ -287,12 +288,12 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
           {/* ── MONTH KPIs ───────────────────────────────── */}
           <div className="kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1px", background: C.border, border: `1px solid ${C.border}`, marginBottom: "20px" }}>
             <div className="kpi-card" style={{ border: "none" }}>
-              <div className="kpi-label">Venta del mes</div>
-              <div className="kpi-value display-font santo">{money(monthTotal)}</div>
-            </div>
-            <div className="kpi-card" style={{ border: "none" }}>
               <div className="kpi-label">Meta / Forecast</div>
               <div className="kpi-value display-font">{money(monthMeta)}</div>
+            </div>
+            <div className="kpi-card" style={{ border: "none" }}>
+              <div className="kpi-label">Venta del mes</div>
+              <div className="kpi-value display-font santo">{money(monthTotal)}</div>
             </div>
             <div className="kpi-card" style={{ border: "none" }}>
               <div className="kpi-label">Diferencia</div>
@@ -301,8 +302,10 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
               </div>
             </div>
             <div className="kpi-card" style={{ border: "none" }}>
-              <div className="kpi-label">Progreso</div>
-              <div className="kpi-value display-font">{monthProgress.toFixed(1)}%</div>
+              <div className="kpi-label">% Diferencia</div>
+              <div className="kpi-value display-font" style={{ color: monthDiff == null || !monthMeta ? C.dim : monthDiff >= 0 ? C.green : C.red }}>
+                {monthDiff == null || !monthMeta ? "—" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta) * 100).toFixed(1)}%`}
+              </div>
             </div>
           </div>
 
@@ -487,6 +490,11 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* AI Box */}
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <SociosAiBox runId={selectedRun.id} />
                     </div>
 
                   </div>
