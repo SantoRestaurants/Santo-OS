@@ -1,19 +1,14 @@
 import {
   AlertTriangle,
   CalendarDays,
-  CheckCircle2,
-  ChevronRight,
   FileSpreadsheet,
-  FolderOpen,
-  MessageSquareText,
-  UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
 
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
 
-type SearchParams = Promise<{ unit?: string; year?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
+type SearchParams = Promise<{ unit?: string; year?: string; month?: string; week?: string; day?: string }>;
 
 const INK = "#282521";
 const MUTED = "#766f65";
@@ -74,13 +69,7 @@ function getUnit(run: ReconciliationRun) {
   return (run.revision?.unidad || run.revision?.restaurant_key || "SANTO").toUpperCase();
 }
 
-function isBankValidated(run: ReconciliationRun) {
-  return run.status === "completed" || run.status === "bank_validated" || run.documents.some((doc) => doc.document_type === "amex_statement" || doc.document_type === "banorte_statement");
-}
-
-function hasApproval(run: ReconciliationRun) {
-  return run.reviews.some((review) => review.review_key === APPROVAL_REVIEW_KEY && review.status === "approved");
-}
+function runTotal(run: ReconciliationRun) { return dailySales(run); }
 
 export default async function TestPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
@@ -112,13 +101,105 @@ export default async function TestPage({ searchParams }: { searchParams: SearchP
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
   const { monthTotal, monthMeta } = getMonthlyTotals(monthRuns, selectedMonth);
+  const monthDiff = monthMeta == null ? null : monthTotal - monthMeta;
 
+  // Step 2: JSX with UnitSelector, YearSelector, MonthSelector, and KPIs
   return (
     <main className="min-h-screen" style={{ background: PAPER, color: INK }}>
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6">
-        <h1>Cortes de Caja</h1>
-        <p>Unidad: {selectedUnit} | Año: {selectedYear} | Mes: {selectedMonth} | Semanas: {weeks.length} | Runs: {runs.length} | Total mes: {money(monthTotal)}</p>
-        <p>Status: {data.status}</p>
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+        <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 pl-10 lg:pl-0">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Control</div>
+            <h1 className="mt-1 text-3xl font-semibold">Cortes de Caja</h1>
+          </div>
+        </header>
+
+        {data.status === "requires_config" && (
+          <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
+            Falta conectar Supabase: {data.missingConfig.join(", ")}
+          </div>
+        )}
+        {data.error && (
+          <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e8b4aa", background: "#fff4f1", color: RED }}>{data.error}</div>
+        )}
+
+        {/* Step 2a: UnitSelector */}
+        <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 flex items-center gap-2 font-semibold"><CalendarDays className="h-4 w-4" /> Unidad</div>
+          <div className="flex flex-wrap gap-2">
+            {units.map((unit) => (
+              <Link
+                key={unit}
+                href={`/test-auth?unit=${unit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}`}
+                className="rounded-md border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: unit === selectedUnit ? GOLD : LINE, background: unit === selectedUnit ? "#fdf2f2" : PANEL, color: unit === selectedUnit ? GOLD : INK }}
+              >
+                {unit}
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Step 2b: YearSelector */}
+        <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 font-semibold">Año</div>
+          <div className="flex gap-2">
+            {years.map((year) => (
+              <Link
+                key={year}
+                href={`/test-auth?unit=${selectedUnit}&year=${year}`}
+                className="shrink-0 rounded-md border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: year === selectedYear ? GOLD : LINE, background: year === selectedYear ? "#fdf2f2" : PANEL, color: year === selectedYear ? GOLD : INK }}
+              >
+                {year}
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Step 2c: MonthSelector */}
+        <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-3 font-semibold">Mes</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {months.map((month) => (
+              <Link
+                key={month}
+                href={`/test-auth?unit=${selectedUnit}&year=${selectedYear}&month=${month}`}
+                className="shrink-0 rounded-md border px-3 py-2 text-sm"
+                style={{ borderColor: month === selectedMonth ? GOLD : LINE, background: month === selectedMonth ? "#fdf2f2" : PANEL, color: month === selectedMonth ? GOLD : INK }}
+              >
+                {monthLabel(month)}
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Step 2d: KPI Cards */}
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: GOLD }}>{money(monthTotal)}</div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Forecast mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(monthMeta)}</div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: monthDiff == null || monthDiff >= 0 ? GREEN : RED }}>
+              {monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta!) * 100).toFixed(1)}% / ${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`}
+            </div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Cortes del mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{monthRuns.length}</div>
+          </div>
+        </div>
+
+        {/* Debug */}
+        <div className="text-xs" style={{ color: MUTED }}>
+          Runs: {runs.length} | UnitRuns: {unitRuns.length} | MonthRuns: {monthRuns.length} | Weeks: {weeks.length}
+        </div>
       </div>
     </main>
   );
