@@ -147,8 +147,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
   const returnTo = `/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
-  const { monthTotal, monthMeta } = getMonthlyTotals(monthRuns, selectedMonth);
-  const monthDiff = monthMeta == null ? null : monthTotal - monthMeta;
+  const { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth);
+  const monthDiff = monthMetaToDate != null ? monthTotal - monthMetaToDate : monthMeta != null ? monthTotal - monthMeta : null;
 
   return (
     <main className="min-h-screen" style={{ background: PAPER, color: INK, overflowX: "hidden" }}>

@@ -185,7 +185,7 @@ export function getMonthlyTotals(monthRuns: RunLike[], selectedMonth: string) {
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
   const latestRunWithForecast = monthRuns.find((run) => run.revision?.vta_por_dia && run.revision.vta_por_dia.length > 0);
 
-  // Find the latest date with actual data to cap month-to-date meta
+  // Find the latest date with actual data to cap month-to-date calculations
   const runsWithSales = monthRuns.filter(r => dailySales(r) > 0);
   const latestDateWithData = runsWithSales.length > 0
     ? runsWithSales.reduce((latest, r) => (r.business_date && (!latest || r.business_date > latest) ? r.business_date : latest), null as string | null)
@@ -200,10 +200,8 @@ export function getMonthlyTotals(monthRuns: RunLike[], selectedMonth: string) {
 
   if (forecastReady && latestRunWithForecast?.revision?.vta_por_dia) {
     const vta = latestRunWithForecast.revision.vta_por_dia;
-    // Only sum meta up to latest date with data
-    const monthMeta = vta
-      .filter(item => isUpTo(item.fecha))
-      .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
+    // Full month meta (always show full target)
+    const monthMeta = vta.reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
 
     let monthTotal = vta.reduce((sum, item) => {
       const date = item.fecha;
@@ -221,11 +219,17 @@ export function getMonthlyTotals(monthRuns: RunLike[], selectedMonth: string) {
       }
     }
 
-    return { monthTotal, monthMeta };
+    // Meta up to latest date (for difference calculation)
+    const monthMetaToDate = vta
+      .filter(item => isUpTo(item.fecha))
+      .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
+
+    return { monthTotal, monthMeta, monthMetaToDate };
   }
 
   const monthTotal = monthRuns.reduce((sum, run) => sum + dailySales(run), 0);
-  const monthMeta = forecastReady ? monthRuns.reduce((sum, run) => sum + (isUpTo(run.business_date) ? (dailyForecastMeta(run) ?? 0) : 0), 0) : null;
+  const monthMeta = forecastReady ? monthRuns.reduce((sum, run) => sum + (dailyForecastMeta(run) ?? 0), 0) : null;
+  const monthMetaToDate = forecastReady ? monthRuns.reduce((sum, run) => sum + (isUpTo(run.business_date) ? (dailyForecastMeta(run) ?? 0) : 0), 0) : null;
   
-  return { monthTotal, monthMeta };
+  return { monthTotal, monthMeta, monthMetaToDate };
 }
