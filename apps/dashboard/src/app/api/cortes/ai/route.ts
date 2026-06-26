@@ -68,66 +68,69 @@ export async function POST(request: Request) {
   const ventaReal = dailySales({ ...run, revision });
   const forecastDia = dailyForecastMeta({ ...run, revision });
 
+  function fmt(n: number | null | undefined) {
+    if (n == null || Number.isNaN(n)) return "$0.00";
+    return "$" + n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function pct(a: number, b: number) {
+    if (!b || Number.isNaN(a) || Number.isNaN(b)) return "N/A";
+    return ((a - b) / b * 100).toFixed(1) + "%";
+  }
+
+  const safeVenta = ventaReal ?? 0;
+  const safeMeta = forecastDia ?? 0;
+  const diff = safeMeta > 0 ? safeVenta - safeMeta : null;
+
   const parts = [
-    "Sos un asistente financiero de Santo Restaurants. Ayudás a los socios y supervisores a entender los números del restaurante.",
-    "Respondé en español, breve y claro. Mirá todos los datos disponibles antes de responder.",
-    "No inventes cifras. Si te preguntan algo que no está en los datos, decí 'Ese dato no está disponible en este corte'.",
-    "No apruebes pagos, bancos, fiscal, legal ni acciones externas. Solo explicá números y sugerí qué revisar.",
+    "Sos SantoBot, el asistente financiero de Santo Restaurants. Le hablás a los socios del restaurante.",
+    "Reglas:",
+    "- Respondé siempre en español, con oraciones cortas y directas.",
+    "- Siempre mirá primero los DATOS DEL DÍA. Ahí está la respuesta a preguntas sobre ventas, forecast y estado del corte.",
+    "- Si te preguntan 'cuánto se vendió', respondé con la cifra exacta de 'Total venta real del día'.",
+    "- Si los datos necesarios no están (dice 'No disponible' o '$0.00'), decí: 'No tengo ese dato para este día.'",
+    "- Nunca inventes cifras ni interpretaciones. Solo respondé con lo que ves en los datos.",
+    "- No sugieras acciones fiscales, bancarias ni legales.",
     "",
-    `Pregunta del usuario: ${question}`,
-    "",
-    "=== DATOS DEL CORTE SELECCIONADO ===",
-    `Fecha: ${run.business_date}`,
-    `Estado: ${run.status}`,
-    `Motivo de revisión: ${run.requires_review_reason || "Ninguno"}`,
-    `Total venta real del día: $${ventaReal.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN`,
-    `Meta forecast del día: $${(forecastDia ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN`,
-    forecastDia != null && forecastDia > 0 
-      ? `Diferencia vs forecast: $${(ventaReal - forecastDia).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN (${(((ventaReal - forecastDia) / forecastDia) * 100).toFixed(1)}%)`
+    "━━━ DATOS DEL DÍA ━━━",
+    `Fecha: ${run.business_date || "No disponible"}`,
+    `Estado del corte: ${run.status || "No disponible"}`,
+    `Total venta real del día: ${fmt(safeVenta)} MXN`,
+    `Meta forecast del día: ${fmt(safeMeta)} MXN`,
+    diff != null
+      ? `Diferencia vs forecast: ${fmt(diff)} MXN (${pct(safeVenta, safeMeta)})`
       : "No hay forecast para comparar este día.",
-    `Formato de corte: ${revision?.formato_corte || "No disponible"}`,
-    "",
-    "=== RECONCILIACIÓN ===",
-    `Total Real: $${(revision?.reconciliation_totals?.total_real ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}`,
-    `Total Sistema: $${(revision?.reconciliation_totals?.total_sistema ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}`,
-    `Diferencia: $${(revision?.reconciliation_totals?.difference ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}`,
-    "",
-    "=== INGRESOS POR CANAL ===",
-    JSON.stringify(run.output_payload?.income_register ?? run.output_payload?.income_channels ?? {}, null, 2),
-    "",
-    "=== FALTA POR ENTRAR ===",
-    JSON.stringify(revision?.falta_por_entrar ?? {}, null, 2),
-    "",
-    "=== GASTOS ADICIONALES ===",
-    JSON.stringify(revision?.gastos_adicionales ?? [], null, 2),
-    "",
-    "=== AJUSTES DEL DÍA ===",
-    JSON.stringify(revision?.ajustes_del_dia ?? [], null, 2),
+    `Total Real (cierre terminal): ${fmt(revision?.reconciliation_totals?.total_real)} MXN`,
+    `Total Sistema: ${fmt(revision?.reconciliation_totals?.total_sistema)} MXN`,
+    `Diferencia sistema vs real: ${fmt(revision?.reconciliation_totals?.difference)} MXN`,
   ];
 
-  // Append week context if provided
-  if (body.weekContext) {
-    const wc = body.weekContext;
+  // Only include income breakdown if there's actual data
+  const ingresos = run.output_payload?.income_register ?? run.output_payload?.income_channels;
+  if (ingresos && typeof ingresos === "object" && Object.keys(ingresos as Record<string, unknown>).length > 0) {
     parts.push(
       "",
-      "=== CONTEXTO DE LA SEMANA ===",
-      `Total vendido en la semana: $${wc.totalVendido.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN`,
-      `Meta de la semana: $${wc.totalMeta.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN`,
-      `Días con corte: ${wc.diasConCorte}`,
-      "Días de la semana:",
-      wc.cortes.map(c => `  ${c.fecha} → Venta: $${c.venta.toLocaleString("es-MX", { minimumFractionDigits: 2 })} | Meta: ${c.meta != null ? "$" + c.meta.toLocaleString("es-MX", { minimumFractionDigits: 2 }) : "Sin forecast"} | Estado: ${c.status}`).join("\n"),
+      "Desglose de ingresos:",
+      JSON.stringify(ingresos, null, 2),
     );
   }
 
-  // Append month context if provided
-  if (body.monthContext) {
+  // Only append week/month context if provided AND has meaningful data
+  if (body.weekContext && body.weekContext.totalVendido > 0) {
+    const wc = body.weekContext;
+    parts.push(
+      "",
+      "━━━ CONTEXTO DE LA SEMANA ━━━",
+      `Total semana: ${fmt(wc.totalVendido)} MXN | Meta: ${fmt(wc.totalMeta)} MXN | Días: ${wc.diasConCorte}`,
+    );
+  }
+
+  if (body.monthContext && body.monthContext.totalMeta > 0) {
     const mc = body.monthContext;
     parts.push(
       "",
-      "=== CONTEXTO DEL MES ===",
-      `Total vendido en el mes: $${mc.totalVendido.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN`,
-      `Meta del mes: $${mc.totalMeta.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN`,
-      `Progreso del mes: ${mc.progressPct.toFixed(1)}%`,
+      "━━━ CONTEXTO DEL MES ━━━",
+      `Total mes: ${fmt(mc.totalVendido)} MXN | Meta mensual: ${fmt(mc.totalMeta)} MXN | Progreso: ${mc.progressPct.toFixed(1)}%`,
     );
   }
 
@@ -137,7 +140,9 @@ export async function POST(request: Request) {
 
   parts.push(
     "",
-    "Instrucción final: Si el usuario pregunta '¿cuánto se vendió hoy?' o similar, respondé con el total de venta real del día. Si pregunta por la semana, usá el contexto semanal. Si pregunta por el mes, usá el contexto mensual. Siempre mencioná las cifras exactas de los datos. No digas 'aproximadamente' a menos que el dato no esté disponible."
+    `PREGUNTA DEL USUARIO: ${question}`,
+    "",
+    "Respondé solo lo que te preguntaron. Si la pregunta es sobre ventas del día, respondé con esa cifra. Si es sobre la semana, usá el contexto semanal. No des información que no te pidieron.",
   );
 
   const prompt = parts.join("\n");
