@@ -1,4 +1,4 @@
-﻿import {
+import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
@@ -252,21 +252,21 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
         <div className="grid gap-3 md:grid-cols-4">
           <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
             <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta mes</div>
-            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: GOLD }}>{money(monthTotal)}</div>
+            <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{money(monthTotal)}</div>
           </div>
           <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
             <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Forecast mes</div>
-            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(monthMeta)}</div>
+            <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{money(monthMeta)}</div>
           </div>
           <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
             <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia mes</div>
-            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: monthDiff == null || monthDiff >= 0 ? GREEN : RED }}>
+            <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl" style={{ color: monthDiff == null || monthDiff >= 0 ? GREEN : RED }}>
               {monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta!) * 100).toFixed(1)}% / ${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`}
             </div>
           </div>
           <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
             <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Cortes del mes</div>
-            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{monthRuns.length}</div>
+            <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{monthRuns.length}</div>
           </div>
         </div>
 
@@ -330,7 +330,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
                       <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>{getUnit(selectedRun)}</div>
-                      <h2 className="mt-1 text-3xl font-bold tracking-tight" style={{ color: INK }}>{dateLabel(selectedRun.business_date)}</h2>
+                      <h2 className="mt-1 text-2xl font-bold tracking-tight" style={{ color: INK }}>{dateLabel(selectedRun.business_date)}</h2>
                       <div className="mt-2 inline-flex rounded-md border px-2.5 py-1 text-sm font-semibold" style={{ borderColor: statusColor(selectedRun), color: statusColor(selectedRun), background: `${statusColor(selectedRun)}12` }}>
                         {statusText(selectedRun)}
                       </div>
@@ -342,15 +342,15 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                   <div className="mt-5 grid gap-3 md:grid-cols-4">
                     <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
                       <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta real</div>
-                      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: GOLD }}>{money(runTotal(selectedRun))}</div>
+                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl" style={{ color: GOLD }}>{money(runTotal(selectedRun))}</div>
                     </div>
                     <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
                       <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Meta forecast</div>
-                      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(runMeta(selectedRun))}</div>
+                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{money(runMeta(selectedRun))}</div>
                     </div>
                     <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
                       <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia</div>
-                      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: (() => { const d = runDiff(selectedRun); const m = runMeta(selectedRun); return d == null || d >= 0 ? GREEN : RED; })() }}>
+                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl" style={{ color: (() => { const d = runDiff(selectedRun); const m = runMeta(selectedRun); return d == null || d >= 0 ? GREEN : RED; })() }}>
                         {(() => {
                           const d = runDiff(selectedRun);
                           const m = runMeta(selectedRun);
@@ -360,7 +360,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                     </div>
                     <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
                       <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Total sistema</div>
-                      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(selectedRun.revision?.reconciliation_totals?.total_sistema)}</div>
+                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{money(selectedRun.revision?.reconciliation_totals?.total_sistema)}</div>
                     </div>
                   </div>
                 </div>
