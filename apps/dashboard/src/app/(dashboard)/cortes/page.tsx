@@ -147,7 +147,37 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
   const returnTo = `/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
-  const { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth);
+  let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth);
+
+  // Lookup forecast doc venta_real for accurate daily sales
+  const fcVentaMap = new Map<string, number>();
+  if (selectedMonth) {
+    const forecastDoc = data.forecastDocuments.find(doc => {
+      const meta = doc.metadata as Record<string, unknown>;
+      return meta.month === selectedMonth;
+    });
+    if (forecastDoc) {
+      const docVta = (forecastDoc.metadata as Record<string, unknown>).vta_por_dia;
+      if (Array.isArray(docVta)) {
+        for (const item of docVta) {
+          const fecha = (item as Record<string, unknown>).fecha as string | undefined;
+          const vr = (item as Record<string, unknown>).venta_real;
+          if (fecha && typeof vr === "number" && vr > 0) {
+            fcVentaMap.set(fecha, vr);
+          }
+        }
+        // Override monthTotal with forecast doc values
+        monthTotal = (docVta as Array<Record<string, unknown>>).reduce((sum, item) => {
+          return sum + (typeof item.venta_real === "number" ? item.venta_real : 0);
+        }, 0);
+      }
+    }
+  }
+  function cortesDayVenta(run: ReconciliationRun) {
+    const fcVal = run.business_date ? fcVentaMap.get(run.business_date) : undefined;
+    return fcVal ?? runTotal(run);
+  }
+
   const monthDiff = monthMetaToDate != null ? monthTotal - monthMetaToDate : monthMeta != null ? monthTotal - monthMeta : null;
 
   return (
@@ -307,7 +337,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                         <div className="mt-1 text-xs" style={{ color: statusColor(run) }}>{statusText(run)}</div>
                       </div>
                       <div className="text-right shrink-0 ml-3">
-                        <div className="text-base font-bold tracking-tight">{money(runTotal(run))}</div>
+                        <div className="text-base font-bold tracking-tight">{money(cortesDayVenta(run))}</div>
                         <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>
                           {(() => {
                             const meta = runMeta(run);
@@ -342,7 +372,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                   <div className="mt-5 grid gap-3 md:grid-cols-4">
                     <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
                       <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta real</div>
-                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl" style={{ color: GOLD }}>{money(runTotal(selectedRun))}</div>
+                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl" style={{ color: GOLD }}>{money(cortesDayVenta(selectedRun))}</div>
                     </div>
                     <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
                       <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Meta forecast</div>
@@ -377,7 +407,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                     </div>
                     <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
                       <span className="shrink-0">Venta real</span>
-                      <span className="min-w-0 truncate text-right font-semibold">{money(runTotal(selectedRun))}</span>
+                      <span className="min-w-0 truncate text-right font-semibold">{money(cortesDayVenta(selectedRun))}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
                       <span className="shrink-0">Forecast dia</span>
@@ -429,7 +459,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                         })}
                         <div className="flex justify-between rounded-md border px-3 py-2 pt-2 border-t font-semibold" style={{ borderColor: LINE }}>
                           <span style={{ color: INK }}>Total</span>
-                          <span style={{ color: GOLD }}>{money(runTotal(selectedRun))}</span>
+                          <span style={{ color: GOLD }}>{money(cortesDayVenta(selectedRun))}</span>
                         </div>
                       </div>
                     );
