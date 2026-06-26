@@ -165,28 +165,28 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "");
 
-  // If no forecast from runs, use standalone forecast documents data
-  if (monthMeta == null && forecastArray.length > 0) {
-    // Find latest date with actual data to cap month-to-date meta
-    const latestDate = monthRuns.length > 0
-      ? monthRuns.reduce((latest, r) => (r.business_date && (!latest || r.business_date > latest) ? r.business_date : latest), null as string | null)
-      : null;
-
-    // Full month meta
-    monthMeta = forecastArray
-      .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
-    
-    // Meta up to latest date
-    monthMetaToDate = forecastArray
-      .filter(item => !latestDate || !item.fecha || item.fecha <= latestDate)
-      .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
-    
+  // Override monthTotal with forecast document's venta_real (more accurate than runs)
+  if (forecastArray.length > 0) {
     monthTotal = forecastArray.reduce((sum, item) => {
       const date = item.fecha;
       const runForDay = date ? monthRuns.find(r => r.business_date === date) : null;
       if (runForDay) return sum + runTotal(runForDay);
       return sum + (typeof item.venta_real === "number" ? item.venta_real : 0);
     }, 0);
+  }
+
+  // If no forecast from runs, compute meta from forecast documents
+  if (monthMeta == null && forecastArray.length > 0) {
+    const latestDate = monthRuns.length > 0
+      ? monthRuns.reduce((latest, r) => (r.business_date && (!latest || r.business_date > latest) ? r.business_date : latest), null as string | null)
+      : null;
+
+    monthMeta = forecastArray
+      .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
+    
+    monthMetaToDate = forecastArray
+      .filter(item => !latestDate || !item.fecha || item.fecha <= latestDate)
+      .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
   } else if (monthMetaToDate == null) {
     monthMetaToDate = monthMeta;
   }
