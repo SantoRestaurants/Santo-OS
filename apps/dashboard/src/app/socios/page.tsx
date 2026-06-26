@@ -159,7 +159,14 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   // If no forecast from runs, use standalone forecast documents data
   if (monthMeta == null && forecastArray.length > 0) {
-    monthMeta = forecastArray.reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
+    // Find latest date with actual data to cap month-to-date meta
+    const latestDate = monthRuns.length > 0
+      ? monthRuns.reduce((latest, r) => (r.business_date && (!latest || r.business_date > latest) ? r.business_date : latest), null as string | null)
+      : null;
+
+    monthMeta = forecastArray
+      .filter(item => !latestDate || !item.fecha || item.fecha <= latestDate)
+      .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
     monthTotal = forecastArray.reduce((sum, item) => {
       const date = item.fecha;
       const runForDay = date ? monthRuns.find(r => r.business_date === date) : null;
