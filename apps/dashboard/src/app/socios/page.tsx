@@ -149,14 +149,13 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     if (forecastDoc) {
       const docVta = (forecastDoc.metadata as Record<string, unknown>).vta_por_dia;
       if (Array.isArray(docVta) && docVta.length > 0) {
-        // Merge: use doc's meta_vta, keep run's venta_real if available
+        // Merge: use doc's meta_vta and venta_real (doc is source of truth from Excel)
         forecastArray = docVta.map((docItem: Record<string, unknown>) => {
           const fecha = docItem.fecha as string | undefined;
-          const runItem = forecastArray.find(r => r.fecha === fecha);
           return {
             fecha: fecha ?? null,
             meta_vta: (typeof docItem.meta_vta === "number" ? docItem.meta_vta : null) as number | null,
-            venta_real: runItem?.venta_real ?? (typeof docItem.venta_real === "number" ? docItem.venta_real : null) as number | null,
+            venta_real: (typeof docItem.venta_real === "number" ? docItem.venta_real : null) as number | null,
           };
         }) as typeof forecastArray;
       }
@@ -165,12 +164,9 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "");
 
-  // Override monthTotal with forecast document's venta_real (more accurate than runs)
+  // Override monthTotal with forecast document's venta_real (source of truth from Excel)
   if (forecastArray.length > 0) {
     monthTotal = forecastArray.reduce((sum, item) => {
-      const date = item.fecha;
-      const runForDay = date ? monthRuns.find(r => r.business_date === date) : null;
-      if (runForDay) return sum + runTotal(runForDay);
       return sum + (typeof item.venta_real === "number" ? item.venta_real : 0);
     }, 0);
   }
