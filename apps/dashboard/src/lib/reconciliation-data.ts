@@ -50,11 +50,22 @@ export type ReconciliationRun = {
   }>;
 };
 
+export type ForecastDocument = {
+  id: string;
+  document_key: string;
+  document_type: string;
+  source_system: string;
+  status: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+};
+
 export type ReconciliationData = {
   status: ReconciliationStatus;
   missingConfig: string[];
   error: string | null;
   runs: ReconciliationRun[];
+  forecastDocuments: ForecastDocument[];
 };
 
 type RunRow = {
@@ -74,18 +85,18 @@ export { APPROVAL_REVIEW_KEY };
 export async function getReconciliationData(skipAuth: boolean = false): Promise<ReconciliationData> {
   const config = getSupabasePublicConfig();
   if (!config.configured) {
-    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [] };
+    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [] };
   }
 
   const supabase = skipAuth ? createSupabaseServiceClient() : await createSupabaseServerClient();
   if (!supabase) {
-    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [] };
+    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [] };
   }
 
   if (!skipAuth) {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      return { status: "auth_required", missingConfig: [], error: null, runs: [] };
+      return { status: "auth_required", missingConfig: [], error: null, runs: [], forecastDocuments: [] };
     }
 
     const role = user.app_metadata?.role;
@@ -93,7 +104,7 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
       // Falback to people table if app_metadata is not yet set
       const { data: person } = await supabase.from("people").select("role_key").eq("email", user.email).single();
       if (!person || person.role_key !== "supervisor") {
-        return { status: "unauthorized", missingConfig: [], error: null, runs: [] };
+        return { status: "unauthorized", missingConfig: [], error: null, runs: [], forecastDocuments: [] };
       }
     }
   }
@@ -107,17 +118,31 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     .limit(500);
 
   if (runsResult.error) {
-    return { status: "query_failed", missingConfig: [], error: runsResult.error.message, runs: [] };
+    return { status: "query_failed", missingConfig: [], error: runsResult.error.message, runs: [], forecastDocuments: [] };
   }
 
   const runs = (runsResult.data ?? []) as RunRow[];
   const runIds = runs.map((run) => run.id);
 
   if (runIds.length === 0) {
-    return { status: "ready", missingConfig: [], error: null, runs: [] };
+    // Still fetch forecast documents even without runs
+    const forecastResult = await supabase
+      .from("documents")
+      .select("id,document_key,document_type,source_system,status,created_at,metadata")
+      .is("workflow_run_id", null)
+      .eq("document_type", "forecast_workbook")
+      .order("created_at", { ascending: false });
+    
+    return {
+      status: "ready",
+      missingConfig: [],
+      error: null,
+      runs: [],
+      forecastDocuments: (forecastResult.data ?? []) as ForecastDocument[],
+    };
   }
 
-  const [emailsResult, documentsResult, reviewsResult, exceptionsResult] = await Promise.all([
+  const [emailsResult, documentsResult, reviewsResult, exceptionsResult, forecastResult] = await Promise.all([
     supabase
       .from("email_messages")
       .select("workflow_run_id,from_address,subject,received_at,processing_status")
@@ -138,6 +163,12 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
       .select("id,workflow_run_id,exception_key,exception_type,severity,status,created_at")
       .in("workflow_run_id", runIds)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("documents")
+      .select("id,document_key,document_type,source_system,status,created_at,metadata")
+      .is("workflow_run_id", null)
+      .eq("document_type", "forecast_workbook")
+      .order("created_at", { ascending: false }),
   ]);
 
   const firstError =
@@ -147,7 +178,7 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     exceptionsResult.error;
 
   if (firstError) {
-    return { status: "query_failed", missingConfig: [], error: firstError.message, runs: [] };
+    return { status: "query_failed", missingConfig: [], error: firstError.message, runs: [], forecastDocuments: [] };
   }
 
   const emailsByRun = groupByRunId(emailsResult.data ?? []);
@@ -172,6 +203,7 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
         exceptions: (exceptionsByRun.get(run.id) ?? []) as ReconciliationRun["exceptions"],
       };
     }),
+    forecastDocuments: (forecastResult.data ?? []) as ForecastDocument[],
   };
 }
 

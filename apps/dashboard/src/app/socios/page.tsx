@@ -7,7 +7,7 @@ import { SociosAiBox } from "./SociosAiBox";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ month?: string; week?: string; day?: string }>;
+type SearchParams = Promise<{ unit?: string; month?: string; week?: string; day?: string; year?: string }>;
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -66,6 +66,10 @@ function statusLabel(run: ReconciliationRun) {
   return run.status;
 }
 
+function getUnit(run: ReconciliationRun) {
+  return (run.revision?.unidad || run.revision?.restaurant_key || "SANTO").toUpperCase();
+}
+
 /* ── colors ──────────────────────────────────────────────────────────── */
 
 const C = {
@@ -103,15 +107,67 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   const allRuns = data.runs.filter(r => r.business_date);
   const runs = dedupeRunsByDay(allRuns);
+  const units = Array.from(new Set(runs.map(getUnit))).sort();
 
   /* navigation state */
-  const monthsArr = Array.from(new Set(runs.map(r => monthKey(r.business_date)))).sort().reverse();
   const todayMonth = new Date().toISOString().slice(0, 7);
-  if (!monthsArr.includes(todayMonth)) monthsArr.unshift(todayMonth);
+  const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
+  const unitRuns = runs.filter(r => getUnit(r) === selectedUnit);
 
-  const selectedMonth = params.month && monthsArr.includes(params.month) ? params.month : monthsArr[0];
-  const monthRuns = runs.filter(r => monthKey(r.business_date) === selectedMonth);
-  const { monthTotal, monthMeta } = getMonthlyTotals(monthRuns, selectedMonth || "");
+  const allMonths = Array.from(new Set(unitRuns.map(r => monthKey(r.business_date)))).sort().reverse();
+
+  // Also include months from forecast documents (even without workflow runs)
+  const forecastMonths = data.forecastDocuments
+    .map(doc => (doc.metadata as Record<string, unknown>).month as string | undefined)
+    .filter((m): m is string => typeof m === "string" && /^\d{4}-\d{2}$/.test(m));
+  for (const fm of forecastMonths) {
+    if (!allMonths.includes(fm)) allMonths.push(fm);
+  }
+  allMonths.sort().reverse();
+
+  if (!allMonths.includes(todayMonth)) allMonths.unshift(todayMonth);
+
+  // Year-first navigation
+  const yearsArr = Array.from(new Set(allMonths.map(m => m.slice(0, 4)))).sort().reverse();
+  const selectedYear = params.year && yearsArr.includes(params.year) ? params.year : yearsArr[0];
+  const monthsForYear = allMonths.filter(m => m.startsWith(selectedYear));
+
+  const selectedMonth = params.month && monthsForYear.includes(params.month) ? params.month : monthsForYear[0];
+  const monthRuns = unitRuns.filter(r => monthKey(r.business_date) === selectedMonth);
+
+  /* Forecast extraction */
+  const latestRunWithForecast = monthRuns.find((run) => run.revision?.vta_por_dia && run.revision.vta_por_dia.length > 0);
+  let forecastArray: Array<{ fecha?: string | null; meta_vta?: number | null; venta_real?: number | null }> = latestRunWithForecast?.revision?.vta_por_dia || [];
+
+  // If run's forecast has no meta values, try standalone forecast documents
+  const hasMetaFromRun = forecastArray.some(item => typeof item.meta_vta === "number" && item.meta_vta > 0);
+
+  if (!hasMetaFromRun && selectedMonth) {
+    const forecastDoc = data.forecastDocuments.find(doc => {
+      const meta = doc.metadata as Record<string, unknown>;
+      return meta.month === selectedMonth;
+    });
+    if (forecastDoc) {
+      const vta = (forecastDoc.metadata as Record<string, unknown>).vta_por_dia;
+      if (Array.isArray(vta) && vta.length > 0) {
+        forecastArray = vta as typeof forecastArray;
+      }
+    }
+  }
+
+  let { monthTotal, monthMeta } = getMonthlyTotals(monthRuns, selectedMonth || "");
+
+  // If no forecast from runs, use standalone forecast documents data
+  if (monthMeta == null && forecastArray.length > 0) {
+    monthMeta = forecastArray.reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
+    monthTotal = forecastArray.reduce((sum, item) => {
+      const date = item.fecha;
+      const runForDay = date ? monthRuns.find(r => r.business_date === date) : null;
+      if (runForDay) return sum + runTotal(runForDay);
+      return sum + (typeof item.venta_real === "number" ? item.venta_real : 0);
+    }, 0);
+  }
+
   const monthDiff = monthMeta ? monthTotal - monthMeta : null;
   const monthProgress = monthMeta ? Math.min((monthTotal / monthMeta) * 100, 100) : 0;
 
@@ -120,10 +176,6 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const weekRuns = monthRuns.filter(r => weekKey(r.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
 
   const selectedRun = weekRuns.find(r => r.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? null;
-
-  /* Forecast extraction */
-  const latestRunWithForecast = monthRuns.find((run) => run.revision?.vta_por_dia && run.revision.vta_por_dia.length > 0);
-  const forecastArray = latestRunWithForecast?.revision?.vta_por_dia || [];
 
   const getMetaForDay = (date: string | null) => {
     if (!date) return 0;
@@ -178,7 +230,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   }
 
   /* Mock saldos if empty */
-  const latestRun = runs[0];
+  const latestRun = unitRuns[0];
   let saldos = latestRun?.output_payload?.saldos as Record<string, number> | undefined;
   if (!saldos || Object.keys(saldos).length === 0) {
     saldos = {
@@ -190,10 +242,32 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     };
   }
 
+  /* Week and month context for AI */
+  const weekContext = {
+    totalVendido: weekRuns.reduce((sum, r) => sum + runTotal(r), 0),
+    totalMeta: weekRuns.reduce((sum, r) => sum + (dailyForecastMeta(r) ?? getMetaForDay(r.business_date) ?? 0), 0),
+    diasConCorte: weekRuns.filter(r => r.status !== "pending_corte").length,
+    cortes: weekRuns.map(r => ({
+      fecha: r.business_date || "",
+      venta: runTotal(r),
+      meta: dailyForecastMeta(r) ?? getMetaForDay(r.business_date),
+      status: r.status,
+    })),
+  };
+  const monthContext = {
+    totalVendido: monthTotal,
+    totalMeta: monthMeta ?? 0,
+    progressPct: monthProgress,
+  };
+
   const hp = (p: Record<string, string>) => {
-    const u = new URLSearchParams(p);
+    const u = new URLSearchParams({ unit: selectedUnit, ...p });
     return `/socios?${u.toString()}`;
   };
+
+  const hpYear = (year: string) => hp({ year });
+  const hpMonth = (month: string) => hp({ year: selectedYear, month });
+  const hpUnit = (unit: string) => hp({ unit, year: selectedYear, month: selectedMonth || "" });
 
   return (
     <>
@@ -216,6 +290,17 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
           transition: all 0.15s ease; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; }
         .month-pill:hover { background: ${C.surfaceHover}; color: ${C.ink}; }
         .month-pill.active { background: ${C.santoGlow}; border-color: ${C.borderActive}; color: ${C.santo}; }
+
+        .year-pill, .unit-pill { display: inline-block; padding: 6px 14px; font-size: 13px; font-weight: 600;
+          border: 1px solid ${C.border}; background: ${C.surface}; color: ${C.dim};
+          transition: all 0.15s ease; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; }
+        .year-pill:hover, .unit-pill:hover { background: ${C.surfaceHover}; color: ${C.ink}; }
+        .year-pill.active, .unit-pill.active { background: ${C.santoGlow}; border-color: ${C.borderActive}; color: ${C.santo}; }
+
+        .selector-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px;
+          padding: 12px 16px; background: ${C.surface}; border: 1px solid ${C.border}; }
+        .selector-label { font-size: 9px; font-weight: 600; color: ${C.faint}; text-transform: uppercase;
+          letter-spacing: 0.1em; margin-right: 8px; white-space: nowrap; }
 
         .week-card { padding: 12px 16px; border: 1px solid ${C.border}; background: ${C.surface};
           transition: all 0.15s ease; cursor: pointer; }
@@ -272,13 +357,34 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
         <div style={{ maxWidth: "1600px", margin: "0 auto", padding: "32px" }}>
 
+          {/* ── UNIT SELECTOR ──────────────────────────── */}
+          <div className="selector-bar">
+            <span className="selector-label">Restaurante</span>
+            {units.map(u => (
+              <Link key={u} href={hpUnit(u)} className={`unit-pill ${u === selectedUnit ? "active" : ""}`}>
+                {u}
+              </Link>
+            ))}
+          </div>
+
+          {/* ── YEAR SELECTOR ────────────────────────────── */}
+          <div className="selector-bar">
+            <span className="selector-label">Año</span>
+            {yearsArr.map(y => (
+              <Link key={y} href={hpYear(y)} className={`year-pill ${y === selectedYear ? "active" : ""}`}>
+                {y}
+              </Link>
+            ))}
+          </div>
+
           {/* ── MONTH SELECTOR ───────────────────────────── */}
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "32px" }}>
-            {monthsArr.map(m => {
+          <div className="selector-bar" style={{ flexWrap: "wrap" }}>
+            <span className="selector-label">Mes</span>
+            {monthsForYear.map(m => {
               const d = parseDate(`${m}-01`);
-              const label = d ? new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" }).format(d) : m;
+              const label = d ? new Intl.DateTimeFormat("es-MX", { month: "long" }).format(d) : m;
               return (
-                <Link key={m} href={hp({ month: m })} className={`month-pill ${m === selectedMonth ? "active" : ""}`}>
+                <Link key={m} href={hpMonth(m)} className={`month-pill ${m === selectedMonth ? "active" : ""}`}>
                   {label}
                 </Link>
               );
@@ -319,14 +425,14 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
           {/* ── WEEK SELECTOR ────────────────────────────── */}
           <div style={{ marginBottom: "24px" }}>
             <div style={{ fontSize: "11px", fontWeight: 600, color: C.dim, marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Desglose Semanal</div>
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(weeks.length || 1, 5)}, 1fr)`, gap: "1px", background: C.border, border: `1px solid ${C.border}` }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${weeks.length || 1}, 1fr)`, gap: "1px", background: C.border, border: `1px solid ${C.border}` }}>
               {weeks.length === 0 ? (
                 <div className="week-card" style={{ color: C.faint, border: "none" }}>Sin semanas</div>
               ) : weeks.map((w, i) => {
                 const wRuns = monthRuns.filter(r => weekKey(r.business_date) === w);
                 const wTotal = wRuns.reduce((sum, r) => sum + runTotal(r), 0);
                 return (
-                  <Link key={w} href={hp({ month: selectedMonth || "", week: w })} className={`week-card ${w === selectedWeek ? "active" : ""}`} style={{ border: "none" }}>
+                  <Link key={w} href={hp({ year: selectedYear, month: selectedMonth || "", week: w })} className={`week-card ${w === selectedWeek ? "active" : ""}`} style={{ border: "none" }}>
                     <div style={{ fontSize: "10px", fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>Semana {i + 1}</div>
                     <div className="display-font" style={{ fontSize: "24px", fontWeight: 700, marginTop: "6px" }}>{money(wTotal)}</div>
                   </Link>
@@ -352,7 +458,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                 const active = selectedRun?.id === run.id;
                 const validated = isBankValidated(run);
                 return (
-                  <Link key={run.id} href={hp({ month: selectedMonth || "", week: selectedWeek, day: run.id })} className={`day-row ${active ? "active" : ""}`}>
+                  <Link key={run.id} href={hp({ year: selectedYear, month: selectedMonth || "", week: selectedWeek, day: run.id })} className={`day-row ${active ? "active" : ""}`}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 600 }}>{dateLabel(run.business_date, "short")}</div>
                       <div style={{ marginTop: "6px" }}>
@@ -494,7 +600,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
                     {/* AI Box */}
                     <div style={{ gridColumn: "1 / -1" }}>
-                      <SociosAiBox runId={selectedRun.id} />
+                      <SociosAiBox runId={selectedRun.id} unit={selectedUnit} weekContext={weekContext} monthContext={monthContext} />
                     </div>
 
                   </div>

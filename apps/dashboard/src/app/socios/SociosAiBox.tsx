@@ -14,7 +14,27 @@ const C = {
   santo: "#e8463b",
 };
 
-export function SociosAiBox({ runId }: { runId: string }) {
+type WeekContext = {
+  totalVendido: number;
+  totalMeta: number;
+  diasConCorte: number;
+  cortes: Array<{ fecha: string; venta: number; meta: number | null; status: string }>;
+};
+
+type MonthContext = {
+  totalVendido: number;
+  totalMeta: number;
+  progressPct: number;
+};
+
+type Props = {
+  runId: string;
+  unit?: string;
+  weekContext?: WeekContext;
+  monthContext?: MonthContext;
+};
+
+export function SociosAiBox({ runId, unit, weekContext, monthContext }: Props) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
@@ -36,7 +56,7 @@ export function SociosAiBox({ runId }: { runId: string }) {
       const response = await fetch("/api/cortes/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId, question: trimmed }),
+        body: JSON.stringify({ runId, question: trimmed, unit, weekContext, monthContext }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No se pudo consultar la IA.");
