@@ -169,13 +169,15 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
   const [emailsResult, documentsResult, reviewsResult, exceptionsResult] = await Promise.all(queries);
 
   let forecastResult: any = { data: [], error: null };
-  if (skipAuth) {
+  try {
     forecastResult = await supabase
       .from("documents")
       .select("id,document_key,document_type,source_system,status,created_at,metadata")
       .is("workflow_run_id", null)
       .eq("document_type", "forecast_workbook")
       .order("created_at", { ascending: false });
+  } catch {
+    // Forecast documents are optional, failure is non-fatal
   }
 
   const firstError =
