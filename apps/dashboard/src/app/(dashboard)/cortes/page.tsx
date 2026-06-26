@@ -71,23 +71,6 @@ function yearKey(date: string | null | undefined) {
   return date ? date.slice(0, 4) : "sin-ano";
 }
 
-function YearSelector({ years, selected, unit }: { years: string[]; selected: string; unit: string }) {
-  return (
-    <div className="flex gap-2">
-      {years.map((year) => (
-        <Link
-          key={year}
-          href={`/cortes?unit=${unit}&year=${year}`}
-          className="shrink-0 rounded-md border px-4 py-2 text-sm font-semibold"
-          style={{ borderColor: year === selected ? GOLD : LINE, background: year === selected ? "#fdf2f2" : PANEL, color: year === selected ? GOLD : INK }}
-        >
-          {year}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 function getUnit(run: ReconciliationRun) {
   return (run.revision?.unidad || run.revision?.restaurant_key || "SANTO").toUpperCase();
 }
@@ -95,7 +78,7 @@ function getUnit(run: ReconciliationRun) {
 function statusText(run: ReconciliationRun) {
   const bankValidated = isBankValidated(run);
   if (bankValidated) return "Validado con bancos";
-  if (run.status === "requires_review") return "Necesita revisi├│n";
+  if (run.status === "requires_review") return "Necesita revision";
   if (run.status === "waiting_for_input") return "Faltan bancos";
   if (run.status === "completed") return "Corte cargado";
   return run.status;
@@ -116,326 +99,12 @@ function hasApproval(run: ReconciliationRun) {
   return run.reviews.some((review) => review.review_key === APPROVAL_REVIEW_KEY && review.status === "approved");
 }
 
-function runTotal(run: ReconciliationRun) {
-  return dailySales(run);
-}
-
-function runMeta(run: ReconciliationRun) {
-  return dailyForecastMeta(run);
-}
+function runTotal(run: ReconciliationRun) { return dailySales(run); }
+function runMeta(run: ReconciliationRun) { return dailyForecastMeta(run); }
 
 function runDiff(run: ReconciliationRun) {
   const meta = runMeta(run);
   return meta == null ? null : runTotal(run) - meta;
-}
-
-function SummaryTile({ label, value, tone = INK }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>{label}</div>
-      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: tone }}>{value}</div>
-    </div>
-  );
-}
-
-function UnitSelector({ units, selected, year, month, week, day }: { units: string[]; selected: string; year: string; month: string; week: string; day?: string }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {units.map((unit) => (
-        <Link
-          key={unit}
-          href={`/cortes?unit=${unit}&year=${year}&month=${month}&week=${week}${day ? `&day=${day}` : ""}`}
-          className="rounded-md border px-4 py-2 text-sm font-semibold"
-          style={{ borderColor: unit === selected ? GOLD : LINE, background: unit === selected ? "#fdf2f2" : PANEL, color: unit === selected ? GOLD : INK }}
-        >
-          {unit}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function MonthSelector({ months, selected, unit, year }: { months: string[]; selected: string; unit: string; year: string }) {
-  return (
-    <div className="flex gap-2 overflow-x-auto pb-1">
-      {months.map((month) => (
-        <Link
-          key={month}
-          href={`/cortes?unit=${unit}&year=${year}&month=${month}`}
-          className="shrink-0 rounded-md border px-3 py-2 text-sm"
-          style={{ borderColor: month === selected ? GOLD : LINE, background: month === selected ? "#fdf2f2" : PANEL, color: month === selected ? GOLD : INK }}
-        >
-          {monthLabel(month)}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function WeekSelector({ weeks, selected, unit, month }: { weeks: string[]; selected: string; unit: string; month: string }) {
-  return (
-    <div className="grid gap-2 md:grid-cols-4">
-      {weeks.map((week, index) => (
-        <Link
-          key={week}
-          href={`/cortes?unit=${unit}&month=${month}&week=${week}`}
-          className="rounded-md border px-3 py-3 text-sm"
-          style={{ borderColor: week === selected ? GOLD : LINE, background: week === selected ? "#fdf2f2" : PANEL, color: INK }}
-        >
-          <span className="block text-[11px] font-semibold uppercase" style={{ color: MUTED }}>Semana {index + 1}</span>
-          <span className="mt-1 block font-semibold">{dateLabel(week, "short")}</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function DayList({ runs, selectedId, unit, month, week }: { runs: ReconciliationRun[]; selectedId?: string; unit: string; month: string; week: string }) {
-  return (
-    <div className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
-      {runs.map((run) => {
-        const selected = run.id === selectedId;
-        const diff = runDiff(run);
-        return (
-          <Link
-            key={run.id}
-            href={`/cortes?unit=${unit}&month=${month}&week=${week}&day=${run.id}`}
-            className="flex items-center justify-between border-b px-4 py-3 last:border-b-0"
-            style={{ borderColor: LINE, background: selected ? "#fdf2f2" : PANEL, color: INK }}
-          >
-            <div>
-              <div className="font-semibold">{dateLabel(run.business_date, "short")}</div>
-              <div className="mt-1 text-xs" style={{ color: statusColor(run) }}>{statusText(run)}</div>
-            </div>
-            <div className="text-right shrink-0 ml-3">
-              <div className="text-base font-bold tracking-tight">{money(runTotal(run))}</div>
-              <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>
-                {(() => {
-                  const meta = runMeta(run);
-                  return diff == null || meta == null ? "Sin forecast" : `${diff >= 0 ? "+" : ""}${((diff / meta) * 100).toFixed(1)}% / ${diff >= 0 ? "+" : ""}${money(diff)}`;
-                })()}
-              </div>
-            </div>
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-function DocumentsPanel({ run }: { run: ReconciliationRun }) {
-  const groups = [
-    { label: "Corte", docs: run.documents.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report"].includes(doc.document_type)) },
-    { label: "Bancos", docs: run.documents.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type)) },
-    { label: "Evidencia", docs: run.documents.filter((doc) => !["corte_excel", "daily_sales_report", "revision_report", "amex_statement", "banorte_statement"].includes(doc.document_type)) },
-  ];
-  return (
-    <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
-      <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-        <FolderOpen className="h-4 w-4" />
-        Archivos de este d├¡a
-      </div>
-      <div className="space-y-3">
-        {groups.map((group) => (
-          <div key={group.label}>
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{group.label}</div>
-            {group.docs.length === 0 ? (
-              <div className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: LINE, color: MUTED }}>Sin archivos registrados</div>
-            ) : group.docs.slice(0, 4).map((doc) => (
-              <a
-                key={doc.id}
-                href={doc.source_uri ?? "#"}
-                className="mb-1 flex items-center justify-between rounded-md border px-3 py-2 text-xs"
-                style={{ borderColor: LINE, color: INK, pointerEvents: doc.source_uri ? "auto" : "none" }}
-              >
-                <span>{String(doc.metadata?.name ?? doc.metadata?.original_filename ?? doc.document_type)}</span>
-                <ChevronRight className="h-3 w-3" />
-              </a>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ForecastMissingPanel({ month }: { month: string; returnTo: string }) {
-  return (
-    <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-5 w-5" style={{ color: AMBER }} />
-        <div>
-          <div className="font-semibold" style={{ color: INK }}>Falta forecast de {monthLabel(month)}</div>
-          <p className="mt-1 text-sm" style={{ color: MUTED }}>Subilo una vez y queda registrado para todo el mes.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BankUploadPanel({ run }: { run: ReconciliationRun; returnTo: string }) {
-  const approved = hasApproval(run);
-  const validated = isBankValidated(run);
-  return (
-    <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
-      <div className="flex items-center gap-2 font-semibold" style={{ color: INK }}>
-        {validated ? <CheckCircle2 className="h-4 w-4" style={{ color: GREEN }} /> : <UploadCloud className="h-4 w-4" style={{ color: AMBER }} />}
-        Bancos
-      </div>
-      <p className="mt-2 text-sm" style={{ color: validated ? GREEN : MUTED }}>
-        {validated ? "Este corte ya tiene archivos bancarios registrados." : "Todavia no esta validado con bancos."}
-      </p>
-    </div>
-  );
-}
-
-function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: string; returnTo: string }) {
-  const revision = run.revision;
-  const meta = runMeta(run);
-  const diff = runDiff(run);
-  const openExceptions = run.exceptions.filter((item) => item.status !== "resolved");
-  const comments = Array.isArray(run.output_payload?.dashboard_comments) ? run.output_payload.dashboard_comments as Array<Record<string, unknown>> : [];
-  const corrections = Array.isArray(run.output_payload?.dashboard_manual_corrections) ? run.output_payload.dashboard_manual_corrections as Array<Record<string, unknown>> : [];
-  return (
-    <section className="grid gap-4 lg:grid-cols-[1fr_360px] overflow-hidden">
-      <div className="space-y-4 min-w-0">
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>{getUnit(run)}</div>
-              <h2 className="mt-1 text-3xl font-bold tracking-tight" style={{ color: INK }}>{dateLabel(run.business_date)}</h2>
-              <div className="mt-2 inline-flex rounded-md border px-2.5 py-1 text-sm font-semibold" style={{ borderColor: statusColor(run), color: statusColor(run), background: `${statusColor(run)}12` }}>
-                {statusText(run)}
-              </div>
-            </div>
-            <Link href={`/cortes/${run.id}`} className="rounded-md border px-3 py-2 text-sm font-semibold" style={{ borderColor: LINE, color: INK }}>
-              Ver detalle completo
-            </Link>
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
-            <SummaryTile label="Venta real" value={money(runTotal(run))} tone={GOLD} />
-            <SummaryTile label="Meta forecast" value={money(meta)} />
-            <SummaryTile 
-              label="Diferencia" 
-              value={diff == null || meta == null ? "-" : `${diff >= 0 ? "+" : ""}${((diff / meta) * 100).toFixed(1)}% / ${diff >= 0 ? "+" : ""}${money(diff)}`} 
-              tone={diff == null || diff >= 0 ? GREEN : RED} 
-            />
-            <SummaryTile label="Total sistema" value={money(revision?.reconciliation_totals?.total_sistema)} />
-          </div>
-        </div>
-
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-            <FileSpreadsheet className="h-4 w-4" />
-            Datos principales
-          </div>
-          <div className="grid gap-2 md:grid-cols-2">
-            <DataRow label="Total real" value={money(revision?.reconciliation_totals?.total_real)} />
-            <DataRow label="Venta real" value={money(runTotal(run))} />
-            <DataRow label="Forecast d├¡a" value={money(meta)} />
-            <DataRow label="Diferencia forecast" value={diff == null ? "-" : `${diff >= 0 ? "+" : ""}${money(diff)}`} />
-            <DataRow label="Formato corte" value={revision?.formato_corte ?? "-"} />
-            <DataRow label="Falta por entrar" value={money(Object.values(revision?.falta_por_entrar ?? {}).reduce((sum, value) => sum + Number(value || 0), 0))} />
-          </div>
-        </div>
-
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-            <FileSpreadsheet className="h-4 w-4" />
-            Venta Bruta (Excel)
-          </div>
-          {(() => {
-            const reg = (run.output_payload?.income_register ?? {}) as Record<string, number>;
-            const ch = (run.output_payload?.income_channels ?? {}) as Record<string, number>;
-            const amex = reg.amex ?? ch.amex ?? 0;
-            const debito = reg.debito ?? ch.debito ?? 0;
-            const credito = reg.credito ?? ch.credito ?? 0;
-            const efectivo = reg.efectivo ?? ch.efectivo ?? 0;
-            const paypal = reg.paypal ?? ch.paypal ?? 0;
-            const uber = reg.uber ?? ch.uber ?? 0;
-            const rappi = reg.rappi ?? ch.rappi ?? 0;
-            const propinas = reg.propinas ?? ch.propinas ?? 0;
-
-            return (
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between"><span style={{ color: MUTED }}>AMEX</span><span style={{ color: INK }}>{money(amex)}</span></div>
-                <div className="flex justify-between"><span style={{ color: MUTED }}>Debito</span><span style={{ color: INK }}>{money(debito)}</span></div>
-                <div className="flex justify-between"><span style={{ color: MUTED }}>Credito</span><span style={{ color: INK }}>{money(credito)}</span></div>
-                <div className="flex justify-between"><span style={{ color: MUTED }}>Efectivo</span><span style={{ color: INK }}>{money(efectivo)}</span></div>
-                <div className="flex justify-between"><span style={{ color: MUTED }}>PayPal</span><span style={{ color: INK }}>{money(paypal)}</span></div>
-                <div className="flex justify-between"><span style={{ color: MUTED }}>Uber</span><span style={{ color: INK }}>{money(uber)}</span></div>
-                <div className="flex justify-between"><span style={{ color: MUTED }}>Rappi</span><span style={{ color: INK }}>{money(rappi)}</span></div>
-                <div className="flex justify-between"><span style={{ color: MUTED }}>Propinas</span><span style={{ color: INK }}>{money(propinas)}</span></div>
-                <div className="flex justify-between pt-2 border-t" style={{ borderColor: LINE }}>
-                  <span className="font-semibold" style={{ color: INK }}>Total</span><span className="font-semibold" style={{ color: GOLD }}>{money(runTotal(run))}</span>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        <CorteAiBox runId={run.id} />
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-            <MessageSquareText className="h-4 w-4" />
-            Comentarios y correcciones
-          </div>
-          <p className="text-sm" style={{ color: MUTED }}>Comentarios deshabilitados temporalmente</p>
-
-          {(comments.length > 0 || corrections.length > 0) && (
-            <div className="mt-4 space-y-2 text-sm" style={{ color: MUTED }}>
-              {comments.slice(-3).map((comment, index) => <div key={`c-${index}`}>Comentario: {String(comment.comment ?? "")}</div>)}
-              {corrections.slice(-3).map((correction, index) => <div key={`m-${index}`}>Correcci├│n: {String(correction.field)} = {String(correction.value)}</div>)}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <aside className="space-y-4">
-        <BankUploadPanel run={run} returnTo={returnTo} />
-        <DocumentsPanel run={run} />
-        {openExceptions.length > 0 && (
-          <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
-            <div className="font-semibold" style={{ color: INK }}>Pendientes por resolver</div>
-            <div className="mt-2 space-y-2">
-              {openExceptions.slice(0, 4).map((item) => (
-                <div key={item.id} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#e4c58f", color: MUTED }}>
-                  {item.exception_key}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {!!run.output_payload?.saldos && (
-          <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
-            <div className="mb-3 font-semibold" style={{ color: INK }}>Saldos al cierre</div>
-            <div className="space-y-2 text-sm">
-              <DataRow label="Banorte" value={money((run.output_payload.saldos as Record<string, number>).banorte)} />
-              <DataRow label="AMEX" value={money((run.output_payload.saldos as Record<string, number>).amex)} />
-              <DataRow label="Efectivo" value={money((run.output_payload.saldos as Record<string, number>).efectivo)} />
-              <div className="pt-2 mt-2 border-t" style={{ borderColor: LINE }}>
-                <DataRow label="Aguinaldos" value={money((run.output_payload.saldos as Record<string, number>).aguinaldos)} />
-                <DataRow label="Utilidades" value={money((run.output_payload.saldos as Record<string, number>).utilidades)} />
-              </div>
-            </div>
-          </div>
-        )}
-        <Link href={`/archivos?month=${month}`} className="flex items-center justify-between rounded-md border px-4 py-3 text-sm font-semibold" style={{ borderColor: LINE, background: PANEL, color: INK }}>
-          Ver archivos del mes
-          <ChevronRight className="h-4 w-4" />
-        </Link>
-      </aside>
-    </section>
-  );
-}
-
-function DataRow({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: muted ? "#aaa298" : INK }}>
-      <span className="shrink-0">{label}</span>
-      <span className="min-w-0 truncate text-right font-semibold">{value}</span>
-    </div>
-  );
 }
 
 export default async function CortesPage({ searchParams }: { searchParams: SearchParams }) {
@@ -445,7 +114,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   if (data.status === "auth_required") {
     return (
       <main className="flex min-h-screen items-center justify-center" style={{ background: PAPER, color: INK }}>
-        <Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Iniciar sesi├│n</Link>
+        <Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Iniciar sesion</Link>
       </main>
     );
   }
@@ -489,7 +158,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
             <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Control</div>
             <h1 className="mt-1 text-3xl font-semibold">Cortes de Caja</h1>
             <p className="mt-2 max-w-3xl text-sm" style={{ color: MUTED }}>
-              Vista simple para revisar el corte, compararlo contra forecast y subir bancos cuando est├® aprobado.
+              Vista simple para revisar el corte, compararlo contra forecast y subir bancos cuando este aprobado.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -502,19 +171,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
               <UploadCloud className="h-4 w-4" />
               Vista para Socios
             </Link>
-            <button 
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/socios?month=${selectedMonth}`);
-                alert("Enlace copiado al portapapeles");
-              }}
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
-              style={{ background: GOLD, color: "white" }}
-            >
-              Compartir enlace
-            </button>
           </div>
         </header>
-
 
         {data.status === "requires_config" && (
           <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
@@ -527,56 +185,354 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
 
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 flex items-center gap-2 font-semibold"><CalendarDays className="h-4 w-4" /> Unidad</div>
-          <UnitSelector units={units.length ? units : ["SANTO"]} selected={selectedUnit} year={selectedYear} month={selectedMonth} week={selectedWeek} day={selectedRun?.id} />
+          <div className="flex flex-wrap gap-2">
+            {(units.length ? units : ["SANTO"]).map((unit) => (
+              <Link
+                key={unit}
+                href={`/cortes?unit=${unit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`}
+                className="rounded-md border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: unit === selectedUnit ? GOLD : LINE, background: unit === selectedUnit ? "#fdf2f2" : PANEL, color: unit === selectedUnit ? GOLD : INK }}
+              >
+                {unit}
+              </Link>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="mb-3 font-semibold">A├▒o</div>
-          <YearSelector years={years.length ? years : [selectedYear]} selected={selectedYear} unit={selectedUnit} />
+          <div className="mb-3 font-semibold">Ano</div>
+          <div className="flex gap-2">
+            {(years.length ? years : [selectedYear]).map((year) => (
+              <Link
+                key={year}
+                href={`/cortes?unit=${selectedUnit}&year=${year}`}
+                className="shrink-0 rounded-md border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: year === selectedYear ? GOLD : LINE, background: year === selectedYear ? "#fdf2f2" : PANEL, color: year === selectedYear ? GOLD : INK }}
+              >
+                {year}
+              </Link>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 font-semibold">Mes</div>
-          <MonthSelector months={months.length ? months : [selectedMonth]} selected={selectedMonth} unit={selectedUnit} year={selectedYear} />
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {(months.length ? months : [selectedMonth]).map((month) => (
+              <Link
+                key={month}
+                href={`/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${month}`}
+                className="shrink-0 rounded-md border px-3 py-2 text-sm"
+                style={{ borderColor: month === selectedMonth ? GOLD : LINE, background: month === selectedMonth ? "#fdf2f2" : PANEL, color: month === selectedMonth ? GOLD : INK }}
+              >
+                {monthLabel(month)}
+              </Link>
+            ))}
+          </div>
         </section>
 
-        {!forecastReady && <ForecastMissingPanel month={selectedMonth} returnTo={returnTo} />}
+        {!forecastReady && (
+          <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5" style={{ color: AMBER }} />
+              <div>
+                <div className="font-semibold" style={{ color: INK }}>Falta forecast de {monthLabel(selectedMonth)}</div>
+                <p className="mt-1 text-sm" style={{ color: MUTED }}>Subilo una vez y queda registrado para todo el mes.</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {duplicateDates.length > 0 && (
           <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
-            Hay cortes duplicados para {duplicateDates.map(([date]) => dateLabel(date, "short")).join(", ")}. Se muestra solo la versi├│n m├ís completa de cada d├¡a.
+            Hay cortes duplicados para {duplicateDates.map(([date]) => dateLabel(date, "short")).join(", ")}. Se muestra solo la version mas completa de cada dia.
           </div>
         )}
 
         <div className="grid gap-3 md:grid-cols-4">
-          <SummaryTile label="Venta mes" value={money(monthTotal)} tone={GOLD} />
-          <SummaryTile label="Forecast mes" value={money(monthMeta)} />
-          <SummaryTile 
-            label="Diferencia mes" 
-            value={monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta!) * 100).toFixed(1)}% / ${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`} 
-            tone={monthDiff == null || monthDiff >= 0 ? GREEN : RED} 
-          />
-          <SummaryTile label="Cortes del mes" value={String(monthRuns.length)} />
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: GOLD }}>{money(monthTotal)}</div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Forecast mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(monthMeta)}</div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: monthDiff == null || monthDiff >= 0 ? GREEN : RED }}>
+              {monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta!) * 100).toFixed(1)}% / ${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`}
+            </div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Cortes del mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{monthRuns.length}</div>
+          </div>
         </div>
 
         <section>
           <div className="mb-3 font-semibold">Semanas</div>
-          <WeekSelector weeks={weeks.length ? weeks : [selectedWeek]} selected={selectedWeek} unit={selectedUnit} month={selectedMonth} />
+          <div className="grid gap-2 md:grid-cols-4">
+            {(weeks.length ? weeks : [selectedWeek]).map((week, index) => (
+              <Link
+                key={week}
+                href={`/cortes?unit=${selectedUnit}&month=${selectedMonth}&week=${week}`}
+                className="rounded-md border px-3 py-3 text-sm"
+                style={{ borderColor: week === selectedWeek ? GOLD : LINE, background: week === selectedWeek ? "#fdf2f2" : PANEL, color: INK }}
+              >
+                <span className="block text-[11px] font-semibold uppercase" style={{ color: MUTED }}>Semana {index + 1}</span>
+                <span className="mt-1 block font-semibold">{dateLabel(week, "short")}</span>
+              </Link>
+            ))}
+          </div>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[320px_1fr]">
           <div>
-            <div className="mb-3 font-semibold">D├¡as</div>
+            <div className="mb-3 font-semibold">Dias</div>
             {weekRuns.length > 0 ? (
-              <DayList runs={weekRuns} selectedId={selectedRun?.id} unit={selectedUnit} month={selectedMonth} week={selectedWeek} />
+              <div className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
+                {weekRuns.map((run) => {
+                  const selected = run.id === selectedRun?.id;
+                  const diff = runDiff(run);
+                  return (
+                    <Link
+                      key={run.id}
+                      href={`/cortes?unit=${selectedUnit}&month=${selectedMonth}&week=${selectedWeek}&day=${run.id}`}
+                      className="flex items-center justify-between border-b px-4 py-3 last:border-b-0"
+                      style={{ borderColor: LINE, background: selected ? "#fdf2f2" : PANEL, color: INK }}
+                    >
+                      <div>
+                        <div className="font-semibold">{dateLabel(run.business_date, "short")}</div>
+                        <div className="mt-1 text-xs" style={{ color: statusColor(run) }}>{statusText(run)}</div>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        <div className="text-base font-bold tracking-tight">{money(runTotal(run))}</div>
+                        <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>
+                          {(() => {
+                            const meta = runMeta(run);
+                            return diff == null || meta == null ? "Sin forecast" : `${diff >= 0 ? "+" : ""}${((diff / meta) * 100).toFixed(1)}% / ${diff >= 0 ? "+" : ""}${money(diff)}`;
+                          })()}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
             ) : (
               <div className="rounded-md border p-5 text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>No hay cortes en esta semana.</div>
             )}
           </div>
           {selectedRun ? (
-            <DetailPanel run={selectedRun} month={selectedMonth} returnTo={returnTo} />
+            <section className="grid gap-4 lg:grid-cols-[1fr_360px] overflow-hidden">
+              <div className="space-y-4 min-w-0">
+                <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>{getUnit(selectedRun)}</div>
+                      <h2 className="mt-1 text-3xl font-bold tracking-tight" style={{ color: INK }}>{dateLabel(selectedRun.business_date)}</h2>
+                      <div className="mt-2 inline-flex rounded-md border px-2.5 py-1 text-sm font-semibold" style={{ borderColor: statusColor(selectedRun), color: statusColor(selectedRun), background: `${statusColor(selectedRun)}12` }}>
+                        {statusText(selectedRun)}
+                      </div>
+                    </div>
+                    <Link href={`/cortes/${selectedRun.id}`} className="rounded-md border px-3 py-2 text-sm font-semibold" style={{ borderColor: LINE, color: INK }}>
+                      Ver detalle completo
+                    </Link>
+                  </div>
+                  <div className="mt-5 grid gap-3 md:grid-cols-4">
+                    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta real</div>
+                      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: GOLD }}>{money(runTotal(selectedRun))}</div>
+                    </div>
+                    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Meta forecast</div>
+                      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(runMeta(selectedRun))}</div>
+                    </div>
+                    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia</div>
+                      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: (() => { const d = runDiff(selectedRun); const m = runMeta(selectedRun); return d == null || d >= 0 ? GREEN : RED; })() }}>
+                        {(() => {
+                          const d = runDiff(selectedRun);
+                          const m = runMeta(selectedRun);
+                          return d == null || m == null ? "-" : `${d >= 0 ? "+" : ""}${((d / m) * 100).toFixed(1)}% / ${d >= 0 ? "+" : ""}${money(d)}`;
+                        })()}
+                      </div>
+                    </div>
+                    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Total sistema</div>
+                      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(selectedRun.revision?.reconciliation_totals?.total_sistema)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+                  <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Datos principales
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0">Total real</span>
+                      <span className="min-w-0 truncate text-right font-semibold">{money(selectedRun.revision?.reconciliation_totals?.total_real)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0">Venta real</span>
+                      <span className="min-w-0 truncate text-right font-semibold">{money(runTotal(selectedRun))}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0">Forecast dia</span>
+                      <span className="min-w-0 truncate text-right font-semibold">{money(runMeta(selectedRun))}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: (() => { const d = runDiff(selectedRun); return d == null ? INK : MUTED; })() }}>
+                      <span className="shrink-0">Diferencia forecast</span>
+                      <span className="min-w-0 truncate text-right font-semibold">{(() => { const d = runDiff(selectedRun); return d == null ? "-" : `${d >= 0 ? "+" : ""}${money(d)}`; })()}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0">Formato corte</span>
+                      <span className="min-w-0 truncate text-right font-semibold">{selectedRun.revision?.formato_corte ?? "-"}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0">Falta por entrar</span>
+                      <span className="min-w-0 truncate text-right font-semibold">{money(Object.values(selectedRun.revision?.falta_por_entrar ?? {}).reduce((sum: number, value: unknown) => sum + Number(value || 0), 0))}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+                  <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Venta Bruta (Excel)
+                  </div>
+                  {(() => {
+                    const reg = (selectedRun.output_payload?.income_register ?? {}) as Record<string, number>;
+                    const ch = (selectedRun.output_payload?.income_channels ?? {}) as Record<string, number>;
+                    const channels = [
+                      { key: "amex", label: "AMEX" },
+                      { key: "debito", label: "Debito" },
+                      { key: "credito", label: "Credito" },
+                      { key: "efectivo", label: "Efectivo" },
+                      { key: "paypal", label: "PayPal" },
+                      { key: "uber", label: "Uber" },
+                      { key: "rappi", label: "Rappi" },
+                      { key: "propinas", label: "Propinas" },
+                    ];
+                    return (
+                      <div className="space-y-2 text-sm">
+                        {channels.map(c => {
+                          const val = reg[c.key] ?? ch[c.key] ?? 0;
+                          return (
+                            <div key={c.key} className="flex justify-between rounded-md border px-3 py-2" style={{ borderColor: LINE }}>
+                              <span style={{ color: MUTED }}>{c.label}</span>
+                              <span className="font-semibold" style={{ color: INK }}>{money(val)}</span>
+                            </div>
+                          );
+                        })}
+                        <div className="flex justify-between rounded-md border px-3 py-2 pt-2 border-t font-semibold" style={{ borderColor: LINE }}>
+                          <span style={{ color: INK }}>Total</span>
+                          <span style={{ color: GOLD }}>{money(runTotal(selectedRun))}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <CorteAiBox runId={selectedRun.id} />
+
+                <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+                  <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+                    <MessageSquareText className="h-4 w-4" />
+                    Comentarios y correcciones
+                  </div>
+                  <p className="text-sm" style={{ color: MUTED }}>Funcionalidad de comentarios deshabilitada temporalmente</p>
+                </div>
+              </div>
+
+              <aside className="space-y-4">
+                <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+                  <div className="flex items-center gap-2 font-semibold" style={{ color: INK }}>
+                    Bancos
+                  </div>
+                  <p className="mt-2 text-sm" style={{ color: MUTED }}>Funcionalidad de bancos deshabilitada temporalmente</p>
+                </div>
+
+                <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+                  <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+                    <FolderOpen className="h-4 w-4" />
+                    Archivos de este dia
+                  </div>
+                  {["Corte", "Bancos", "Evidencia"].map((group) => {
+                    const docs = group === "Corte" 
+                      ? selectedRun.documents.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report"].includes(doc.document_type))
+                      : group === "Bancos"
+                      ? selectedRun.documents.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type))
+                      : selectedRun.documents.filter((doc) => !["corte_excel", "daily_sales_report", "revision_report", "amex_statement", "banorte_statement"].includes(doc.document_type));
+                    return (
+                      <div key={group} className="mb-3">
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{group}</div>
+                        {docs.length === 0 ? (
+                          <div className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: LINE, color: MUTED }}>Sin archivos registrados</div>
+                        ) : docs.slice(0, 4).map((doc) => (
+                          <a key={doc.id} href={doc.source_uri ?? "#"} className="mb-1 flex items-center justify-between rounded-md border px-3 py-2 text-xs" style={{ borderColor: LINE, color: INK, pointerEvents: doc.source_uri ? "auto" : "none" }}>
+                            <span>{String(doc.metadata?.name ?? doc.metadata?.original_filename ?? doc.document_type)}</span>
+                            <ChevronRight className="h-3 w-3" />
+                          </a>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {selectedRun.exceptions.filter((item) => item.status !== "resolved").length > 0 && (
+                  <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
+                    <div className="font-semibold" style={{ color: INK }}>Pendientes por resolver</div>
+                    <div className="mt-2 space-y-2">
+                      {selectedRun.exceptions.filter((item) => item.status !== "resolved").slice(0, 4).map((item) => (
+                        <div key={item.id} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#e4c58f", color: MUTED }}>
+                          {item.exception_key}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!!selectedRun.output_payload?.saldos && (
+                  <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+                    <div className="mb-3 font-semibold" style={{ color: INK }}>Saldos al cierre</div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                        <span className="shrink-0">Banorte</span>
+                        <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).banorte)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                        <span className="shrink-0">AMEX</span>
+                        <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).amex)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                        <span className="shrink-0">Efectivo</span>
+                        <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).efectivo)}</span>
+                      </div>
+                      <div className="pt-2 mt-2 border-t" style={{ borderColor: LINE }}>
+                        <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                          <span className="shrink-0">Aguinaldos</span>
+                          <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).aguinaldos)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
+                          <span className="shrink-0">Utilidades</span>
+                          <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).utilidades)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <Link href={`/archivos?month=${selectedMonth}`} className="flex items-center justify-between rounded-md border px-4 py-3 text-sm font-semibold" style={{ borderColor: LINE, background: PANEL, color: INK }}>
+                  Ver archivos del mes
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              </aside>
+            </section>
           ) : (
-            <div className="rounded-md border p-8 text-center text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>Eleg├¡ un d├¡a para ver el corte.</div>
+            <div className="rounded-md border p-8 text-center text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>Elegi un dia para ver el corte.</div>
           )}
         </section>
       </div>
