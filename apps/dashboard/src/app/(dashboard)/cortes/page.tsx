@@ -279,24 +279,24 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
           </div>
         )}
 
-        <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta mes</div>
-            <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{money(monthTotal)}</div>
+        <div className="grid gap-2 md:grid-cols-4">
+          <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta mes</div>
+            <div className="mt-0.5 text-base font-bold tracking-tight truncate">{money(monthTotal)}</div>
           </div>
-          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Forecast mes</div>
-            <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{money(monthMeta)}</div>
+          <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Forecast mes</div>
+            <div className="mt-0.5 text-base font-bold tracking-tight truncate">{money(monthMeta)}</div>
           </div>
-          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia mes</div>
-            <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl" style={{ color: monthDiff == null || monthDiff >= 0 ? GREEN : RED }}>
+          <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia mes</div>
+            <div className="mt-0.5 text-sm font-bold tracking-tight truncate" style={{ color: monthDiff == null || monthDiff >= 0 ? GREEN : RED }}>
               {monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta!) * 100).toFixed(1)}% / ${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`}
             </div>
           </div>
-          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Cortes del mes</div>
-            <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{monthRuns.length}</div>
+          <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Cortes del mes</div>
+            <div className="mt-0.5 text-base font-bold tracking-tight truncate">{monthRuns.length}</div>
           </div>
         </div>
 
@@ -369,18 +369,18 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                       Ver detalle completo
                     </Link>
                   </div>
-                  <div className="mt-5 grid gap-3 md:grid-cols-4">
-                    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta real</div>
-                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl" style={{ color: GOLD }}>{money(cortesDayVenta(selectedRun))}</div>
+                  <div className="mt-5 grid gap-2 md:grid-cols-4">
+                    <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta real</div>
+                      <div className="mt-0.5 text-base font-bold tracking-tight truncate" style={{ color: GOLD }}>{money(cortesDayVenta(selectedRun))}</div>
                     </div>
-                    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Meta forecast</div>
-                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{money(runMeta(selectedRun))}</div>
+                    <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Meta forecast</div>
+                      <div className="mt-0.5 text-base font-bold tracking-tight truncate">{money(runMeta(selectedRun))}</div>
                     </div>
-                    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia</div>
-                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl" style={{ color: (() => { const d = runDiff(selectedRun); const m = runMeta(selectedRun); return d == null || d >= 0 ? GREEN : RED; })() }}>
+                    <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia</div>
+                      <div className="mt-0.5 text-sm font-bold tracking-tight truncate" style={{ color: (() => { const d = runDiff(selectedRun); const m = runMeta(selectedRun); return d == null || d >= 0 ? GREEN : RED; })() }}>
                         {(() => {
                           const d = runDiff(selectedRun);
                           const m = runMeta(selectedRun);
@@ -388,48 +388,48 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                         })()}
                       </div>
                     </div>
-                    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Total sistema</div>
-                      <div className="mt-1 text-lg font-bold tracking-tight sm:text-xl">{money(selectedRun.revision?.reconciliation_totals?.total_sistema)}</div>
+                    <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Total sistema</div>
+                      <div className="mt-0.5 text-base font-bold tracking-tight truncate">{money(selectedRun.revision?.reconciliation_totals?.total_sistema)}</div>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-                  <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+                <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+                  <div className="mb-2 flex items-center gap-2 font-semibold text-sm" style={{ color: INK }}>
                     <FileSpreadsheet className="h-4 w-4" />
                     Datos principales
                   </div>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
-                      <span className="shrink-0">Total real</span>
+                  <div className="grid gap-1.5 md:grid-cols-2 text-xs">
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0" style={{ color: MUTED }}>Total real</span>
                       <span className="min-w-0 truncate text-right font-semibold">{money(selectedRun.revision?.reconciliation_totals?.total_real)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
-                      <span className="shrink-0">Venta real</span>
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0" style={{ color: MUTED }}>Venta real</span>
                       <span className="min-w-0 truncate text-right font-semibold">{money(cortesDayVenta(selectedRun))}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
-                      <span className="shrink-0">Forecast dia</span>
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0" style={{ color: MUTED }}>Forecast dia</span>
                       <span className="min-w-0 truncate text-right font-semibold">{money(runMeta(selectedRun))}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: (() => { const d = runDiff(selectedRun); return d == null ? INK : MUTED; })() }}>
-                      <span className="shrink-0">Diferencia forecast</span>
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE, color: MUTED }}>
+                      <span className="shrink-0">Diferencia</span>
                       <span className="min-w-0 truncate text-right font-semibold">{(() => { const d = runDiff(selectedRun); return d == null ? "-" : `${d >= 0 ? "+" : ""}${money(d)}`; })()}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
-                      <span className="shrink-0">Formato corte</span>
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0" style={{ color: MUTED }}>Formato</span>
                       <span className="min-w-0 truncate text-right font-semibold">{selectedRun.revision?.formato_corte ?? "-"}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
-                      <span className="shrink-0">Falta por entrar</span>
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE, color: INK }}>
+                      <span className="shrink-0" style={{ color: MUTED }}>Falta entrar</span>
                       <span className="min-w-0 truncate text-right font-semibold">{money(Object.values(selectedRun.revision?.falta_por_entrar ?? {}).reduce((sum: number, value: unknown) => sum + Number(value || 0), 0))}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-                  <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
+                <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+                  <div className="mb-2 flex items-center gap-2 font-semibold text-sm" style={{ color: INK }}>
                     <FileSpreadsheet className="h-4 w-4" />
                     Venta Bruta (Excel)
                   </div>
@@ -447,17 +447,17 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                       { key: "propinas", label: "Propinas" },
                     ];
                     return (
-                      <div className="space-y-2 text-sm">
+                      <div className="space-y-1 text-xs">
                         {channels.map(c => {
                           const val = reg[c.key] ?? ch[c.key] ?? 0;
                           return (
-                            <div key={c.key} className="flex justify-between rounded-md border px-3 py-2" style={{ borderColor: LINE }}>
+                            <div key={c.key} className="flex justify-between rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE }}>
                               <span style={{ color: MUTED }}>{c.label}</span>
                               <span className="font-semibold" style={{ color: INK }}>{money(val)}</span>
                             </div>
                           );
                         })}
-                        <div className="flex justify-between rounded-md border px-3 py-2 pt-2 border-t font-semibold" style={{ borderColor: LINE }}>
+                        <div className="flex justify-between rounded-md border px-2.5 py-1.5 font-semibold" style={{ borderColor: GOLD }}>
                           <span style={{ color: INK }}>Total</span>
                           <span style={{ color: GOLD }}>{money(cortesDayVenta(selectedRun))}</span>
                         </div>

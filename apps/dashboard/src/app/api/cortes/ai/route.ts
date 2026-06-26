@@ -147,8 +147,41 @@ export async function POST(request: Request) {
 
   const prompt = parts.join("\n");
 
+  // Try Claude first, fall back to Gemini
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    const claudeModel = process.env.CLAUDE_MODEL || "claude-3-5-sonnet-latest";
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": anthropicKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: claudeModel,
+        max_tokens: 600,
+        temperature: 0.2,
+        system: "Sos SantoBot, el asistente financiero de Santo Restaurants. Respondé en español, breve y claro. Solo usá los datos provistos, no inventes.",
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (response.ok) {
+      const payload = await response.json();
+      const answer = payload?.content?.map((block: { text?: string }) => block.text ?? "").join("").trim();
+      return NextResponse.json({ answer: answer || "No pude generar una respuesta con los datos disponibles." });
+    }
+  }
+
+  // Fallback to Gemini
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    return NextResponse.json({ error: "Falta configurar GEMINI_API_KEY o ANTHROPIC_API_KEY." }, { status: 503 });
+  }
+
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -158,7 +191,7 @@ export async function POST(request: Request) {
   });
 
   if (!response.ok) {
-    return NextResponse.json({ error: "Gemini no pudo responder ahora." }, { status: 502 });
+    return NextResponse.json({ error: "El asistente no pudo responder ahora." }, { status: 502 });
   }
 
   const payload = await response.json();
