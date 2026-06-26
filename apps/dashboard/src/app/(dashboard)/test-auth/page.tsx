@@ -200,6 +200,79 @@ export default async function TestPage({ searchParams }: { searchParams: SearchP
         <div className="text-xs" style={{ color: MUTED }}>
           Runs: {runs.length} | UnitRuns: {unitRuns.length} | MonthRuns: {monthRuns.length} | Weeks: {weeks.length}
         </div>
+
+        {/* Step 3: WeekSelector */}
+        <section>
+          <div className="mb-3 font-semibold">Semanas</div>
+          <div className="grid gap-2 md:grid-cols-4">
+            {weeks.map((week, index) => (
+              <Link
+                key={week}
+                href={`/test-auth?unit=${selectedUnit}&month=${selectedMonth}&week=${week}`}
+                className="rounded-md border px-3 py-3 text-sm"
+                style={{ borderColor: week === selectedWeek ? GOLD : LINE, background: week === selectedWeek ? "#fdf2f2" : PANEL, color: INK }}
+              >
+                <span className="block text-[11px] font-semibold uppercase" style={{ color: MUTED }}>Semana {index + 1}</span>
+                <span className="mt-1 block font-semibold">{dateLabel(week, "short")}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Step 4: ForecastMissingPanel */}
+        {!forecastReady && (
+          <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5" style={{ color: AMBER }} />
+              <div>
+                <div className="font-semibold" style={{ color: INK }}>Falta forecast de {monthLabel(selectedMonth)}</div>
+                <p className="mt-1 text-sm" style={{ color: MUTED }}>Subilo una vez y queda registrado para todo el mes.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Duplicate warning */}
+        {duplicateDates.length > 0 && (
+          <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
+            Hay cortes duplicados para {duplicateDates.map(([date]) => dateLabel(date, "short")).join(", ")}. Se muestra solo la versión más completa de cada día.
+          </div>
+        )}
+
+        {/* Step 6: DayList + DetailPanel - minimal version */}
+        <section className="grid gap-4 lg:grid-cols-[320px_1fr]">
+          <div>
+            <div className="mb-3 font-semibold">Días</div>
+            {weekRuns.length > 0 ? (
+              <div className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
+                {weekRuns.map((run) => {
+                  const selected = run.id === selectedRun?.id;
+                  return (
+                    <Link
+                      key={run.id}
+                      href={`/test-auth?unit=${selectedUnit}&month=${selectedMonth}&week=${selectedWeek}&day=${run.id}`}
+                      className="flex items-center justify-between border-b px-4 py-3 last:border-b-0"
+                      style={{ borderColor: LINE, background: selected ? "#fdf2f2" : PANEL, color: INK }}
+                    >
+                      <div>
+                        <div className="font-semibold">{dateLabel(run.business_date, "short")}</div>
+                        <div className="mt-1 text-xs" style={{ color: MUTED }}>{run.status}</div>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        <div className="text-base font-bold tracking-tight">{money(runTotal(run))}</div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-md border p-5 text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>No hay cortes en esta semana.</div>
+            )}
+          </div>
+          <div className="rounded-md border p-5 text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>
+            Panel de detalle (simplificado)
+          </div>
+        </section>
       </div>
     </main>
   );
