@@ -362,6 +362,13 @@ def build_canonical_evidence(
         courtesy = 0.0
     income_cash = round(cash_base + courtesy, 2)
 
+    # Add courtesy to efectivo in terminal and sistema closures so reconciliation
+    # totals match the income register.
+    for closure in (terminal, sistema):
+        entry = closure.setdefault("efectivo", {})
+        if isinstance(entry, dict):
+            entry["consumo"] = round(_amount(entry.get("consumo")) + courtesy, 2)
+
     # --- CXC (Cuenta por Cobrar) ---
     cxc_consumo = 0.0
     cxc_propina = 0.0
