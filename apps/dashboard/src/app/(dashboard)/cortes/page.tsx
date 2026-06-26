@@ -1,20 +1,18 @@
 import {
   AlertTriangle,
   CalendarDays,
-  CheckCircle2,
-  ChevronRight,
   FileSpreadsheet,
-  FolderOpen,
-  MessageSquareText,
-  UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
 
+import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/(dashboard)/conciliacion/actions";
+import { saveCorteComment, saveManualCorrection, uploadForecast } from "@/app/(dashboard)/cortes/actions";
+import { CorteAiBox } from "@/app/(dashboard)/cortes/CorteAiBox";
+
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
-import { CorteAiBox } from "./CorteAiBox";
 
-type SearchParams = Promise<{ unit?: string; year?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
+type SearchParams = Promise<{ unit?: string; year?: string; month?: string; week?: string; day?: string }>;
 
 const INK = "#282521";
 const MUTED = "#766f65";
@@ -71,374 +69,22 @@ function yearKey(date: string | null | undefined) {
   return date ? date.slice(0, 4) : "sin-ano";
 }
 
-function YearSelector({ years, selected, unit }: { years: string[]; selected: string; unit: string }) {
-  return (
-    <div className="flex gap-2">
-      {years.map((year) => (
-        <Link
-          key={year}
-          href={`/cortes?unit=${unit}&year=${year}`}
-          className="shrink-0 rounded-md border px-4 py-2 text-sm font-semibold"
-          style={{ borderColor: year === selected ? GOLD : LINE, background: year === selected ? "#fdf2f2" : PANEL, color: year === selected ? GOLD : INK }}
-        >
-          {year}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 function getUnit(run: ReconciliationRun) {
   return (run.revision?.unidad || run.revision?.restaurant_key || "SANTO").toUpperCase();
 }
 
-function statusText(run: ReconciliationRun) {
-  const bankValidated = isBankValidated(run);
-  if (bankValidated) return "Validado con bancos";
-  if (run.status === "requires_review") return "Necesita revisión";
-  if (run.status === "waiting_for_input") return "Faltan bancos";
-  if (run.status === "completed") return "Corte cargado";
-  return run.status;
-}
+function runTotal(run: ReconciliationRun) { return dailySales(run); }
 
-function statusColor(run: ReconciliationRun) {
-  if (isBankValidated(run)) return GREEN;
-  if (run.status === "requires_review") return AMBER;
-  if (run.status === "waiting_for_input") return RED;
-  return MUTED;
-}
-
-function isBankValidated(run: ReconciliationRun) {
-  return run.status === "completed" || run.status === "bank_validated" || run.documents.some((doc) => doc.document_type === "amex_statement" || doc.document_type === "banorte_statement");
-}
-
-function hasApproval(run: ReconciliationRun) {
-  return run.reviews.some((review) => review.review_key === APPROVAL_REVIEW_KEY && review.status === "approved");
-}
-
-function runTotal(run: ReconciliationRun) {
-  return dailySales(run);
-}
-
-function runMeta(run: ReconciliationRun) {
-  return dailyForecastMeta(run);
-}
-
-function runDiff(run: ReconciliationRun) {
-  const meta = runMeta(run);
-  return meta == null ? null : runTotal(run) - meta;
-}
-
-function Flash({ success, error }: { success?: string; error?: string }) {
-  if (!success && !error) return null;
-  const labels: Record<string, string> = {
-    agent_mail_approved: "Corte aprobado. Ya se pueden subir bancos.",
-    bank_watcher_triggered: "Bancos subidos. La validación bancaria quedó disparada.",
-    comment_saved: "Comentario guardado.",
-    manual_correction_saved: "Corrección guardada y auditada.",
-    forecast_uploaded: "Forecast subido y registrado para el mes.",
-  };
-  return (
-    <div className="rounded-md border px-4 py-3 text-sm" style={{ borderColor: error ? "#e8b4aa" : "#b8dbc9", background: error ? "#fff4f1" : "#f1fbf5", color: error ? RED : GREEN }}>
-      {error ? decodeURIComponent(error) : labels[success ?? ""] ?? "Guardado."}
-    </div>
-  );
-}
-function SummaryTile({ label, value, tone = INK }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
-      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>{label}</div>
-      <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: tone }}>{value}</div>
-    </div>
-  );
-}
-
-function UnitSelector({ units, selected, year, month, week, day }: { units: string[]; selected: string; year: string; month: string; week: string; day?: string }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {units.map((unit) => (
-        <Link
-          key={unit}
-          href={`/cortes?unit=${unit}&year=${year}&month=${month}&week=${week}${day ? `&day=${day}` : ""}`}
-          className="rounded-md border px-4 py-2 text-sm font-semibold"
-          style={{ borderColor: unit === selected ? GOLD : LINE, background: unit === selected ? "#fdf2f2" : PANEL, color: unit === selected ? GOLD : INK }}
-        >
-          {unit}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function MonthSelector({ months, selected, unit, year }: { months: string[]; selected: string; unit: string; year: string }) {
-  return (
-    <div className="flex gap-2 overflow-x-auto pb-1">
-      {months.map((month) => (
-        <Link
-          key={month}
-          href={`/cortes?unit=${unit}&year=${year}&month=${month}`}
-          className="shrink-0 rounded-md border px-3 py-2 text-sm"
-          style={{ borderColor: month === selected ? GOLD : LINE, background: month === selected ? "#fdf2f2" : PANEL, color: month === selected ? GOLD : INK }}
-        >
-          {monthLabel(month)}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function WeekSelector({ weeks, selected, unit, month }: { weeks: string[]; selected: string; unit: string; month: string }) {
-  return (
-    <div className="grid gap-2 md:grid-cols-4">
-      {weeks.map((week, index) => (
-        <Link
-          key={week}
-          href={`/cortes?unit=${unit}&month=${month}&week=${week}`}
-          className="rounded-md border px-3 py-3 text-sm"
-          style={{ borderColor: week === selected ? GOLD : LINE, background: week === selected ? "#fdf2f2" : PANEL, color: INK }}
-        >
-          <span className="block text-[11px] font-semibold uppercase" style={{ color: MUTED }}>Semana {index + 1}</span>
-          <span className="mt-1 block font-semibold">{dateLabel(week, "short")}</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function DayList({ runs, selectedId, unit, month, week }: { runs: ReconciliationRun[]; selectedId?: string; unit: string; month: string; week: string }) {
-  return (
-    <div className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
-      {runs.map((run) => {
-        const selected = run.id === selectedId;
-        const diff = runDiff(run);
-        return (
-          <Link
-            key={run.id}
-            href={`/cortes?unit=${unit}&month=${month}&week=${week}&day=${run.id}`}
-            className="flex items-center justify-between border-b px-4 py-3 last:border-b-0"
-            style={{ borderColor: LINE, background: selected ? "#fdf2f2" : PANEL, color: INK }}
-          >
-            <div>
-              <div className="font-semibold">{dateLabel(run.business_date, "short")}</div>
-              <div className="mt-1 text-xs" style={{ color: statusColor(run) }}>{statusText(run)}</div>
-            </div>
-            <div className="text-right shrink-0 ml-3">
-              <div className="text-base font-bold tracking-tight">{money(runTotal(run))}</div>
-              <div className="text-xs" style={{ color: diff == null || diff === 0 ? MUTED : diff > 0 ? GREEN : RED }}>
-                {(() => {
-                  const meta = runMeta(run);
-                  return diff == null || meta == null ? "Sin forecast" : `${diff >= 0 ? "+" : ""}${((diff / meta) * 100).toFixed(1)}% / ${diff >= 0 ? "+" : ""}${money(diff)}`;
-                })()}
-              </div>
-            </div>
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-function DocumentsPanel({ run }: { run: ReconciliationRun }) {
-  const groups = [
-    { label: "Corte", docs: run.documents.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report"].includes(doc.document_type)) },
-    { label: "Bancos", docs: run.documents.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type)) },
-    { label: "Evidencia", docs: run.documents.filter((doc) => !["corte_excel", "daily_sales_report", "revision_report", "amex_statement", "banorte_statement"].includes(doc.document_type)) },
-  ];
-  return (
-    <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
-      <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-        <FolderOpen className="h-4 w-4" />
-        Archivos de este día
-      </div>
-      <div className="space-y-3">
-        {groups.map((group) => (
-          <div key={group.label}>
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{group.label}</div>
-            {group.docs.length === 0 ? (
-              <div className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: LINE, color: MUTED }}>Sin archivos registrados</div>
-            ) : group.docs.slice(0, 4).map((doc) => (
-              <a
-                key={doc.id}
-                href={doc.source_uri ?? "#"}
-                className="mb-1 flex items-center justify-between rounded-md border px-3 py-2 text-xs"
-                style={{ borderColor: LINE, color: INK, pointerEvents: doc.source_uri ? "auto" : "none" }}
-              >
-                <span>{String(doc.metadata?.name ?? doc.metadata?.original_filename ?? doc.document_type)}</span>
-                <ChevronRight className="h-3 w-3" />
-              </a>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ForecastMissingPanel() {
-  return <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>Forecast upload deshabilitado</div>;
-}
-
-function BankUploadPanel() {
-  return <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>Bank upload deshabilitado</div>;
-}
-
-function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: string; returnTo: string }) {
-  const revision = run.revision;
-  const meta = runMeta(run);
-  const diff = runDiff(run);
-  const openExceptions = run.exceptions.filter((item) => item.status !== "resolved");
-  const comments = Array.isArray(run.output_payload?.dashboard_comments) ? run.output_payload.dashboard_comments as Array<Record<string, unknown>> : [];
-  const corrections = Array.isArray(run.output_payload?.dashboard_manual_corrections) ? run.output_payload.dashboard_manual_corrections as Array<Record<string, unknown>> : [];
-  return (
-    <section className="grid gap-4 lg:grid-cols-[1fr_360px] overflow-hidden">
-      <div className="space-y-4 min-w-0">
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>{getUnit(run)}</div>
-              <h2 className="mt-1 text-3xl font-bold tracking-tight" style={{ color: INK }}>{dateLabel(run.business_date)}</h2>
-              <div className="mt-2 inline-flex rounded-md border px-2.5 py-1 text-sm font-semibold" style={{ borderColor: statusColor(run), color: statusColor(run), background: `${statusColor(run)}12` }}>
-                {statusText(run)}
-              </div>
-            </div>
-            <Link href={`/cortes/${run.id}`} className="rounded-md border px-3 py-2 text-sm font-semibold" style={{ borderColor: LINE, color: INK }}>
-              Ver detalle completo
-            </Link>
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
-            <SummaryTile label="Venta real" value={money(runTotal(run))} tone={GOLD} />
-            <SummaryTile label="Meta forecast" value={money(meta)} />
-            <SummaryTile 
-              label="Diferencia" 
-              value={diff == null || meta == null ? "-" : `${diff >= 0 ? "+" : ""}${((diff / meta) * 100).toFixed(1)}% / ${diff >= 0 ? "+" : ""}${money(diff)}`} 
-              tone={diff == null || diff >= 0 ? GREEN : RED} 
-            />
-            <SummaryTile label="Total sistema" value={money(revision?.reconciliation_totals?.total_sistema)} />
-          </div>
-        </div>
-
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-            <FileSpreadsheet className="h-4 w-4" />
-            Datos principales
-          </div>
-          <div className="grid gap-2 md:grid-cols-2">
-            <DataRow label="Total real" value={money(revision?.reconciliation_totals?.total_real)} />
-            <DataRow label="Venta real" value={money(runTotal(run))} />
-            <DataRow label="Forecast día" value={money(meta)} />
-            <DataRow label="Diferencia forecast" value={diff == null ? "-" : `${diff >= 0 ? "+" : ""}${money(diff)}`} />
-            <DataRow label="Formato corte" value={revision?.formato_corte ?? "-"} />
-            <DataRow label="Falta por entrar" value={money(Object.values(revision?.falta_por_entrar ?? {}).reduce((sum, value) => sum + Number(value || 0), 0))} />
-          </div>
-        </div>
-
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-            <FileSpreadsheet className="h-4 w-4" />
-            Venta Bruta (Excel)
-          </div>
-          {(() => {
-            const reg = (run.output_payload?.income_register ?? {}) as Record<string, number>;
-            const ch = (run.output_payload?.income_channels ?? {}) as Record<string, number>;
-            const amex = reg.amex ?? ch.amex ?? 0;
-            const debito = reg.debito ?? ch.debito ?? 0;
-            const credito = reg.credito ?? ch.credito ?? 0;
-            const efectivo = reg.efectivo ?? ch.efectivo ?? 0;
-            const paypal = reg.paypal ?? ch.paypal ?? 0;
-            const uber = reg.uber ?? ch.uber ?? 0;
-            const rappi = reg.rappi ?? ch.rappi ?? 0;
-            const propinas = reg.propinas ?? ch.propinas ?? 0;
-
-            return (
-              <div className="text-sm" style={{ color: MUTED, padding: "12px 0" }}>Tabla de edición deshabilitada temporalmente.</div>
-            );
-          })()}
-        </div>
-
-        <CorteAiBox runId={run.id} />
-        <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-          <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-            <MessageSquareText className="h-4 w-4" />
-            Comentarios y correcciones
-          </div>
-          <div className="mb-4 text-sm" style={{ color: MUTED }}>Comentarios deshabilitados</div>
-
-          {(comments.length > 0 || corrections.length > 0) && (
-            <div className="mt-4 space-y-2 text-sm" style={{ color: MUTED }}>
-              {comments.slice(-3).map((comment, index) => <div key={`c-${index}`}>Comentario: {String(comment.comment ?? "")}</div>)}
-              {corrections.slice(-3).map((correction, index) => <div key={`m-${index}`}>Corrección: {String(correction.field)} = {String(correction.value)}</div>)}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <aside className="space-y-4">
-        <BankUploadPanel />
-        <DocumentsPanel run={run} />
-        {openExceptions.length > 0 && (
-          <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
-            <div className="font-semibold" style={{ color: INK }}>Pendientes por resolver</div>
-            <div className="mt-2 space-y-2">
-              {openExceptions.slice(0, 4).map((item) => (
-                <div key={item.id} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#e4c58f", color: MUTED }}>
-                  {item.exception_key}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {!!run.output_payload?.saldos && (
-          <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
-            <div className="mb-3 font-semibold" style={{ color: INK }}>Saldos al cierre</div>
-            <div className="space-y-2 text-sm">
-              <DataRow label="Banorte" value={money((run.output_payload.saldos as Record<string, number>).banorte)} />
-              <DataRow label="AMEX" value={money((run.output_payload.saldos as Record<string, number>).amex)} />
-              <DataRow label="Efectivo" value={money((run.output_payload.saldos as Record<string, number>).efectivo)} />
-              <div className="pt-2 mt-2 border-t" style={{ borderColor: LINE }}>
-                <DataRow label="Aguinaldos" value={money((run.output_payload.saldos as Record<string, number>).aguinaldos)} />
-                <DataRow label="Utilidades" value={money((run.output_payload.saldos as Record<string, number>).utilidades)} />
-              </div>
-            </div>
-          </div>
-        )}
-        <Link href={`/archivos?month=${month}`} className="flex items-center justify-between rounded-md border px-4 py-3 text-sm font-semibold" style={{ borderColor: LINE, background: PANEL, color: INK }}>
-          Ver archivos del mes
-          <ChevronRight className="h-4 w-4" />
-        </Link>
-      </aside>
-    </section>
-  );
-}
-
-function DataRow({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: muted ? "#aaa298" : INK }}>
-      <span className="shrink-0">{label}</span>
-      <span className="min-w-0 truncate text-right font-semibold">{value}</span>
-    </div>
-  );
-}
-
-export default async function CortesPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function TestPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const data = await getReconciliationData();
 
   if (data.status === "auth_required") {
-    return (
-      <main className="flex min-h-screen items-center justify-center" style={{ background: PAPER, color: INK }}>
-        <Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Iniciar sesión</Link>
-      </main>
-    );
+    return <main className="flex min-h-screen items-center justify-center" style={{ background: PAPER, color: INK }}><Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Iniciar sesion</Link></main>;
   }
 
   if (data.status === "unauthorized") {
-    return (
-      <main className="flex min-h-screen items-center justify-center flex-col gap-4" style={{ background: PAPER, color: INK }}>
-        <div className="text-xl font-bold">Acceso Denegado</div>
-        <div className="text-sm">Necesitas permisos de supervisor para ver este panel.</div>
-        <Link href="/auth/sign-in" className="rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Volver al login</Link>
-      </main>
-    );
+    return <main className="flex min-h-screen items-center justify-center flex-col gap-4" style={{ background: PAPER, color: INK }}><div className="text-xl font-bold">Acceso Denegado</div></main>;
   }
 
   const allRuns = data.runs.filter((run) => run.business_date);
@@ -457,46 +103,20 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const selectedWeek = params.week && weeks.includes(params.week) ? params.week : weeks[weeks.length - 1] ?? "sin-semana";
   const weekRuns = monthRuns.filter((run) => weekKey(run.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
-  const returnTo = `/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
   const { monthTotal, monthMeta } = getMonthlyTotals(monthRuns, selectedMonth);
   const monthDiff = monthMeta == null ? null : monthTotal - monthMeta;
 
+  // Step 2: JSX with UnitSelector, YearSelector, MonthSelector, and KPIs
   return (
-    <main className="min-h-screen" style={{ background: PAPER, color: INK, overflowX: "hidden" }}>
+    <main className="min-h-screen" style={{ background: PAPER, color: INK }}>
       <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
         <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 pl-10 lg:pl-0">
           <div>
             <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Control</div>
             <h1 className="mt-1 text-3xl font-semibold">Cortes de Caja</h1>
-            <p className="mt-2 max-w-3xl text-sm" style={{ color: MUTED }}>
-              Vista simple para revisar el corte, compararlo contra forecast y subir bancos cuando esté aprobado.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link 
-              href={`/socios?month=${selectedMonth}`} 
-              target="_blank"
-              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition-colors hover:bg-gray-50"
-              style={{ borderColor: LINE, color: INK }}
-            >
-              <UploadCloud className="h-4 w-4" />
-              Vista para Socios
-            </Link>
-            <button 
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/socios?month=${selectedMonth}`);
-                alert("Enlace copiado al portapapeles");
-              }}
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
-              style={{ background: GOLD, color: "white" }}
-            >
-              Compartir enlace
-            </button>
           </div>
         </header>
-
-        <Flash success={params.success} error={params.error} />
 
         {data.status === "requires_config" && (
           <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
@@ -507,60 +127,198 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
           <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e8b4aa", background: "#fff4f1", color: RED }}>{data.error}</div>
         )}
 
+        {/* Step 2a: UnitSelector */}
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 flex items-center gap-2 font-semibold"><CalendarDays className="h-4 w-4" /> Unidad</div>
-          <UnitSelector units={units.length ? units : ["SANTO"]} selected={selectedUnit} year={selectedYear} month={selectedMonth} week={selectedWeek} day={selectedRun?.id} />
+          <div className="flex flex-wrap gap-2">
+            {units.map((unit) => (
+              <Link
+                key={unit}
+                href={`/cortes?unit=${unit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}`}
+                className="rounded-md border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: unit === selectedUnit ? GOLD : LINE, background: unit === selectedUnit ? "#fdf2f2" : PANEL, color: unit === selectedUnit ? GOLD : INK }}
+              >
+                {unit}
+              </Link>
+            ))}
+          </div>
         </section>
 
+        {/* Step 2b: YearSelector */}
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 font-semibold">Año</div>
-          <YearSelector years={years.length ? years : [selectedYear]} selected={selectedYear} unit={selectedUnit} />
+          <div className="flex gap-2">
+            {years.map((year) => (
+              <Link
+                key={year}
+                href={`/cortes?unit=${selectedUnit}&year=${year}`}
+                className="shrink-0 rounded-md border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: year === selectedYear ? GOLD : LINE, background: year === selectedYear ? "#fdf2f2" : PANEL, color: year === selectedYear ? GOLD : INK }}
+              >
+                {year}
+              </Link>
+            ))}
+          </div>
         </section>
 
+        {/* Step 2c: MonthSelector */}
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 font-semibold">Mes</div>
-          <MonthSelector months={months.length ? months : [selectedMonth]} selected={selectedMonth} unit={selectedUnit} year={selectedYear} />
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {months.map((month) => (
+              <Link
+                key={month}
+                href={`/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${month}`}
+                className="shrink-0 rounded-md border px-3 py-2 text-sm"
+                style={{ borderColor: month === selectedMonth ? GOLD : LINE, background: month === selectedMonth ? "#fdf2f2" : PANEL, color: month === selectedMonth ? GOLD : INK }}
+              >
+                {monthLabel(month)}
+              </Link>
+            ))}
+          </div>
         </section>
 
-        {!forecastReady && <ForecastMissingPanel />}
+        {/* Step 2d: KPI Cards */}
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: GOLD }}>{money(monthTotal)}</div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Forecast mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(monthMeta)}</div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Diferencia mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: monthDiff == null || monthDiff >= 0 ? GREEN : RED }}>
+              {monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta!) * 100).toFixed(1)}% / ${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`}
+            </div>
+          </div>
+          <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Cortes del mes</div>
+            <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{monthRuns.length}</div>
+          </div>
+        </div>
 
+        {/* Debug */}
+        <div className="text-xs" style={{ color: MUTED }}>
+          Runs: {runs.length} | UnitRuns: {unitRuns.length} | MonthRuns: {monthRuns.length} | Weeks: {weeks.length}
+        </div>
+
+        {/* Step 3: WeekSelector */}
+        <section>
+          <div className="mb-3 font-semibold">Semanas</div>
+          <div className="grid gap-2 md:grid-cols-4">
+            {weeks.map((week, index) => (
+              <Link
+                key={week}
+                href={`/cortes?unit=${selectedUnit}&month=${selectedMonth}&week=${week}`}
+                className="rounded-md border px-3 py-3 text-sm"
+                style={{ borderColor: week === selectedWeek ? GOLD : LINE, background: week === selectedWeek ? "#fdf2f2" : PANEL, color: INK }}
+              >
+                <span className="block text-[11px] font-semibold uppercase" style={{ color: MUTED }}>Semana {index + 1}</span>
+                <span className="mt-1 block font-semibold">{dateLabel(week, "short")}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Step 4: ForecastMissingPanel */}
+        {!forecastReady && (
+          <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5" style={{ color: AMBER }} />
+              <div>
+                <div className="font-semibold" style={{ color: INK }}>Falta forecast de {monthLabel(selectedMonth)}</div>
+                <p className="mt-1 text-sm" style={{ color: MUTED }}>Subilo una vez y queda registrado para todo el mes.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Duplicate warning */}
         {duplicateDates.length > 0 && (
           <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
             Hay cortes duplicados para {duplicateDates.map(([date]) => dateLabel(date, "short")).join(", ")}. Se muestra solo la versión más completa de cada día.
           </div>
         )}
 
-        <div className="grid gap-3 md:grid-cols-4">
-          <SummaryTile label="Venta mes" value={money(monthTotal)} tone={GOLD} />
-          <SummaryTile label="Forecast mes" value={money(monthMeta)} />
-          <SummaryTile 
-            label="Diferencia mes" 
-            value={monthDiff == null ? "-" : `${monthDiff >= 0 ? "+" : ""}${((monthDiff / monthMeta!) * 100).toFixed(1)}% / ${monthDiff >= 0 ? "+" : ""}${money(monthDiff)}`} 
-            tone={monthDiff == null || monthDiff >= 0 ? GREEN : RED} 
-          />
-          <SummaryTile label="Cortes del mes" value={String(monthRuns.length)} />
-        </div>
-
-        <section>
-          <div className="mb-3 font-semibold">Semanas</div>
-          <WeekSelector weeks={weeks.length ? weeks : [selectedWeek]} selected={selectedWeek} unit={selectedUnit} month={selectedMonth} />
-        </section>
-
+        {/* Step 6: DayList + DetailPanel - minimal version */}
         <section className="grid gap-4 lg:grid-cols-[320px_1fr]">
           <div>
             <div className="mb-3 font-semibold">Días</div>
             {weekRuns.length > 0 ? (
-              <DayList runs={weekRuns} selectedId={selectedRun?.id} unit={selectedUnit} month={selectedMonth} week={selectedWeek} />
+              <div className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
+                {weekRuns.map((run) => {
+                  const selected = run.id === selectedRun?.id;
+                  return (
+                    <Link
+                      key={run.id}
+                      href={`/cortes?unit=${selectedUnit}&month=${selectedMonth}&week=${selectedWeek}&day=${run.id}`}
+                      className="flex items-center justify-between border-b px-4 py-3 last:border-b-0"
+                      style={{ borderColor: LINE, background: selected ? "#fdf2f2" : PANEL, color: INK }}
+                    >
+                      <div>
+                        <div className="font-semibold">{dateLabel(run.business_date, "short")}</div>
+                        <div className="mt-1 text-xs" style={{ color: MUTED }}>{run.status}</div>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        <div className="text-base font-bold tracking-tight">{money(runTotal(run))}</div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
             ) : (
               <div className="rounded-md border p-5 text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>No hay cortes en esta semana.</div>
             )}
           </div>
-          {selectedRun ? (
-            <DetailPanel run={selectedRun} month={selectedMonth} returnTo={returnTo} />
-          ) : (
-            <div className="rounded-md border p-8 text-center text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>Elegí un día para ver el corte.</div>
-          )}
+          <div className="rounded-md border p-5 text-sm" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>
+            Panel de detalle (simplificado)
+          </div>
         </section>
+
+        {/* Step 7: DetailPanel content if run selected */}
+        {selectedRun && (
+          <section className="grid gap-4 lg:grid-cols-[1fr_360px] overflow-hidden mt-4">
+            <div className="space-y-4 min-w-0">
+              <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>{getUnit(selectedRun)}</div>
+                    <h2 className="mt-1 text-3xl font-bold tracking-tight" style={{ color: INK }}>{dateLabel(selectedRun.business_date)}</h2>
+                    <div className="mt-2 text-sm" style={{ color: MUTED }}>Status: {selectedRun.status}</div>
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-3 md:grid-cols-4">
+                  <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta real</div>
+                    <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: GOLD }}>{money(runTotal(selectedRun))}</div>
+                  </div>
+                  <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Meta forecast</div>
+                    <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(dailyForecastMeta(selectedRun))}</div>
+                  </div>
+                  <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Total real</div>
+                    <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(selectedRun.revision?.reconciliation_totals?.total_real)}</div>
+                  </div>
+                  <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Total sistema</div>
+                    <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(selectedRun.revision?.reconciliation_totals?.total_sistema)}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <aside className="space-y-4">
+              <CorteAiBox runId={selectedRun.id} />
+              <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+                <div className="font-semibold" style={{ color: INK }}>Archivos</div>
+                <p className="mt-2 text-sm" style={{ color: MUTED }}>{selectedRun.documents.length} documentos</p>
+              </div>
+            </aside>
+          </section>
+        )}
       </div>
     </main>
   );
