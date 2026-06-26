@@ -139,18 +139,26 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const latestRunWithForecast = monthRuns.find((run) => run.revision?.vta_por_dia && run.revision.vta_por_dia.length > 0);
   let forecastArray: Array<{ fecha?: string | null; meta_vta?: number | null; venta_real?: number | null }> = latestRunWithForecast?.revision?.vta_por_dia || [];
 
-  // If run's forecast has no meta values, try standalone forecast documents
-  const hasMetaFromRun = forecastArray.some(item => typeof item.meta_vta === "number" && item.meta_vta > 0);
-
-  if (!hasMetaFromRun && selectedMonth) {
+  // If forecast document exists for this month, prefer its meta values
+  // (they may be more up-to-date than the run's embedded forecast)
+  if (selectedMonth) {
     const forecastDoc = data.forecastDocuments.find(doc => {
       const meta = doc.metadata as Record<string, unknown>;
       return meta.month === selectedMonth;
     });
     if (forecastDoc) {
-      const vta = (forecastDoc.metadata as Record<string, unknown>).vta_por_dia;
-      if (Array.isArray(vta) && vta.length > 0) {
-        forecastArray = vta as typeof forecastArray;
+      const docVta = (forecastDoc.metadata as Record<string, unknown>).vta_por_dia;
+      if (Array.isArray(docVta) && docVta.length > 0) {
+        // Merge: use doc's meta_vta, keep run's venta_real if available
+        forecastArray = docVta.map((docItem: Record<string, unknown>) => {
+          const fecha = docItem.fecha as string | undefined;
+          const runItem = forecastArray.find(r => r.fecha === fecha);
+          return {
+            fecha: fecha ?? null,
+            meta_vta: (typeof docItem.meta_vta === "number" ? docItem.meta_vta : null) as number | null,
+            venta_real: runItem?.venta_real ?? (typeof docItem.venta_real === "number" ? docItem.venta_real : null) as number | null,
+          };
+        }) as typeof forecastArray;
       }
     }
   }
