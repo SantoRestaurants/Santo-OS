@@ -142,43 +142,40 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     };
   }
 
-  try {
-    var [emailsResult, documentsResult, reviewsResult, exceptionsResult, forecastResult] = await Promise.all([
-      supabase
-        .from("email_messages")
-        .select("workflow_run_id,from_address,subject,received_at,processing_status")
-        .in("workflow_run_id", runIds)
-        .order("received_at", { ascending: false }),
-      supabase
-        .from("documents")
-        .select("id,workflow_run_id,document_key,document_type,source_system,source_uri,drive_file_id,status,created_at,metadata,workflow_runs(business_date)")
-        .or(`workflow_run_id.in.(${runIds.join(",")}),workflow_run_id.is.null`)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("reviews")
-        .select("id,workflow_run_id,review_key,status,requested_at,completed_at,review_notes")
-        .in("workflow_run_id", runIds)
-        .order("requested_at", { ascending: false }),
-      supabase
-        .from("exceptions")
-        .select("id,workflow_run_id,exception_key,exception_type,severity,status,created_at")
-        .in("workflow_run_id", runIds)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("documents")
-        .select("id,document_key,document_type,source_system,status,created_at,metadata")
-        .is("workflow_run_id", null)
-        .eq("document_type", "forecast_workbook")
-        .order("created_at", { ascending: false }),
-    ]);
-  } catch (err) {
-    return {
-      status: "query_failed",
-      missingConfig: [],
-      error: err instanceof Error ? err.message : "query_failed",
-      runs: [],
-      forecastDocuments: [],
-    };
+  // Build queries array - only include forecast query for skipAuth (socios) path
+  const queries = [
+    supabase
+      .from("email_messages")
+      .select("workflow_run_id,from_address,subject,received_at,processing_status")
+      .in("workflow_run_id", runIds)
+      .order("received_at", { ascending: false }),
+    supabase
+      .from("documents")
+      .select("id,workflow_run_id,document_key,document_type,source_system,source_uri,drive_file_id,status,created_at,metadata,workflow_runs(business_date)")
+      .or(`workflow_run_id.in.(${runIds.join(",")}),workflow_run_id.is.null`)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("reviews")
+      .select("id,workflow_run_id,review_key,status,requested_at,completed_at,review_notes")
+      .in("workflow_run_id", runIds)
+      .order("requested_at", { ascending: false }),
+    supabase
+      .from("exceptions")
+      .select("id,workflow_run_id,exception_key,exception_type,severity,status,created_at")
+      .in("workflow_run_id", runIds)
+      .order("created_at", { ascending: false }),
+  ] as const;
+
+  const [emailsResult, documentsResult, reviewsResult, exceptionsResult] = await Promise.all(queries);
+
+  let forecastResult: any = { data: [], error: null };
+  if (skipAuth) {
+    forecastResult = await supabase
+      .from("documents")
+      .select("id,document_key,document_type,source_system,status,created_at,metadata")
+      .is("workflow_run_id", null)
+      .eq("document_type", "forecast_workbook")
+      .order("created_at", { ascending: false });
   }
 
   const firstError =
