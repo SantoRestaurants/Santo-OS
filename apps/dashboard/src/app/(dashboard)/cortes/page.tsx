@@ -15,7 +15,6 @@ import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, has
 import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/(dashboard)/conciliacion/actions";
 import { saveCorteComment, saveManualCorrection, uploadForecast } from "./actions";
 import { CorteAiBox } from "./CorteAiBox";
-import { InlineEditTable } from "./InlineEditTable";
 
 type SearchParams = Promise<{ unit?: string; year?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
 
@@ -401,19 +400,7 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
             const propinas = reg.propinas ?? ch.propinas ?? 0;
 
             return (
-              <InlineEditTable
-                runId={run.id}
-                returnTo={returnTo}
-                amex={amex}
-                debito={debito}
-                credito={credito}
-                efectivo={efectivo}
-                paypal={paypal}
-                uber={uber}
-                rappi={rappi}
-                propinas={propinas}
-                total={runTotal(run)}
-              />
+              <div className="text-sm" style={{ color: MUTED, padding: "12px 0" }}>Tabla de edición deshabilitada temporalmente.</div>
             );
           })()}
         </div>
