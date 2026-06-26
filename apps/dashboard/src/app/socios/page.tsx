@@ -162,6 +162,18 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     }
   }
 
+  /* Build lookup map for forecast doc venta_real to override run values */
+  const fcVentaMap = new Map<string, number>();
+  forecastArray.forEach(item => {
+    if (item.fecha && typeof item.venta_real === "number" && item.venta_real > 0) {
+      fcVentaMap.set(item.fecha, item.venta_real);
+    }
+  });
+  function dayVenta(run: ReconciliationRun) {
+    const fcVal = run.business_date ? fcVentaMap.get(run.business_date) : undefined;
+    return fcVal ?? runTotal(run);
+  }
+
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "");
 
   // Override monthTotal with forecast document's venta_real (source of truth from Excel)
@@ -204,7 +216,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   /* Chart data generation */
   const weekChartData = weekRuns.map(r => {
-    const vta = runTotal(r);
+    const vta = dayVenta(r);
     const meta = dailyForecastMeta(r) ?? getMetaForDay(r.business_date);
     const dateStr = r.business_date ? r.business_date.slice(8) : "";
     return {
@@ -220,7 +232,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     const date = f.fecha;
     if (!date) return null;
     const run = monthRuns.find(r => r.business_date === date);
-    const vta = run ? runTotal(run) : (typeof f.venta_real === "number" ? f.venta_real : 0);
+    const vta = run ? dayVenta(run) : (typeof f.venta_real === "number" ? f.venta_real : 0);
     const meta = typeof f.meta_vta === "number" ? f.meta_vta : 0;
     return {
       fecha: date,
@@ -233,7 +245,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   if (monthChartData.length === 0) {
     monthRuns.forEach(r => {
-      const vta = runTotal(r);
+      const vta = dayVenta(r);
       const meta = dailyForecastMeta(r) ?? getMetaForDay(r.business_date);
       if (r.business_date) {
         monthChartData.push({
@@ -263,12 +275,12 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   /* Week and month context for AI */
   const weekContext = {
-    totalVendido: weekRuns.reduce((sum, r) => sum + runTotal(r), 0),
+    totalVendido: weekRuns.reduce((sum, r) => sum + dayVenta(r), 0),
     totalMeta: weekRuns.reduce((sum, r) => sum + (dailyForecastMeta(r) ?? getMetaForDay(r.business_date) ?? 0), 0),
     diasConCorte: weekRuns.filter(r => r.status !== "pending_corte").length,
     cortes: weekRuns.map(r => ({
       fecha: r.business_date || "",
-      venta: runTotal(r),
+      venta: dayVenta(r),
       meta: dailyForecastMeta(r) ?? getMetaForDay(r.business_date),
       status: r.status,
     })),
@@ -449,7 +461,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                 <div className="week-card" style={{ color: C.faint, border: "none" }}>Sin semanas</div>
               ) : weeks.map((w, i) => {
                 const wRuns = monthRuns.filter(r => weekKey(r.business_date) === w);
-                const wTotal = wRuns.reduce((sum, r) => sum + runTotal(r), 0);
+                const wTotal = wRuns.reduce((sum, r) => sum + dayVenta(r), 0);
                 return (
                   <Link key={w} href={hp({ year: selectedYear, month: selectedMonth || "", week: w })} className={`week-card ${w === selectedWeek ? "active" : ""}`} style={{ border: "none" }}>
                     <div style={{ fontSize: "10px", fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>Semana {i + 1}</div>
@@ -472,7 +484,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                 <div style={{ padding: "24px 16px", fontSize: "13px", color: C.faint, textAlign: "center" }}>Sin cortes esta semana</div>
               ) : weekRuns.map(run => {
                 const dMeta = dailyForecastMeta(run) ?? getMetaForDay(run.business_date);
-                const dTotal = runTotal(run);
+                const dTotal = dayVenta(run);
                 const diff = dMeta > 0 ? dTotal - dMeta : null;
                 const active = selectedRun?.id === run.id;
                 const validated = isBankValidated(run);
@@ -514,7 +526,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
               {/* detail panel */}
               {selectedRun && (() => {
                 const srMeta = dailyForecastMeta(selectedRun) ?? getMetaForDay(selectedRun.business_date);
-                const srTotal = runTotal(selectedRun);
+                const srTotal = dayVenta(selectedRun);
                 const srDiff = srMeta > 0 ? srTotal - srMeta : null;
 
                 return (
