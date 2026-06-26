@@ -12,8 +12,6 @@ import Link from "next/link";
 
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
-import { approveAgentMailStage, uploadBankFilesAndTrigger } from "@/app/(dashboard)/conciliacion/actions";
-import { saveCorteComment, saveManualCorrection, uploadForecast } from "./actions";
 import { CorteAiBox } from "./CorteAiBox";
 
 type SearchParams = Promise<{ unit?: string; year?: string; month?: string; week?: string; day?: string; success?: string; error?: string }>;
@@ -276,60 +274,12 @@ function DocumentsPanel({ run }: { run: ReconciliationRun }) {
   );
 }
 
-function ForecastMissingPanel({ month, returnTo }: { month: string; returnTo: string }) {
-  return (
-    <form action={uploadForecast} className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
-      <input type="hidden" name="month" value={month} />
-      <input type="hidden" name="returnTo" value={returnTo} />
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-5 w-5" style={{ color: AMBER }} />
-        <div>
-          <div className="font-semibold" style={{ color: INK }}>Falta forecast de {monthLabel(month)}</div>
-          <p className="mt-1 text-sm" style={{ color: MUTED }}>Subilo una vez y queda registrado para todo el mes.</p>
-          <input name="forecastFile" type="file" accept=".xlsx,.xls" className="mt-3 block w-full text-sm" style={{ color: MUTED }} />
-          <button className="mt-3 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Subir forecast</button>
-        </div>
-      </div>
-    </form>
-  );
+function ForecastMissingPanel() {
+  return <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>Forecast upload deshabilitado</div>;
 }
 
-function BankUploadPanel({ run, returnTo }: { run: ReconciliationRun; returnTo: string }) {
-  const approved = hasApproval(run);
-  const validated = isBankValidated(run);
-  return (
-    <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
-      <div className="flex items-center gap-2 font-semibold" style={{ color: INK }}>
-        {validated ? <CheckCircle2 className="h-4 w-4" style={{ color: GREEN }} /> : <UploadCloud className="h-4 w-4" style={{ color: AMBER }} />}
-        Bancos
-      </div>
-      <p className="mt-2 text-sm" style={{ color: validated ? GREEN : MUTED }}>
-        {validated ? "Este corte ya tiene archivos bancarios registrados." : "Todavía no está validado con bancos."}
-      </p>
-      {!approved && !validated && (
-        <form action={approveAgentMailStage} className="mt-3">
-          <input type="hidden" name="workflowRunId" value={run.id} />
-          <input type="hidden" name="returnTo" value={returnTo} />
-          <textarea name="notes" rows={2} placeholder="Comentario de aprobación" className="w-full rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
-          <button className="mt-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: GOLD, color: "white" }}>Aprobar corte</button>
-        </form>
-      )}
-      {!validated && (
-        <form action={uploadBankFilesAndTrigger} className="mt-4 space-y-2">
-          <input type="hidden" name="workflowRunId" value={run.id} />
-          <input type="hidden" name="businessDate" value={run.business_date ?? ""} />
-          <input type="hidden" name="returnTo" value={returnTo} />
-          <label className="block text-xs font-semibold" style={{ color: MUTED }}>AMEX</label>
-          <input name="amexFile" type="file" accept=".xls,.xlsx" className="block w-full text-sm" disabled={!approved} />
-          <label className="block text-xs font-semibold" style={{ color: MUTED }}>Banorte</label>
-          <input name="banorteFile" type="file" accept=".csv,.xls,.xlsx" className="block w-full text-sm" disabled={!approved} />
-          <button disabled={!approved} className="rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50" style={{ background: approved ? GREEN : "#bdb6aa", color: "white" }}>
-            Subir bancos
-          </button>
-        </form>
-      )}
-    </div>
-  );
+function BankUploadPanel() {
+  return <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL, color: MUTED }}>Bank upload deshabilitado</div>;
 }
 
 function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: string; returnTo: string }) {
@@ -411,12 +361,7 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
             <MessageSquareText className="h-4 w-4" />
             Comentarios y correcciones
           </div>
-          <form action={saveCorteComment} className="mb-4">
-            <input type="hidden" name="workflowRunId" value={run.id} />
-            <input type="hidden" name="returnTo" value={returnTo} />
-            <textarea name="comment" rows={2} placeholder="Comentario de supervisora" className="w-full rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }} />
-            <button className="mt-2 rounded-md px-4 py-2 text-sm font-semibold" style={{ background: INK, color: "white" }}>Guardar comentario</button>
-          </form>
+          <div className="mb-4 text-sm" style={{ color: MUTED }}>Comentarios deshabilitados</div>
 
           {(comments.length > 0 || corrections.length > 0) && (
             <div className="mt-4 space-y-2 text-sm" style={{ color: MUTED }}>
@@ -428,7 +373,7 @@ function DetailPanel({ run, month, returnTo }: { run: ReconciliationRun; month: 
       </div>
 
       <aside className="space-y-4">
-        <BankUploadPanel run={run} returnTo={returnTo} />
+        <BankUploadPanel />
         <DocumentsPanel run={run} />
         {openExceptions.length > 0 && (
           <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
@@ -577,7 +522,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
           <MonthSelector months={months.length ? months : [selectedMonth]} selected={selectedMonth} unit={selectedUnit} year={selectedYear} />
         </section>
 
-        {!forecastReady && <ForecastMissingPanel month={selectedMonth} returnTo={returnTo} />}
+        {!forecastReady && <ForecastMissingPanel />}
 
         {duplicateDates.length > 0 && (
           <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
