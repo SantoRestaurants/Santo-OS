@@ -273,6 +273,47 @@ export default async function TestPage({ searchParams }: { searchParams: SearchP
             Panel de detalle (simplificado)
           </div>
         </section>
+
+        {/* Step 7: DetailPanel content if run selected */}
+        {selectedRun && (
+          <section className="grid gap-4 lg:grid-cols-[1fr_360px] overflow-hidden mt-4">
+            <div className="space-y-4 min-w-0">
+              <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>{getUnit(selectedRun)}</div>
+                    <h2 className="mt-1 text-3xl font-bold tracking-tight" style={{ color: INK }}>{dateLabel(selectedRun.business_date)}</h2>
+                    <div className="mt-2 text-sm" style={{ color: MUTED }}>Status: {selectedRun.status}</div>
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-3 md:grid-cols-4">
+                  <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Venta real</div>
+                    <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl" style={{ color: GOLD }}>{money(runTotal(selectedRun))}</div>
+                  </div>
+                  <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Meta forecast</div>
+                    <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(dailyForecastMeta(selectedRun))}</div>
+                  </div>
+                  <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Total real</div>
+                    <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(selectedRun.revision?.reconciliation_totals?.total_real)}</div>
+                  </div>
+                  <div className="rounded-md border px-4 py-3 min-w-0" style={{ background: PANEL, borderColor: LINE }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: MUTED }}>Total sistema</div>
+                    <div className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{money(selectedRun.revision?.reconciliation_totals?.total_sistema)}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <aside className="space-y-4">
+              <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
+                <div className="font-semibold" style={{ color: INK }}>Archivos</div>
+                <p className="mt-2 text-sm" style={{ color: MUTED }}>{selectedRun.documents.length} documentos</p>
+              </div>
+            </aside>
+          </section>
+        )}
       </div>
     </main>
   );
