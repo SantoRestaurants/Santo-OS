@@ -5,6 +5,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { CorteAiBox } from "@/app/(dashboard)/cortes/CorteAiBox";
+
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
 
@@ -307,6 +309,7 @@ export default async function TestPage({ searchParams }: { searchParams: SearchP
               </div>
             </div>
             <aside className="space-y-4">
+              <CorteAiBox runId={selectedRun.id} />
               <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
                 <div className="font-semibold" style={{ color: INK }}>Archivos</div>
                 <p className="mt-2 text-sm" style={{ color: MUTED }}>{selectedRun.documents.length} documentos</p>
