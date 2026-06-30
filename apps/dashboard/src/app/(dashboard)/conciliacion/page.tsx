@@ -1,7 +1,8 @@
-import { CheckCircle2, Clock3, FileSpreadsheet, UploadCloud } from "lucide-react";
+import { CheckCircle2, Clock3, FileSpreadsheet } from "lucide-react";
 import Link from "next/link";
 
-import { approveAgentMailStage, uploadBankFilesAndTrigger } from "./actions";
+import { approveAgentMailStage } from "./actions";
+import { BankUploadForm } from "./BankUploadForm";
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailySales, dedupeRunsByDay } from "@/lib/corte-dashboard-utils";
 
@@ -157,29 +158,12 @@ function RunCard({ run }: { run: ReconciliationRun }) {
             </button>
           </form>
 
-          <form action={uploadBankFilesAndTrigger} className="rounded-md border p-4" style={{ borderColor: LINE, background: "#fbfaf7" }}>
-            <input type="hidden" name="workflowRunId" value={run.id} />
-            <input type="hidden" name="businessDate" value={run.business_date ?? ""} />
-            <div className="mb-3 flex items-center gap-2 text-xs" style={{ color: MUTED }}>
-              <UploadCloud className="h-4 w-4" />
-              Cuentas de banco
-            </div>
-            <label className="mb-2 block text-xs" style={{ color: MUTED }}>AMEX (.xls/.xlsx)</label>
-            <input name="amexFile" type="file" accept=".xls,.xlsx" disabled={!canUploadBanks} className="mb-3 block w-full text-xs" style={{ color: MUTED }} />
-            <label className="mb-2 block text-xs" style={{ color: MUTED }}>Banorte (.csv/.xls/.xlsx)</label>
-            <input name="banorteFile" type="file" accept=".csv,.xls,.xlsx" disabled={!canUploadBanks} className="block w-full text-xs" style={{ color: MUTED }} />
-            <button
-              type="submit"
-              disabled={!canUploadBanks}
-              className="mt-4 w-full rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-[1px] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ background: canUploadBanks ? GREEN : "#bdb6aa", color: "#ffffff" }}
-            >
-              Subir y correr Bank Watcher
-            </button>
-            <p className="mt-3 text-[11px] leading-5" style={{ color: MUTED }}>
-              Archivos bancarios ya registrados: {bankDocs.length}. Si falta configuración de Drive o GitHub, el sistema lo deja en revisión.
-            </p>
-          </form>
+          <BankUploadForm
+            workflowRunId={run.id}
+            businessDate={run.business_date ?? ""}
+            canUploadBanks={canUploadBanks}
+            bankDocsCount={bankDocs.length}
+          />
         </div>
       </div>
     </section>
