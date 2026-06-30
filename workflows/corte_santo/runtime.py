@@ -199,9 +199,15 @@ def run_initial_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[s
         layout=config.get("ingresos_layout"),
         cell_notes=cell_notes,
     )
-    venta_bruta = workflow_result.get("workflow_run", {}).get("revision_document", {}).get(
-        "reconciliation_totals", {}
-    ).get("total_real")
+    revision_document = workflow_result.get("workflow_run", {}).get("revision_document")
+    if not isinstance(revision_document, dict):
+        return pipeline.initial_stage_result(
+            workflow_result,
+            {"status": "requires_review", "review_reason": "revision_document_missing"},
+            {"status": "requires_review", "review_reason": "revision_document_missing"},
+            config.get("supervisor_email"),
+        )
+    venta_bruta = revision_document.get("reconciliation_totals", {}).get("total_real")
     forecast = writer.write_forecast(
         str(paths.get("forecast", "")),
         str(outputs.get("forecast", "")),

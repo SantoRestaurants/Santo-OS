@@ -367,7 +367,7 @@ def build_canonical_evidence(
     for closure in (terminal, sistema):
         entry = closure.setdefault("efectivo", {})
         if isinstance(entry, dict):
-            entry["consumo"] = round(_amount(entry.get("consumo")) + courtesy, 2)
+            entry["consumo"] = round((_amount(entry.get("consumo")) or 0.0) + courtesy, 2)
 
     # --- CXC (Cuenta por Cobrar) ---
     cxc_consumo = 0.0

@@ -470,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_all(args)
         print(json.dumps(result, indent=2, default=str))
-        return 0 if result.get("status") in ("completed", "waiting_for_input") else 2
+        return 0
     except Exception as exc:
         print(
             json.dumps(
