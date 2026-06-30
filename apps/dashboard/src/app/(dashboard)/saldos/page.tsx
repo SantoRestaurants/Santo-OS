@@ -1,7 +1,7 @@
-import { AlertTriangle, Clock, Building2, Save } from "lucide-react";
+import { Building2, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { getReconciliationData } from "@/lib/reconciliation-data";
-import { getMonthlyTotals, dedupeRunsByDay } from "@/lib/corte-dashboard-utils";
+import { dedupeRunsByDay } from "@/lib/corte-dashboard-utils";
 
 const INK = "#282521";
 const MUTED = "#766f65";
@@ -9,13 +9,17 @@ const LINE = "#ded7ca";
 const PAPER = "#fbfaf7";
 const PANEL = "#ffffff";
 const GOLD = "#e8463b";
+const GREEN = "#16a34a";
 
 function money(value: number | undefined | null) {
   if (value == null || Number.isNaN(value)) return "-";
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(value);
 }
 
-export default async function SaldosPage() {
+type SearchParams = Promise<{ success?: string; error?: string }>;
+
+export default async function SaldosPage({ searchParams }: { searchParams: SearchParams }) {
+  const { success, error } = await searchParams;
   const data = await getReconciliationData();
 
   if (data.status === "auth_required") {
@@ -39,18 +43,25 @@ export default async function SaldosPage() {
   const allRuns = data.runs.filter((run) => run.business_date);
   const runs = dedupeRunsByDay(allRuns);
   
-  // Get latest run for current balances
   const latestRun = runs[0];
-  const saldos = latestRun?.output_payload?.saldos as Record<string, number> | undefined;
+  const saldos = (latestRun?.output_payload?.saldos as Record<string, number> | undefined) ?? {};
+
+  const fields = [
+    { key: "banorte", label: "Banorte", hint: "Saldo acumulado en cuenta Banorte" },
+    { key: "amex", label: "AMEX", hint: "Saldo acumulado pendiente AMEX" },
+    { key: "efectivo", label: "Efectivo en Caja", hint: "Saldo acumulado en efectivo" },
+    { key: "aguinaldos", label: "Fondo Aguinaldos", hint: "Provisión para aguinaldos" },
+    { key: "utilidades", label: "Fondo Utilidades", hint: "Provisión para utilidades" },
+  ];
 
   return (
     <main className="min-h-screen" style={{ background: PAPER, color: INK }}>
-      <div className="mx-auto flex max-w-4xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-lg flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
         <header className="pl-10 lg:pl-0">
           <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Gestión</div>
           <h1 className="mt-1 text-3xl font-semibold">Saldos Acumulados</h1>
           <p className="mt-2 text-sm" style={{ color: MUTED }}>
-            Control de provisiones y saldos históricos.
+            Último corte: {latestRun?.business_date || "N/A"} — modificá cualquier saldo manualmente.
           </p>
         </header>
 
@@ -66,83 +77,67 @@ export default async function SaldosPage() {
           </div>
         )}
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <section className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-            <div className="mb-4 flex items-center gap-2 font-semibold text-lg" style={{ color: INK }}>
-              <Building2 className="h-5 w-5" />
-              Saldos Cuentas (Automático)
-            </div>
-            <p className="text-sm mb-6" style={{ color: MUTED }}>Saldos reportados en el último corte ({latestRun?.business_date || "N/A"}). Se actualizan con los archivos del banco.</p>
-            
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-3 rounded-md border bg-gray-50" style={{ borderColor: LINE }}>
-                <span className="font-medium">Banorte</span>
-                <span className="font-bold">{money(saldos?.banorte || 0)}</span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-md border bg-gray-50" style={{ borderColor: LINE }}>
-                <span className="font-medium">AMEX</span>
-                <span className="font-bold">{money(saldos?.amex || 0)}</span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-md border bg-gray-50" style={{ borderColor: LINE }}>
-                <span className="font-medium">Efectivo en Caja</span>
-                <span className="font-bold">{money(saldos?.efectivo || 0)}</span>
-              </div>
-            </div>
-          </section>
+        {success && (
+          <div className="flex items-center gap-2 rounded-md border p-3 text-sm" style={{ borderColor: "#bbf7d0", background: "#f0fdf4", color: GREEN }}>
+            <CheckCircle2 className="h-4 w-4" />
+            Saldos actualizados correctamente.
+          </div>
+        )}
 
-          <section className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-            <div className="mb-4 flex items-center gap-2 font-semibold text-lg" style={{ color: INK }}>
-              <Save className="h-5 w-5" />
-              Provisiones (Manual)
-            </div>
-            <p className="text-sm mb-6" style={{ color: MUTED }}>Modificá las provisiones. Cada cambio quedará registrado en el historial.</p>
-            
-            <form action="/saldos/api/update" method="POST" className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: INK }}>Fondo Aguinaldos</label>
+        {error && (
+          <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e8b4aa", background: "#fff4f1", color: "#b84a3a" }}>
+            Error: {error}
+          </div>
+        )}
+
+        <form action="/saldos/api/update" method="POST" className="rounded-md border p-6" style={{ borderColor: LINE, background: PANEL }}>
+          <div className="mb-5 flex items-center gap-2 font-semibold text-lg" style={{ color: INK }}>
+            <Building2 className="h-5 w-5" />
+            Editar Saldos
+          </div>
+
+          <div className="space-y-4">
+            {fields.map((f) => (
+              <div key={f.key}>
+                <label className="block text-sm font-medium mb-1" style={{ color: INK }}>
+                  {f.label}
+                  <span className="ml-1 text-xs font-normal" style={{ color: MUTED }}>({f.hint})</span>
+                </label>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-sm" style={{ color: MUTED }}>$</span>
-                  <input 
-                    type="number" 
-                    name="aguinaldos" 
-                    defaultValue={saldos?.aguinaldos || 0}
-                    className="w-full rounded-md border pl-7 pr-3 py-2 text-sm" 
-                    style={{ borderColor: LINE }} 
+                  <input
+                    type="number"
+                    step="0.01"
+                    name={f.key}
+                    defaultValue={saldos[f.key] || ""}
+                    className="w-full rounded-md border pl-7 pr-3 py-2 text-sm font-medium"
+                    style={{ borderColor: LINE }}
+                    placeholder="0.00"
                   />
                 </div>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: INK }}>Fondo Utilidades</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-sm" style={{ color: MUTED }}>$</span>
-                  <input 
-                    type="number" 
-                    name="utilidades" 
-                    defaultValue={saldos?.utilidades || 0}
-                    className="w-full rounded-md border pl-7 pr-3 py-2 text-sm" 
-                    style={{ borderColor: LINE }} 
-                  />
-                </div>
-              </div>
+            ))}
 
-              <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: INK }}>Motivo de ajuste</label>
-                <input 
-                  type="text" 
-                  name="note" 
-                  placeholder="Ej: Aporte quincenal"
-                  className="w-full rounded-md border px-3 py-2 text-sm" 
-                  style={{ borderColor: LINE }} 
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: INK }}>Motivo de ajuste</label>
+              <input
+                type="text"
+                name="note"
+                placeholder="Ej: Ajuste mensual, cierre de caja"
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                style={{ borderColor: LINE }}
+              />
+            </div>
+          </div>
 
-              <button type="button" className="w-full rounded-md px-4 py-2 text-sm font-semibold mt-2" style={{ background: GOLD, color: "white" }}>
-                Actualizar Provisiones
-              </button>
-            </form>
-          </section>
-        </div>
+          <button
+            type="submit"
+            className="mt-6 w-full rounded-md px-4 py-2.5 text-sm font-semibold transition hover:opacity-90"
+            style={{ background: GOLD, color: "white" }}
+          >
+            Guardar cambios
+          </button>
+        </form>
       </div>
     </main>
   );

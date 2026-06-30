@@ -13,15 +13,20 @@ export async function POST(request: Request) {
     if (!serviceClient) return NextResponse.json({ error: "No service client" }, { status: 500 });
 
     const formData = await request.formData();
-    const aguinaldosRaw = formData.get("aguinaldos");
-    const utilidadesRaw = formData.get("utilidades");
     const note = formData.get("note")?.toString() || "Actualización manual de saldos";
 
-    const aguinaldos = Number(aguinaldosRaw);
-    const utilidades = Number(utilidadesRaw);
+    const fields = ["banorte", "amex", "efectivo", "aguinaldos", "utilidades"];
+    const values: Record<string, number> = {};
+    for (const field of fields) {
+      const raw = formData.get(field);
+      if (raw !== null && raw !== "") {
+        const num = Number(raw);
+        if (!isNaN(num)) values[field] = num;
+      }
+    }
 
-    if (isNaN(aguinaldos) || isNaN(utilidades)) {
-      return NextResponse.json({ error: "Valores inválidos" }, { status: 400 });
+    if (Object.keys(values).length === 0) {
+      return NextResponse.json({ error: "Ningún valor proporcionado" }, { status: 400 });
     }
 
     // Get the latest run to update its saldos
@@ -39,8 +44,7 @@ export async function POST(request: Request) {
     const payload = (latestRun.output_payload || {}) as Record<string, unknown>;
     const saldos = (payload.saldos || {}) as Record<string, number>;
     
-    saldos.aguinaldos = aguinaldos;
-    saldos.utilidades = utilidades;
+    Object.assign(saldos, values);
     payload.saldos = saldos;
 
     await serviceClient
@@ -53,7 +57,7 @@ export async function POST(request: Request) {
       aggregate_id: latestRun.id,
       event_type: "saldos.manual_update",
       severity: "info",
-      payload: { aguinaldos, utilidades, note, user: user.email },
+      payload: { ...values, note, user: user.email },
     });
 
     return NextResponse.redirect(new URL("/saldos?success=Guardado", request.url));
