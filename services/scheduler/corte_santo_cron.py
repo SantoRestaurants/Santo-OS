@@ -186,6 +186,7 @@ def _load_stage1_run(
         return None
     # Expose the full income_register so the bank stage can preserve cortesia/propinas.
     output["income_register"] = _find_income_register(output)
+    output["run_id"] = data[0].get("id")
     return output
 
 
@@ -213,7 +214,6 @@ def _load_previous_pending_collections(
         params={
             "select": "id,business_date,output_payload,status",
             "business_date": f"lt.{current_date}",
-            "restaurant_key": f"eq.{restaurant_key}",
             "source_channel": "eq.agent_mail",
             "order": "created_at.desc",
             "limit": "100",
@@ -406,6 +406,45 @@ def run_bank_watcher_once(
     runtime = _load_runtime()
     result = runtime.run_bank_stage(bank_request, config)
     result["watcher_result"] = watcher
+
+    # Persist bank stage result to Supabase
+    try:
+        if supabase:
+            stage1_run_id = stage1.get("run_id")
+            if not stage1_run_id:
+                fetch_resp = httpx.get(
+                    f"{supabase_url}/rest/v1/workflow_runs",
+                    params={
+                        "select": "id",
+                        "business_date": f"eq.{effective_date}",
+                        "source_channel": "eq.agent_mail",
+                        "order": "created_at.desc",
+                        "limit": "1",
+                    },
+                    headers={
+                        "apikey": _env("SUPABASE_SERVICE_KEY") or _env("SUPABASE_SERVICE_ROLE_KEY"),
+                        "Authorization": f"Bearer {_env('SUPABASE_SERVICE_KEY') or _env('SUPABASE_SERVICE_ROLE_KEY')}",
+                    },
+                    timeout=10.0,
+                )
+                if fetch_resp.status_code < 400:
+                    fetch_data = fetch_resp.json()
+                    if isinstance(fetch_data, list) and fetch_data:
+                        stage1_run_id = fetch_data[0].get("id")
+            if stage1_run_id:
+                supabase.update_workflow_run_output(
+                    stage1_run_id,
+                    result,
+                    status=result.get("status"),
+                )
+                logging.info(
+                    "Persisted bank stage result for %s to workflow_run %s",
+                    effective_date,
+                    stage1_run_id,
+                )
+    except Exception:
+        logging.exception("Failed to persist bank stage result to Supabase")
+
     return result
 
 
