@@ -2,10 +2,12 @@
 
 import {
   BarChart3,
+  Clock,
   FolderOpen,
   GitCompareArrows,
   HelpCircle,
   Menu,
+  Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -40,12 +42,12 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Saldos",
     href: "/saldos",
-    icon: <BarChart3 className="h-4 w-4" />,
+    icon: <Wallet className="h-4 w-4" />,
   },
   {
     label: "Logs",
     href: "/logs",
-    icon: <FolderOpen className="h-4 w-4" />,
+    icon: <Clock className="h-4 w-4" />,
   },
 ];
 

@@ -260,18 +260,9 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     monthChartData.sort((a, b) => a.fecha.localeCompare(b.fecha));
   }
 
-  /* Mock saldos if empty */
+  /* Saldos from latest run */
   const latestRun = unitRuns[0];
-  let saldos = latestRun?.output_payload?.saldos as Record<string, number> | undefined;
-  if (!saldos || Object.keys(saldos).length === 0) {
-    saldos = {
-      banorte: 145020.50,
-      amex: 32400.00,
-      efectivo: 18500.00,
-      utilidades: 45000.00,
-      aguinaldos: 12500.00,
-    };
-  }
+  const saldos: Record<string, number> = (latestRun?.output_payload?.saldos as Record<string, number> | undefined) ?? {};
 
   /* Week and month context for AI */
   const weekContext = {

@@ -473,7 +473,29 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                     <MessageSquareText className="h-4 w-4" />
                     Comentarios y correcciones
                   </div>
-                  <p className="text-sm" style={{ color: MUTED }}>Funcionalidad de comentarios deshabilitada temporalmente</p>
+                  {(() => {
+                    const hasReviews = selectedRun.reviews && selectedRun.reviews.length > 0;
+                    const hasExceptions = selectedRun.exceptions && selectedRun.exceptions.length > 0;
+                    if (!hasReviews && !hasExceptions) {
+                      return <p className="text-sm" style={{ color: MUTED }}>Sin comentarios ni correcciones</p>;
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {selectedRun.reviews?.map((r) => (
+                          <div key={r.id} className="rounded border px-3 py-2 text-xs" style={{ borderColor: LINE }}>
+                            <span className="font-medium" style={{ color: INK }}>{r.review_key}:</span>{" "}
+                            <span style={{ color: MUTED }}>{r.review_notes || "Sin notas"} — {r.status}</span>
+                          </div>
+                        ))}
+                        {selectedRun.exceptions?.map((e) => (
+                          <div key={e.id} className="rounded border px-3 py-2 text-xs" style={{ borderColor: "#fde68a", background: "#fefce8" }}>
+                            <span className="font-medium" style={{ color: "#92400e" }}>{e.exception_key}</span>
+                            <span className="ml-2" style={{ color: MUTED }}>({e.exception_type}) — {e.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -482,7 +504,29 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                   <div className="flex items-center gap-2 font-semibold" style={{ color: INK }}>
                     Bancos
                   </div>
-                  <p className="mt-2 text-sm" style={{ color: MUTED }}>Funcionalidad de bancos deshabilitada temporalmente</p>
+                  {(() => {
+                    const bankDocs = selectedRun.documents.filter((doc) =>
+                      ["amex_statement", "banorte_statement"].includes(doc.document_type)
+                    );
+                    if (bankDocs.length === 0) {
+                      return (
+                        <div className="mt-3 rounded-md border px-3 py-2 text-xs" style={{ borderColor: "#fde68a", background: "#fefce8", color: "#92400e" }}>
+                          Pendiente — subir AMEX y Banorte desde{" "}
+                          <a href="/conciliacion" className="underline font-medium">Conciliación</a>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mt-2 space-y-1">
+                        {bankDocs.map((doc) => (
+                          <a key={doc.id} href={doc.source_uri ?? "#"} className="flex items-center justify-between rounded border px-3 py-1.5 text-xs" style={{ borderColor: "#bbf7d0", background: "#f0fdf4", color: "#166534" }}>
+                            <span>{doc.document_type === "amex_statement" ? "AMEX" : "Banorte"} — {String(doc.metadata?.original_filename ?? doc.metadata?.name ?? "archivo")}</span>
+                            <ChevronRight className="h-3 w-3" />
+                          </a>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
