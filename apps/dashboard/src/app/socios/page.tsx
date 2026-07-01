@@ -170,13 +170,16 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     }
   });
   function dayVenta(run: ReconciliationRun) {
-    return runTotal(run);
+    const sales = dailySales(run);
+    if (sales > 0) return sales;
+    const fcVal = run.business_date ? fcVentaMap.get(run.business_date) : undefined;
+    return fcVal ?? 0;
   }
 
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "");
 
-  // Recalculate monthTotal consistently with week breakdown
-  monthTotal = monthRuns.reduce((sum, run) => sum + dayVenta(run), 0);
+  // Recalculate monthTotal from actual Corte runs
+  monthTotal = monthRuns.reduce((sum, run) => sum + dailySales(run), 0);
 
   // If no forecast from runs, compute meta from forecast documents
   if (monthMeta == null && forecastArray.length > 0) {
@@ -587,7 +590,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
                     {/* falta por entrar */}
                     {(() => {
-                      const fpe = selectedRun.revision?.falta_por_entrar as Record<string, number> | undefined;
+                      const fpe = (selectedRun.revision?.falta_por_entrar ?? (selectedRun.output_payload?.revision_document as any)?.falta_por_entrar) as Record<string, number> | undefined;
                       if (!fpe || Object.keys(fpe).length === 0) return null;
                       const entries = Object.entries(fpe).filter(([, v]) => Number(v) > 0);
                       if (entries.length === 0) return null;
