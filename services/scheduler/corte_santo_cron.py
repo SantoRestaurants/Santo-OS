@@ -335,12 +335,13 @@ def run_bank_watcher_once(
             "watcher_result": watcher,
         }
 
-    # Build expected_collections from ALL pending days (deduplicated by date)
+    # Build expected_collections from ALL days with AMEX data (last 30 days)
+    # Prefer runs with income_register, skip already bank_validated
     expected_cols: list[dict[str, Any]] = []
     pending_runs: list[dict[str, Any]] = []
     latest_stage1: dict[str, Any] = {}
     latest_bd = ""
-    seen_dates: set[str] = set()
+    seen_dates: set[str] = {}
 
     for run in all_runs:
         op = run.get("output_payload") or {}
@@ -352,8 +353,10 @@ def run_bank_watcher_once(
         bd = run.get("business_date") or ""
 
         # Skip already validated days
+        if op.get("bank_validation_status") == "bank_validated" or op.get("stage") == "bank_validated":
+            continue
         bank = op.get("bank_reconciliation") or {}
-        if op.get("stage") == "bank_validated" or bank.get("status") == "bank_validated":
+        if bank.get("status") == "bank_validated":
             continue
 
         ir = op.get("income_register") or {}
@@ -367,20 +370,10 @@ def run_bank_watcher_once(
             if isinstance(ir2, dict):
                 amex_val = float(ir2.get("amex", 0))
 
-        is_pending = op.get("stage") == "corte_loaded" or run.get("status") == "waiting_for_input"
-
-        if is_pending and amex_val > 0:
+        # Only use runs that have income_register data, regardless of status
+        if amex_val > 0:
             if bd in seen_dates:
-                # Replace if existing entry has no income_register
-                existing_idx = next((i for i, pr in enumerate(pending_runs) if pr["business_date"] == bd), None)
-                if existing_idx is not None and not pending_runs[existing_idx].get("has_income") and bool(ir):
-                    # Replace with this better entry
-                    pending_runs[existing_idx] = {"id": run["id"], "business_date": bd, "amex": amex_val, "has_income": True}
-                    expected_cols[existing_idx] = {
-                        "business_date": bd, "channel": "amex", "amount": amex_val,
-                        "expected_deposit": amex_val, "source_date": bd,
-                    }
-                continue
+                continue  # already have this date
             seen_dates.add(bd)
             expected_cols.append({
                 "business_date": bd,
@@ -389,7 +382,9 @@ def run_bank_watcher_once(
                 "expected_deposit": amex_val,
                 "source_date": bd,
             })
-            pending_runs.append({"id": run["id"], "business_date": bd, "amex": amex_val, "has_income": bool(ir)})
+            pending_runs.append({"id": run["id"], "business_date": bd, "amex": amex_val})
+
+        if bd > latest_bd:
             latest_bd = bd
             latest_stage1 = op
 
