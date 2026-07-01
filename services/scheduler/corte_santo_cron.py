@@ -341,7 +341,7 @@ def run_bank_watcher_once(
     pending_runs: list[dict[str, Any]] = []
     latest_stage1: dict[str, Any] = {}
     latest_bd = ""
-    seen_dates: set[str] = {}
+    seen_dates: set[str] = set()
 
     for run in all_runs:
         op = run.get("output_payload") or {}
