@@ -107,6 +107,9 @@ function runDiff(run: ReconciliationRun) {
   return meta == null ? null : runTotal(run) - meta;
 }
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function CortesPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const data = await getReconciliationData();
