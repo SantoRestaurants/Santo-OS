@@ -502,7 +502,7 @@ def run_bank_watcher_once(
     result["pending_runs_checked"] = len(pending_runs)
     result["expected_collections_count"] = len(expected_cols)
 
-    # ── Persist per-day: update each validated day's workflow_run ──
+    # ── Per-day: persist status AND write workbook to Drive ──
     bank_result = result.get("bank_reconciliation") or {}
     amex_matches = bank_result.get("amex_matches", [])
     validated_dates: set[str] = set()
@@ -512,6 +512,33 @@ def run_bank_watcher_once(
         if not bd:
             continue
         validated_dates.add(bd)
+
+        # Run bank_stage for this specific day to write Ingresos to Drive
+        day_request = {
+            "workflow_key": "corte_santo_daily_sales_reconciliation",
+            "phase": "P0",
+            "dry_run": not _env("SANTO_CRON_WRITE", "").strip().lower() in ("true", "1"),
+            "source_channel": "scheduler",
+            "payload": {
+                "business_date": bd,
+                "restaurant_key": restaurant_key,
+                "documents": list(docs_by_type.values()),
+                "income_channels": _safe(latest_stage1.get("income_channels"), {}),
+                "income_register": _safe(latest_stage1.get("income_register"), {}),
+                "expected_collections": [e for e in expected_cols if e.get("business_date") == bd],
+                "revision_document": _safe(latest_stage1.get("revision_document"), {}),
+                "workbook_paths": workbook_paths,
+                "workbook_outputs": workbook_outputs,
+                "drive_file_ids": _safe(latest_stage1.get("drive_file_ids"), {}),
+            },
+        }
+        try:
+            runtime.run_bank_stage(day_request, config)
+            logging.info("Wrote Ingresos for %s", bd)
+        except Exception as exc:
+            logging.exception("Failed to write Ingresos for %s: %s", bd, exc)
+
+        # Persist validation status to Supabase
         for pr in pending_runs:
             if pr["business_date"] == bd:
                 try:
