@@ -593,7 +593,16 @@ def run_bank_watcher_once(
     result["validated_dates"] = sorted(validated_dates)
     result["validated_count"] = len(validated_dates)
 
-    # Also persist bank result on the trigger-date run for dashboard visibility
+    # Build per-day falta_por_entrar: only this day's pending, not all days
+    result["falta_por_entrar_por_dia"] = {}
+    for bd in seen_dates:
+        if bd not in validated_dates:
+            day_expected = [e for e in expected_cols if e.get("business_date") == bd]
+            day_total = sum(e.get("amount", 0) for e in day_expected)
+            if day_total > 0:
+                result["falta_por_entrar_por_dia"][bd] = day_total
+
+    return result
     try:
         for pr in pending_runs:
             if pr["business_date"] == effective_date:
