@@ -52,6 +52,8 @@ export default async function SaldosPage({ searchParams }: { searchParams: Searc
 
   const fields = [
     { key: "banorte", label: "Banorte", hint: "Automático — del archivo de banco" },
+    { key: "amex", label: "AMEX", hint: "Manual — pendiente de cobro" },
+    { key: "efectivo", label: "Efectivo en Caja", hint: "Manual" },
     { key: "aguinaldos", label: "Fondo Aguinaldos", hint: "Manual" },
     { key: "utilidades", label: "Fondo Utilidades", hint: "Manual" },
   ];
