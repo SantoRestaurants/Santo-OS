@@ -421,9 +421,19 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                       <span className="shrink-0" style={{ color: MUTED }}>Formato</span>
                       <span className="min-w-0 truncate text-right font-semibold">{selectedRun.revision?.formato_corte ?? "-"}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE, color: INK }}>
-                      <span className="shrink-0" style={{ color: MUTED }}>Falta entrar</span>
-                      <span className="min-w-0 truncate text-right font-semibold">{money(Object.values(selectedRun.revision?.falta_por_entrar ?? {}).reduce((sum: number, value: unknown) => sum + Number(value || 0), 0))}</span>
+                    <div className="rounded-md border px-2.5 py-2" style={{ borderColor: LINE }}>
+                      <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Falta entrar</div>
+                      {(() => {
+                        const fpe = selectedRun.revision?.falta_por_entrar ?? {};
+                        const entries = Object.entries(fpe).filter(([, v]) => Number(v) > 0);
+                        if (entries.length === 0) return <div className="text-xs" style={{ color: MUTED }}>Nada pendiente</div>;
+                        return entries.map(([key, value]) => (
+                          <div key={key} className="flex justify-between text-xs py-0.5" style={{ color: INK }}>
+                            <span style={{ color: MUTED }}>{key}</span>
+                            <span className="font-medium">{money(Number(value))}</span>
+                          </div>
+                        ));
+                      })()}
                     </div>
                   </div>
                 </div>
