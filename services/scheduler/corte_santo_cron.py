@@ -508,7 +508,8 @@ def run_bank_watcher_once(
     result["expected_collections_count"] = len(expected_cols)
 
     # ── Persist per-day: update each validated day's workflow_run ──
-    amex_matches = result.get("amex_matches", [])
+    bank_result = result.get("bank_reconciliation") or {}
+    amex_matches = bank_result.get("amex_matches", [])
     validated_dates: set[str] = set()
 
     for match in amex_matches:
