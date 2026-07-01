@@ -40,9 +40,6 @@ def classify_bank_file(
     if any(token in normalized for token in ("BANORTE", "BANCO", "ESTADO DE CUENTA", "MOVIMIENTOS")):
         return "banorte_statement"
     if ext == ".CSV":
-        # In this workflow the bank export supplied by the supervisor is the
-        # Banorte statement. AMEX is normally an XLS/XLSX export and is still
-        # caught above when named explicitly.
         return "banorte_statement"
     if content_sample is not None:
         text = (
@@ -64,8 +61,8 @@ def detect_bank_stage_trigger(
     restaurant_key: str,
     business_date: str,
 ) -> dict[str, Any]:
-    documents: dict[str, dict[str, Any]] = {}
-    duplicates: list[str] = []
+    # Pick most recent file per document_type
+    best: dict[str, dict[str, Any]] = {}
     for item in files:
         if not isinstance(item, dict):
             continue
@@ -76,31 +73,23 @@ def detect_bank_stage_trigger(
         )
         if not document_type:
             continue
-        if document_type in documents:
-            duplicates.append(document_type)
-        documents[document_type] = {
+        candidate = {
             "document_type": document_type,
             "drive_file_id": item.get("id"),
             "filename": item.get("name"),
             "source_uri": item.get("webViewLink"),
             "modified_time": item.get("modifiedTime"),
         }
+        existing = best.get(document_type)
+        if existing is None or (candidate.get("modified_time") or "") > (existing.get("modified_time") or ""):
+            best[document_type] = candidate
 
-    missing = [
-        key for key in ("amex_statement", "banorte_statement") if key not in documents
-    ]
-    if duplicates:
-        return {
-            "status": "requires_review",
-            "review_reason": "duplicate_bank_documents",
-            "duplicates": duplicates,
-            "documents": list(documents.values()),
-        }
+    missing = [key for key in ("amex_statement", "banorte_statement") if key not in best]
     if missing:
         return {
             "status": "waiting_for_input",
             "missing": missing,
-            "documents": list(documents.values()),
+            "documents": list(best.values()),
         }
     return {
         "status": "triggered",
@@ -114,7 +103,7 @@ def detect_bank_stage_trigger(
                 "stage": "bank_validation",
                 "restaurant_key": restaurant_key,
                 "business_date": business_date,
-                "documents": list(documents.values()),
+                "documents": list(best.values()),
             },
         },
     }
