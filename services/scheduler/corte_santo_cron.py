@@ -371,7 +371,16 @@ def run_bank_watcher_once(
 
         if is_pending and amex_val > 0:
             if bd in seen_dates:
-                continue  # already have this date
+                # Replace if existing entry has no income_register
+                existing_idx = next((i for i, pr in enumerate(pending_runs) if pr["business_date"] == bd), None)
+                if existing_idx is not None and not pending_runs[existing_idx].get("has_income") and bool(ir):
+                    # Replace with this better entry
+                    pending_runs[existing_idx] = {"id": run["id"], "business_date": bd, "amex": amex_val, "has_income": True}
+                    expected_cols[existing_idx] = {
+                        "business_date": bd, "channel": "amex", "amount": amex_val,
+                        "expected_deposit": amex_val, "source_date": bd,
+                    }
+                continue
             seen_dates.add(bd)
             expected_cols.append({
                 "business_date": bd,
@@ -380,7 +389,7 @@ def run_bank_watcher_once(
                 "expected_deposit": amex_val,
                 "source_date": bd,
             })
-            pending_runs.append({"id": run["id"], "business_date": bd, "amex": amex_val})
+            pending_runs.append({"id": run["id"], "business_date": bd, "amex": amex_val, "has_income": bool(ir)})
             latest_bd = bd
             latest_stage1 = op
 
