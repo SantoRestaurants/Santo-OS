@@ -335,11 +335,12 @@ def run_bank_watcher_once(
             "watcher_result": watcher,
         }
 
-    # Build expected_collections from ALL pending days
+    # Build expected_collections from ALL pending days (deduplicated by date)
     expected_cols: list[dict[str, Any]] = []
     pending_runs: list[dict[str, Any]] = []
     latest_stage1: dict[str, Any] = {}
     latest_bd = ""
+    seen_dates: set[str] = set()
 
     for run in all_runs:
         op = run.get("output_payload") or {}
@@ -369,6 +370,9 @@ def run_bank_watcher_once(
         is_pending = op.get("stage") == "corte_loaded" or run.get("status") == "waiting_for_input"
 
         if is_pending and amex_val > 0:
+            if bd in seen_dates:
+                continue  # already have this date
+            seen_dates.add(bd)
             expected_cols.append({
                 "business_date": bd,
                 "channel": "amex",
@@ -377,8 +381,6 @@ def run_bank_watcher_once(
                 "source_date": bd,
             })
             pending_runs.append({"id": run["id"], "business_date": bd, "amex": amex_val})
-
-        if bd > latest_bd:
             latest_bd = bd
             latest_stage1 = op
 
