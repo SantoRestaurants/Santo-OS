@@ -170,17 +170,13 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     }
   });
   function dayVenta(run: ReconciliationRun) {
-    const fcVal = run.business_date ? fcVentaMap.get(run.business_date) : undefined;
-    return fcVal ?? runTotal(run);
+    return runTotal(run);
   }
 
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "");
 
-  // Recalculate monthTotal from actual Corte runs (source of truth), only days with data
-  monthTotal = monthRuns.reduce((sum, run) => {
-    const sales = dailySales(run);
-    return sum + (sales > 0 ? sales : 0);
-  }, 0);
+  // Recalculate monthTotal consistently with week breakdown
+  monthTotal = monthRuns.reduce((sum, run) => sum + dayVenta(run), 0);
 
   // If no forecast from runs, compute meta from forecast documents
   if (monthMeta == null && forecastArray.length > 0) {
