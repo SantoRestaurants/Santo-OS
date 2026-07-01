@@ -218,33 +218,7 @@ export async function POST(request: Request) {
 
   const prompt = parts.join("\n");
 
-  // Try NVIDIA DeepSeek first
-  const nvidiaKey = process.env.NVIDIA_API_KEY;
-  if (nvidiaKey) {
-    try {
-      const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${nvidiaKey}` },
-        body: JSON.stringify({
-          model: "deepseek-ai/deepseek-v4-pro",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.2,
-          top_p: 0.95,
-          max_tokens: 800,
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (response.ok) {
-        const payload = await response.json();
-        const answer = payload?.choices?.[0]?.message?.content?.trim();
-        if (answer) return NextResponse.json({ answer });
-      }
-    } catch (e) {
-      console.error("NVIDIA API error:", e);
-    }
-  }
-
-  // Try Claude next
+  // Try Claude first
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
     try {
@@ -263,6 +237,30 @@ export async function POST(request: Request) {
       }
     } catch (e) {
       console.error("Claude API error:", e);
+    }
+  }
+
+  // Try NVIDIA DeepSeek second
+  const nvidiaKey = process.env.NVIDIA_API_KEY;
+  if (nvidiaKey) {
+    try {
+      const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${nvidiaKey}` },
+        body: JSON.stringify({
+          model: "deepseek-ai/deepseek-v4-pro",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2, top_p: 0.95, max_tokens: 800,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        const answer = payload?.choices?.[0]?.message?.content?.trim();
+        if (answer) return NextResponse.json({ answer });
+      }
+    } catch (e) {
+      console.error("NVIDIA API error:", e);
     }
   }
 
