@@ -371,18 +371,23 @@ def run_bank_watcher_once(
                 amex_val = float(ir2.get("amex", 0))
 
         # Only use runs that have income_register data, regardless of status
-        if amex_val > 0:
+        channels_to_track = ["amex", "uber", "rappi", "paypal", "debito", "credito", "efectivo", "transferencia"]
+        has_any = any(float(ir.get(ch, 0)) > 0 for ch in channels_to_track)
+        if has_any:
             if bd in seen_dates:
-                continue  # already have this date
+                continue
             seen_dates.add(bd)
-            expected_cols.append({
-                "business_date": bd,
-                "channel": "amex",
-                "amount": amex_val,
-                "expected_deposit": amex_val,
-                "source_date": bd,
-            })
-            pending_runs.append({"id": run["id"], "business_date": bd, "amex": amex_val})
+            for ch in channels_to_track:
+                val = float(ir.get(ch, 0))
+                if val > 0:
+                    expected_cols.append({
+                        "business_date": bd,
+                        "channel": ch,
+                        "amount": val,
+                        "expected_deposit": val,
+                        "source_date": bd,
+                    })
+            pending_runs.append({"id": run["id"], "business_date": bd, "amex": float(ir.get("amex", 0))})
 
         if bd > latest_bd:
             latest_bd = bd
