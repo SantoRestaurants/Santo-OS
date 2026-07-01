@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 
@@ -299,13 +299,100 @@ def run_bank_watcher_once(
             "watcher_result": watcher,
         }
     supabase_url = _env("SUPABASE_URL") or _env("NEXT_PUBLIC_SUPABASE_URL")
-    stage1 = _load_stage1_run(supabase, supabase_url, restaurant_key, effective_date)
-    if stage1 is None:
+    service_key = _env("SUPABASE_SERVICE_KEY") or _env("SUPABASE_SERVICE_ROLE_KEY")
+
+    # ── Load ALL pending Corte days (last 30 days) ──
+    try:
+        cutoff_date = datetime.strptime(effective_date, "%Y-%m-%d").date()
+    except ValueError:
+        cutoff_date = date.today()
+    cutoff = (cutoff_date - timedelta(days=30)).isoformat()
+
+    resp_all = httpx.get(
+        f"{supabase_url}/rest/v1/workflow_runs",
+        params={
+            "select": "id,business_date,status,output_payload",
+            "business_date": f"gte.{cutoff}",
+            "source_channel": "eq.agent_mail",
+            "order": "business_date.asc",
+            "limit": "50",
+        },
+        headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+        timeout=30.0,
+    )
+    if resp_all.status_code >= 400:
         return {
             "status": "requires_review",
-            "requires_review_reason": "stage1_workflow_run_not_found",
+            "requires_review_reason": f"supabase_query_failed:{resp_all.status_code}",
             "watcher_result": watcher,
         }
+    all_runs = resp_all.json()
+    if not isinstance(all_runs, list) or not all_runs:
+        return {
+            "status": "requires_review",
+            "requires_review_reason": "no_pending_runs_found",
+            "watcher_result": watcher,
+        }
+
+    # Build expected_collections from ALL pending days
+    expected_cols: list[dict[str, Any]] = []
+    pending_runs: list[dict[str, Any]] = []
+    latest_stage1: dict[str, Any] = {}
+    latest_bd = ""
+
+    for run in all_runs:
+        op = run.get("output_payload") or {}
+        if isinstance(op, str):
+            try:
+                op = json.loads(op)
+            except Exception:
+                continue
+        bd = run.get("business_date") or ""
+
+        # Skip already validated days
+        bank = op.get("bank_reconciliation") or {}
+        if op.get("stage") == "bank_validated" or bank.get("status") == "bank_validated":
+            continue
+
+        ir = op.get("income_register") or {}
+        amex_val = float(ir.get("amex", 0))
+
+        # Also check nested paths
+        if not amex_val:
+            wf_result = op.get("workflow_result") or {}
+            wf_run = wf_result.get("workflow_run") or {}
+            ir2 = wf_run.get("canonical_evidence", {}).get("income_register") or {}
+            if isinstance(ir2, dict):
+                amex_val = float(ir2.get("amex", 0))
+
+        is_pending = op.get("stage") == "corte_loaded" or run.get("status") == "waiting_for_input"
+
+        if is_pending and amex_val > 0:
+            expected_cols.append({
+                "business_date": bd,
+                "channel": "amex",
+                "amount": amex_val,
+                "expected_deposit": amex_val,
+                "source_date": bd,
+            })
+            pending_runs.append({"id": run["id"], "business_date": bd, "amex": amex_val})
+
+        if bd > latest_bd:
+            latest_bd = bd
+            latest_stage1 = op
+
+    if not expected_cols:
+        return {
+            "status": "requires_review",
+            "requires_review_reason": "no_pending_amex_collections_found",
+            "pending_runs_checked": len(all_runs),
+            "watcher_result": watcher,
+        }
+
+    logging.info(
+        "Bank watcher: %d pending days, %d expected AMEX collections",
+        len(pending_runs), len(expected_cols),
+    )
 
     # Download bank files locally
     drive, reason = build_drive_client()
@@ -354,8 +441,8 @@ def run_bank_watcher_once(
             "watcher_result": watcher,
         }
 
-    # Re-download workbooks from Drive; stage-1 local paths are not valid here.
-    drive_file_ids = stage1.get("drive_file_ids") or {}
+    # Re-download workbooks from Drive using latest stage1 data
+    drive_file_ids = latest_stage1.get("drive_file_ids") or {}
     workbook_paths: dict[str, str] = {}
     workbook_outputs: dict[str, str] = {}
     drive_workbooks_dir = temp_root / "drive_workbooks"
@@ -378,28 +465,10 @@ def run_bank_watcher_once(
                 "watcher_result": watcher,
             }
 
-    # Build resume request and run bank stage
     config = _load_json(config_path)
 
     def _safe(val: Any, default: Any) -> Any:
         return val if val is not None else default
-
-    # Build expected collections from stage1 data
-    expected_cols = _safe(stage1.get("expected_collections"), [])
-    if not expected_cols:
-        # Fallback: build from income_register if expected_collections is empty
-        income_reg = _safe(stage1.get("income_register"), {})
-        if income_reg:
-            amex_val = float(income_reg.get("amex", 0))
-            if amex_val > 0:
-                expected_cols = [{
-                    "business_date": effective_date,
-                    "channel": "amex",
-                    "amount": amex_val,
-                    "expected_deposit": amex_val,
-                    "source_date": effective_date,
-                }]
-    expected_cols = expected_cols + _load_previous_pending_collections(supabase_url, restaurant_key, effective_date)
 
     bank_request = {
         "workflow_key": "corte_santo_daily_sales_reconciliation",
@@ -410,64 +479,65 @@ def run_bank_watcher_once(
             "business_date": effective_date,
             "restaurant_key": restaurant_key,
             "documents": list(docs_by_type.values()),
-            "income_channels": _safe(stage1.get("income_channels"), {}),
-            "income_register": _safe(stage1.get("income_register"), {}),
+            "income_channels": _safe(latest_stage1.get("income_channels"), {}),
+            "income_register": _safe(latest_stage1.get("income_register"), {}),
             "expected_collections": expected_cols,
-            "revision_document": _safe(stage1.get("revision_document"), {}),
-            "workbook_paths": workbook_paths or _safe(stage1.get("workbook_paths"), {}),
-            "workbook_outputs": workbook_outputs or _safe(stage1.get("workbook_outputs"), {}),
-            "drive_file_ids": _safe(stage1.get("drive_file_ids"), {}),
+            "revision_document": _safe(latest_stage1.get("revision_document"), {}),
+            "workbook_paths": workbook_paths or _safe(latest_stage1.get("workbook_paths"), {}),
+            "workbook_outputs": workbook_outputs or _safe(latest_stage1.get("workbook_outputs"), {}),
+            "drive_file_ids": _safe(latest_stage1.get("drive_file_ids"), {}),
         },
     }
 
     runtime = _load_runtime()
     result = runtime.run_bank_stage(bank_request, config)
     result["watcher_result"] = watcher
+    result["pending_runs_checked"] = len(pending_runs)
+    result["expected_collections_count"] = len(expected_cols)
 
-    # Preserve stage-1 data needed for future bank watcher runs
-    result["income_register"] = _safe(stage1.get("income_register"), {})
-    result["income_channels"] = _safe(stage1.get("income_channels"), {})
-    result["expected_collections"] = expected_cols
-    result["business_date"] = effective_date
-    result["drive_file_ids"] = _safe(stage1.get("drive_file_ids"), {})
+    # ── Persist per-day: update each validated day's workflow_run ──
+    amex_matches = result.get("amex_matches", [])
+    validated_dates: set[str] = set()
 
-    # Persist bank stage result to Supabase
+    for match in amex_matches:
+        bd = match.get("business_date") or match.get("source_date")
+        if not bd:
+            continue
+        validated_dates.add(bd)
+        for pr in pending_runs:
+            if pr["business_date"] == bd:
+                try:
+                    update_payload = dict(latest_stage1)
+                    update_payload["bank_validation_status"] = "bank_validated"
+                    update_payload["bank_validated_at"] = datetime.now(UTC).isoformat()
+                    update_payload["bank_match"] = {
+                        "validated_by": match.get("validated_by"),
+                        "amex_cargo": match.get("amex_cargo") or match.get("amex_cargo_a"),
+                    }
+                    supabase.update_workflow_run_output(pr["id"], update_payload, status="completed")
+                    logging.info("Validated %s via %s", bd, match.get("validated_by", "unknown"))
+                except Exception as exc:
+                    logging.exception("Failed to persist validation for %s: %s", bd, exc)
+                break
+
+    result["validated_dates"] = sorted(validated_dates)
+    result["validated_count"] = len(validated_dates)
+
+    # Also persist bank result on the trigger-date run for dashboard visibility
     try:
-        if supabase:
-            stage1_run_id = stage1.get("run_id")
-            if not stage1_run_id:
-                fetch_resp = httpx.get(
-                    f"{supabase_url}/rest/v1/workflow_runs",
-                    params={
-                        "select": "id",
-                        "business_date": f"eq.{effective_date}",
-                        "source_channel": "eq.agent_mail",
-                        "order": "created_at.desc",
-                        "limit": "1",
-                    },
-                    headers={
-                        "apikey": _env("SUPABASE_SERVICE_KEY") or _env("SUPABASE_SERVICE_ROLE_KEY"),
-                        "Authorization": f"Bearer {_env('SUPABASE_SERVICE_KEY') or _env('SUPABASE_SERVICE_ROLE_KEY')}",
-                    },
-                    timeout=10.0,
-                )
-                if fetch_resp.status_code < 400:
-                    fetch_data = fetch_resp.json()
-                    if isinstance(fetch_data, list) and fetch_data:
-                        stage1_run_id = fetch_data[0].get("id")
-            if stage1_run_id:
-                supabase.update_workflow_run_output(
-                    stage1_run_id,
-                    result,
-                    status=result.get("status"),
-                )
-                logging.info(
-                    "Persisted bank stage result for %s to workflow_run %s",
-                    effective_date,
-                    stage1_run_id,
-                )
+        for pr in pending_runs:
+            if pr["business_date"] == effective_date:
+                persist = dict(result)
+                persist["income_register"] = latest_stage1.get("income_register") or {}
+                persist["income_channels"] = latest_stage1.get("income_channels") or {}
+                persist["expected_collections"] = expected_cols
+                persist["business_date"] = effective_date
+                persist["drive_file_ids"] = latest_stage1.get("drive_file_ids") or {}
+                supabase.update_workflow_run_output(pr["id"], persist, status=result.get("status"))
+                logging.info("Persisted bank stage summary for %s", effective_date)
+                break
     except Exception:
-        logging.exception("Failed to persist bank stage result to Supabase")
+        logging.exception("Failed to persist bank stage summary")
 
     return result
 
