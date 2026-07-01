@@ -813,6 +813,27 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
     elif status == "requires_review":
         requires_review_reason = "reconciliation_discrepancy"
 
+    # Build expected collections for bank stage
+    expected_collections: list[dict[str, Any]] = []
+    if has_closing and not intake_blocked and not extraction_warnings:
+        # AMEX from sistema (what the POS recorded)
+        cierre_sistema_data = cierre_sistema if isinstance(cierre_sistema, dict) else {}
+        amex_data = cierre_sistema_data.get("amex", {})
+        if isinstance(amex_data, dict):
+            amex_bruto = round(
+                _to_float(amex_data.get("consumo", 0)) + _to_float(amex_data.get("propina", 0)), 2
+            )
+        else:
+            amex_bruto = _to_float(amex_data)
+        if amex_bruto > 0:
+            expected_collections.append({
+                "business_date": business_date,
+                "channel": "amex",
+                "amount": amex_bruto,
+                "expected_deposit": amex_bruto,
+                "source_date": business_date,
+            })
+
     result = {
         "status": status,
         "workflow_key": WORKFLOW_KEY,
@@ -830,6 +851,7 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
             "reconciliation": reconciliation,
             "canonical_evidence": canonical_evidence,
             "revision_document": revision_document,
+            "expected_collections": expected_collections,
         },
         "documents": document_records,
         "tasks": tasks,

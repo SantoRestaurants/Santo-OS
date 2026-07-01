@@ -384,6 +384,23 @@ def run_bank_watcher_once(
     def _safe(val: Any, default: Any) -> Any:
         return val if val is not None else default
 
+    # Build expected collections from stage1 data
+    expected_cols = _safe(stage1.get("expected_collections"), [])
+    if not expected_cols:
+        # Fallback: build from income_register if expected_collections is empty
+        income_reg = _safe(stage1.get("income_register"), {})
+        if income_reg:
+            amex_val = float(income_reg.get("amex", 0))
+            if amex_val > 0:
+                expected_cols = [{
+                    "business_date": effective_date,
+                    "channel": "amex",
+                    "amount": amex_val,
+                    "expected_deposit": amex_val,
+                    "source_date": effective_date,
+                }]
+    expected_cols = expected_cols + _load_previous_pending_collections(supabase_url, restaurant_key, effective_date)
+
     bank_request = {
         "workflow_key": "corte_santo_daily_sales_reconciliation",
         "phase": "P0",
@@ -395,7 +412,7 @@ def run_bank_watcher_once(
             "documents": list(docs_by_type.values()),
             "income_channels": _safe(stage1.get("income_channels"), {}),
             "income_register": _safe(stage1.get("income_register"), {}),
-            "expected_collections": _safe(stage1.get("expected_collections"), []) + _load_previous_pending_collections(supabase_url, restaurant_key, effective_date),
+            "expected_collections": expected_cols,
             "revision_document": _safe(stage1.get("revision_document"), {}),
             "workbook_paths": workbook_paths or _safe(stage1.get("workbook_paths"), {}),
             "workbook_outputs": workbook_outputs or _safe(stage1.get("workbook_outputs"), {}),

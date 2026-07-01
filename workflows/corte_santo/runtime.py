@@ -222,6 +222,10 @@ def run_initial_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[s
         forecast,
         config.get("supervisor_email"),
     )
+    # Propagate expected_collections to top level for bank watcher
+    result["expected_collections"] = (
+        workflow_result.get("workflow_run", {}).get("expected_collections", [])
+    )
     return _deliver_and_update(
         result,
         payload,
