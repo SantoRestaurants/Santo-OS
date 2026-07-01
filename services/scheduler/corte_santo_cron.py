@@ -308,6 +308,7 @@ def run_bank_watcher_once(
         cutoff_date = date.today()
     cutoff = (cutoff_date - timedelta(days=30)).isoformat()
 
+    import httpx
     resp_all = httpx.get(
         f"{supabase_url}/rest/v1/workflow_runs",
         params={
