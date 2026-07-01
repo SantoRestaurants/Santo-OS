@@ -63,8 +63,6 @@ def detect_bank_stage_trigger(
 ) -> dict[str, Any]:
     # Pick most recent file per document_type
     best: dict[str, dict[str, Any]] = {}
-    import logging
-    logger = logging.getLogger(__name__)
     for item in files:
         if not isinstance(item, dict):
             continue
@@ -85,7 +83,6 @@ def detect_bank_stage_trigger(
         existing = best.get(document_type)
         if existing is None or (candidate.get("modified_time") or "") > (existing.get("modified_time") or ""):
             best[document_type] = candidate
-            logger.info("Bank file selected: %s -> %s (modified=%s)", document_type, candidate["filename"], candidate["modified_time"])
 
     missing = [key for key in ("amex_statement", "banorte_statement") if key not in best]
     if missing:

@@ -189,9 +189,9 @@ def _match_amex_to_corte(
         len(remaining_corte), len(remaining_amex),
     )
     for idx, item in enumerate(remaining_corte[:5]):
-        logger.info("  corte[%d]: amount=%.2f date=%s", idx, item.get("amount", 0), item.get("business_date") or item.get("source_date"))
+        logger.debug("  corte[%d]: amount=%.2f date=%s", idx, item.get("amount", 0), item.get("business_date") or item.get("source_date"))
     for idx, p in enumerate(remaining_amex[:5]):
-        logger.info("  amex[%d]: cargos=%.2f envio=%s pago=%s", idx, p.get("cargos", 0), p.get("fecha_envio"), p.get("pago_num", ""))
+        logger.debug("  amex[%d]: cargos=%.2f envio=%s pago=%s", idx, p.get("cargos", 0), p.get("fecha_envio"), p.get("pago_num", ""))
 
     # Group by batch
     by_batch: dict[str, list[dict[str, Any]]] = defaultdict(list)
