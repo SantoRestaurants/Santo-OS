@@ -209,7 +209,19 @@ def _match_amex_to_corte(
         for item in list(remaining_corte):
             expected = round(float(item.get("amount", 0)), 2)
             corte_date = item.get("business_date") or item.get("source_date")
-            if cargos == expected and _date_ge(envio, corte_date):
+            date_ok = _date_ge(envio, corte_date)
+            if cargos == expected:
+                if not date_ok:
+                    logger.debug(
+                        "AMEX date fail: cargos=%.2f == corte %s AMEX=%.2f but envio=%s < corte_date=%s",
+                        cargos, corte_date, expected, envio, corte_date,
+                    )
+                else:
+                    logger.info(
+                        "AMEX exact match: cargos=%.2f == corte %s AMEX=%.2f envio=%s",
+                        cargos, corte_date, expected, envio,
+                    )
+            if cargos == expected and date_ok:
                 p["_used"] = True
                 remaining_corte.remove(item)
                 matched_days.append({
@@ -218,10 +230,6 @@ def _match_amex_to_corte(
                     "amex_cargo": cargos,
                     "amex_envio": envio,
                 })
-                logger.info(
-                    "AMEX exact match: cargos=%.2f == corte %s AMEX=%.2f envio=%s",
-                    cargos, corte_date, expected, envio,
-                )
                 break
 
     # Round 2: pair matches within same batch
