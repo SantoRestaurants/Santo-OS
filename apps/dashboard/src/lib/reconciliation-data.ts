@@ -203,9 +203,15 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     runs: runs.map((run) => {
       const linkedDocs = documentsByRun.get(run.id) ?? [];
       const dateDocs = run.business_date ? documentsByDate.get(run.business_date) ?? [] : [];
+      const rev = extractRevisionDocument({ ...run, business_date: run.business_date ?? "" });
+      // Ensure falta_por_entrar is carried through even if extractRevisionDocument misses it
+      const rawRev = (run.output_payload as Record<string, unknown>)?.revision_document as Record<string, unknown> | undefined;
+      if (rawRev?.falta_por_entrar && !rev?.falta_por_entrar) {
+        if (rev) (rev as any).falta_por_entrar = rawRev.falta_por_entrar;
+      }
       return {
         ...run,
-        revision: extractRevisionDocument({ ...run, business_date: run.business_date ?? "" }),
+        revision: rev,
         email: firstForRun(emailsByRun, run.id) as ReconciliationRun["email"],
         documents: dedupeDocuments([...linkedDocs, ...dateDocs]) as ReconciliationRun["documents"],
         reviews: (reviewsByRun.get(run.id) ?? []) as ReconciliationRun["reviews"],
