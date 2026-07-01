@@ -158,6 +158,9 @@ function compareRunQuality(a: RunLike, b: RunLike) {
 
 function scoreRun(run: RunLike) {
   let score = 0;
+  // Bank-validated runs should ALWAYS win, even over revision data
+  const op = (run as any).output_payload || {};
+  if (op.bank_validation_status === "bank_validated" || op.stage === "bank_validated") score += 200;
   if (run.revision?.reconciliation_totals?.total_real) score += 100;
   if (dailyForecastMeta(run) != null) score += 20;
   if ((run.documents ?? []).length) score += 10;

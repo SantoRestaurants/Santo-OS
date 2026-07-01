@@ -520,24 +520,44 @@ def run_bank_watcher_once(
         for pr in pending_runs:
             if pr["business_date"] == bd:
                 try:
-                    httpx.patch(
+                    # Only update status and bank fields, don't replace output_payload
+                    r_upd = httpx.patch(
                         f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
                         json={
                             "status": "completed",
-                            "output_payload": {
-                                "stage": "bank_validated",
-                                "bank_validation_status": "bank_validated",
-                                "bank_validated_at": datetime.now(UTC).isoformat(),
-                                "bank_match": {
-                                    "validated_by": match.get("validated_by"),
-                                    "amex_cargo": match.get("amex_cargo") or match.get("amex_cargo_a"),
-                                },
-                            },
                         },
                         headers={"apikey": service_key, "Authorization": f"Bearer {service_key}",
                                  "Content-Type": "application/json", "Prefer": "return=representation"},
                         timeout=10.0,
                     )
+                    # Also patch output_payload to merge bank fields
+                    # First get current output_payload
+                    r_get = httpx.get(
+                        f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}&select=output_payload",
+                        headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+                        timeout=10.0,
+                    )
+                    if r_get.status_code < 400:
+                        data = r_get.json()
+                        if isinstance(data, list) and data:
+                            current_op = data[0].get("output_payload") or {}
+                            if isinstance(current_op, str):
+                                try: current_op = json.loads(current_op)
+                                except: current_op = {}
+                            current_op["bank_validation_status"] = "bank_validated"
+                            current_op["stage"] = "bank_validated"
+                            current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
+                            current_op["bank_match"] = {
+                                "validated_by": match.get("validated_by"),
+                                "amex_cargo": match.get("amex_cargo") or match.get("amex_cargo_a"),
+                            }
+                            httpx.patch(
+                                f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
+                                json={"output_payload": current_op},
+                                headers={"apikey": service_key, "Authorization": f"Bearer {service_key}",
+                                         "Content-Type": "application/json"},
+                                timeout=10.0,
+                            )
                     logging.info("Validated %s via %s", bd, match.get("validated_by", "unknown"))
                 except Exception as exc:
                     logging.exception("Failed to persist validation for %s: %s", bd, exc)
