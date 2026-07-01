@@ -51,11 +51,9 @@ export default async function SaldosPage({ searchParams }: { searchParams: Searc
   const saldos = (latestRun?.output_payload?.saldos as Record<string, number> | undefined) ?? {};
 
   const fields = [
-    { key: "banorte", label: "Banorte", hint: "Saldo acumulado en cuenta Banorte" },
-    { key: "amex", label: "AMEX", hint: "Saldo acumulado pendiente AMEX" },
-    { key: "efectivo", label: "Efectivo en Caja", hint: "Saldo acumulado en efectivo" },
-    { key: "aguinaldos", label: "Fondo Aguinaldos", hint: "Provisión para aguinaldos" },
-    { key: "utilidades", label: "Fondo Utilidades", hint: "Provisión para utilidades" },
+    { key: "banorte", label: "Banorte", hint: "Automático — del archivo de banco" },
+    { key: "aguinaldos", label: "Fondo Aguinaldos", hint: "Manual" },
+    { key: "utilidades", label: "Fondo Utilidades", hint: "Manual" },
   ];
 
   return (
