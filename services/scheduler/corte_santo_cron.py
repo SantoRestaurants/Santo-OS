@@ -424,6 +424,13 @@ def run_bank_watcher_once(
     result = runtime.run_bank_stage(bank_request, config)
     result["watcher_result"] = watcher
 
+    # Preserve stage-1 data needed for future bank watcher runs
+    result["income_register"] = _safe(stage1.get("income_register"), {})
+    result["income_channels"] = _safe(stage1.get("income_channels"), {})
+    result["expected_collections"] = expected_cols
+    result["business_date"] = effective_date
+    result["drive_file_ids"] = _safe(stage1.get("drive_file_ids"), {})
+
     # Persist bank stage result to Supabase
     try:
         if supabase:
