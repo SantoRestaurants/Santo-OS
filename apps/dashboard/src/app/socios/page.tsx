@@ -587,6 +587,25 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                       })()}
                     </div>
 
+                    {/* falta por entrar */}
+                    {(() => {
+                      const fpe = selectedRun.revision?.falta_por_entrar as Record<string, number> | undefined;
+                      if (!fpe || Object.keys(fpe).length === 0) return null;
+                      const entries = Object.entries(fpe).filter(([, v]) => Number(v) > 0);
+                      if (entries.length === 0) return null;
+                      return (
+                        <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "16px" }}>Falta por entrar en la cuenta</div>
+                          {entries.map(([key, value]) => (
+                            <div key={key} className="flex justify-between" style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                              <span style={{ color: C.dim, fontSize: "13px" }}>{key}</span>
+                              <span style={{ color: C.red, fontWeight: 600, fontSize: "14px" }}>{moneyFull(Number(value))}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
                     {/* saldos */}
                     <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
                       <div style={{ fontSize: "11px", fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>Posición de Efectivo y Saldos</div>
