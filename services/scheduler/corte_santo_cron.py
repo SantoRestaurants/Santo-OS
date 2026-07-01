@@ -387,7 +387,11 @@ def run_bank_watcher_once(
                         "expected_deposit": val,
                         "source_date": bd,
                     })
-            pending_runs.append({"id": run["id"], "business_date": bd, "amex": float(ir.get("amex", 0))})
+            pending_runs.append({
+                "id": run["id"], "business_date": bd, "amex": float(ir.get("amex", 0)),
+                "income_channels": ir, "income_register": ir,
+                "revision_document": op.get("revision_document"),
+            })
 
         if bd > latest_bd:
             latest_bd = bd
@@ -529,6 +533,9 @@ def run_bank_watcher_once(
             continue
         validated_dates.add(bd)
 
+        # Find this day's pending run data
+        day_data = next((pr for pr in pending_runs if pr["business_date"] == bd), {})
+
         # Run bank_stage for this specific day to write Ingresos to Drive
         day_request = {
             "workflow_key": "corte_santo_daily_sales_reconciliation",
@@ -539,10 +546,10 @@ def run_bank_watcher_once(
                 "business_date": bd,
                 "restaurant_key": restaurant_key,
                 "documents": list(docs_by_type.values()),
-                "income_channels": _safe(latest_stage1.get("income_channels"), {}),
-                "income_register": _safe(latest_stage1.get("income_register"), {}),
+                "income_channels": day_data.get("income_channels") or _safe(latest_stage1.get("income_channels"), {}),
+                "income_register": day_data.get("income_register") or _safe(latest_stage1.get("income_register"), {}),
                 "expected_collections": [e for e in expected_cols if e.get("business_date") == bd],
-                "revision_document": _safe(latest_stage1.get("revision_document"), {}),
+                "revision_document": day_data.get("revision_document") or _safe(latest_stage1.get("revision_document"), {}),
                 "workbook_paths": workbook_paths,
                 "workbook_outputs": workbook_outputs,
                 "drive_file_ids": _safe(latest_stage1.get("drive_file_ids"), {}),
