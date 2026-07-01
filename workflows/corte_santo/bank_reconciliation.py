@@ -184,6 +184,15 @@ def _match_amex_to_corte(
     remaining_corte = [dict(item) for item in corte_expected if isinstance(item, dict)]
     remaining_amex = [dict(p, _used=False) for p in amex_payments]
 
+    logger.info(
+        "_match_amex_to_corte: %d corte expected, %d amex payments",
+        len(remaining_corte), len(remaining_amex),
+    )
+    for idx, item in enumerate(remaining_corte[:5]):
+        logger.info("  corte[%d]: amount=%.2f date=%s", idx, item.get("amount", 0), item.get("business_date") or item.get("source_date"))
+    for idx, p in enumerate(remaining_amex[:5]):
+        logger.info("  amex[%d]: cargos=%.2f envio=%s pago=%s", idx, p.get("cargos", 0), p.get("fecha_envio"), p.get("pago_num", ""))
+
     # Group by batch
     by_batch: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for p in remaining_amex:
@@ -209,6 +218,10 @@ def _match_amex_to_corte(
                     "amex_cargo": cargos,
                     "amex_envio": envio,
                 })
+                logger.info(
+                    "AMEX exact match: cargos=%.2f == corte %s AMEX=%.2f envio=%s",
+                    cargos, corte_date, expected, envio,
+                )
                 break
 
     # Round 2: pair matches within same batch
