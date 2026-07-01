@@ -43,7 +43,11 @@ export default async function SaldosPage({ searchParams }: { searchParams: Searc
   const allRuns = data.runs.filter((run) => run.business_date);
   const runs = dedupeRunsByDay(allRuns);
   
-  const latestRun = runs[0];
+  // Find latest run that actually has saldos data
+  const latestRun = runs.find((run) => {
+    const s = (run.output_payload?.saldos as Record<string, number> | undefined);
+    return s && Object.values(s).some((v) => v > 0);
+  }) || runs[0];
   const saldos = (latestRun?.output_payload?.saldos as Record<string, number> | undefined) ?? {};
 
   const fields = [
