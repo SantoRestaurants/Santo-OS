@@ -203,11 +203,18 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     runs: runs.map((run) => {
       const linkedDocs = documentsByRun.get(run.id) ?? [];
       const dateDocs = run.business_date ? documentsByDate.get(run.business_date) ?? [] : [];
-      const rev = extractRevisionDocument({ ...run, business_date: run.business_date ?? "" });
-      // Ensure falta_por_entrar is carried through even if extractRevisionDocument misses it
-      const rawRev = (run.output_payload as Record<string, unknown>)?.revision_document as Record<string, unknown> | undefined;
-      if (rawRev?.falta_por_entrar && !rev?.falta_por_entrar) {
-        if (rev) (rev as any).falta_por_entrar = rawRev.falta_por_entrar;
+      let rev = extractRevisionDocument({ ...run, business_date: run.business_date ?? "" });
+      // Fallback: build revision from raw output_payload if extraction fails
+      if (!rev) {
+        const op = run.output_payload as Record<string, any> | undefined;
+        const rawRev = op?.revision_document as Record<string, any> | undefined;
+        if (rawRev) rev = rawRev as any;
+      }
+      // Ensure falta_por_entrar is carried through
+      const rawOp = run.output_payload as Record<string, any> | undefined;
+      const rawRevDoc = rawOp?.revision_document as Record<string, any> | undefined;
+      if (rawRevDoc?.falta_por_entrar && !rev?.falta_por_entrar) {
+        if (rev) (rev as any).falta_por_entrar = rawRevDoc.falta_por_entrar;
       }
       return {
         ...run,
