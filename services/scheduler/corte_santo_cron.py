@@ -501,6 +501,17 @@ def run_bank_watcher_once(
         },
     }
 
+    # Extract Banorte final balance
+    banorte_balance = None
+    try:
+        from workflows.corte_santo.bank_statement_parser import parse_banorte_csv
+        banorte_doc = docs_by_type.get("banorte_statement", {})
+        if banorte_doc.get("source_path"):
+            banorte_parsed = parse_banorte_csv(str(banorte_doc["source_path"]), config)
+            banorte_balance = banorte_parsed.get("final_balance")
+    except Exception:
+        pass
+
     runtime = _load_runtime()
     result = runtime.run_bank_stage(bank_request, config)
     result["watcher_result"] = watcher
@@ -574,6 +585,12 @@ def run_bank_watcher_once(
                             current_op["bank_validation_status"] = "bank_validated"
                             current_op["stage"] = "bank_validated"
                             current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
+                            # Update saldos with banorte balance
+                            if banorte_balance is not None:
+                                saldos = current_op.get("saldos") or {}
+                                if isinstance(saldos, dict):
+                                    saldos["banorte"] = banorte_balance
+                                    current_op["saldos"] = saldos
                             current_op["bank_match"] = {
                                 "validated_by": match.get("validated_by"),
                                 "amex_cargo": match.get("amex_cargo") or match.get("amex_cargo_a"),

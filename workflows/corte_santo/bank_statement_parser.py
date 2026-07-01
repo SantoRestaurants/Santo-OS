@@ -40,6 +40,7 @@ COL_DESC = "DESCRIPCIÓN"
 COL_DESC_DETAIL = "DESCRIPCIÓN DETALLADA"
 COL_DEPOSIT = "DEPÓSITOS"
 COL_WITHDRAWAL = "RETIROS"
+COL_SALDO = "SALDO"
 
 
 def _to_amount(value: Any) -> float:
@@ -120,6 +121,7 @@ def parse_banorte_rows(rows: list[dict[str, Any]], config: dict[str, Any] | None
         "domiciled_expenses": domiciled_expenses,
         "unclassified_deposits": unclassified_deposits,
         "ignored_deposits": ignored_deposits,
+        "final_balance": _to_amount(rows[-1].get(COL_SALDO)) if rows else None,
         # Any unclassified deposit is money we couldn't attribute -> review.
         "status": "requires_review" if unclassified_deposits else "ok",
     }
