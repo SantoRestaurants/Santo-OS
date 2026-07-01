@@ -520,14 +520,24 @@ def run_bank_watcher_once(
         for pr in pending_runs:
             if pr["business_date"] == bd:
                 try:
-                    update_payload = dict(latest_stage1)
-                    update_payload["bank_validation_status"] = "bank_validated"
-                    update_payload["bank_validated_at"] = datetime.now(UTC).isoformat()
-                    update_payload["bank_match"] = {
-                        "validated_by": match.get("validated_by"),
-                        "amex_cargo": match.get("amex_cargo") or match.get("amex_cargo_a"),
-                    }
-                    supabase.update_workflow_run_output(pr["id"], update_payload, status="completed")
+                    httpx.patch(
+                        f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
+                        json={
+                            "status": "completed",
+                            "output_payload": {
+                                "stage": "bank_validated",
+                                "bank_validation_status": "bank_validated",
+                                "bank_validated_at": datetime.now(UTC).isoformat(),
+                                "bank_match": {
+                                    "validated_by": match.get("validated_by"),
+                                    "amex_cargo": match.get("amex_cargo") or match.get("amex_cargo_a"),
+                                },
+                            },
+                        },
+                        headers={"apikey": service_key, "Authorization": f"Bearer {service_key}",
+                                 "Content-Type": "application/json", "Prefer": "return=representation"},
+                        timeout=10.0,
+                    )
                     logging.info("Validated %s via %s", bd, match.get("validated_by", "unknown"))
                 except Exception as exc:
                     logging.exception("Failed to persist validation for %s: %s", bd, exc)
