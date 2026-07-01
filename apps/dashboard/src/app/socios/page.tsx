@@ -590,7 +590,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
                     {/* falta por entrar */}
                     {(() => {
-                      const fpe = (selectedRun.revision?.falta_por_entrar ?? (selectedRun.output_payload?.revision_document as any)?.falta_por_entrar) as Record<string, number> | undefined;
+                      const op = selectedRun.output_payload as any;
+                      const fpe = (selectedRun.revision?.falta_por_entrar ?? op?.revision_document?.falta_por_entrar) as Record<string, number> | undefined;
                       if (!fpe || Object.keys(fpe).length === 0) return null;
                       const entries = Object.entries(fpe).filter(([, v]) => Number(v) > 0);
                       if (entries.length === 0) return null;

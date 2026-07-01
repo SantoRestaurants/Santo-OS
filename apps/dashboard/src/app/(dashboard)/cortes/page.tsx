@@ -424,7 +424,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                     <div className="rounded-md border px-2.5 py-2" style={{ borderColor: LINE }}>
                       <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Falta entrar</div>
                       {(() => {
-                        const fpe = (selectedRun.revision?.falta_por_entrar ?? (selectedRun.output_payload?.revision_document as any)?.falta_por_entrar ?? {}) as Record<string, number>;
+                        const op = selectedRun.output_payload as any;
+                        const fpe = (selectedRun.revision?.falta_por_entrar ?? op?.revision_document?.falta_por_entrar ?? {}) as Record<string, number>;
                         const entries = Object.entries(fpe).filter(([, v]) => Number(v) > 0);
                         if (entries.length === 0) return <div className="text-xs" style={{ color: MUTED }}>Nada pendiente</div>;
                         return entries.map(([key, value]) => (
