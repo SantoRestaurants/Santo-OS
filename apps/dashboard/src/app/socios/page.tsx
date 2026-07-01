@@ -176,12 +176,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "");
 
-  // Override monthTotal with forecast document's venta_real (source of truth from Excel)
-  if (forecastArray.length > 0) {
-    monthTotal = forecastArray.reduce((sum, item) => {
-      return sum + (typeof item.venta_real === "number" ? item.venta_real : 0);
-    }, 0);
-  }
+  // Recalculate monthTotal from actual Corte runs (source of truth)
+  monthTotal = monthRuns.reduce((sum, run) => sum + dailySales(run), 0);
 
   // If no forecast from runs, compute meta from forecast documents
   if (monthMeta == null && forecastArray.length > 0) {
