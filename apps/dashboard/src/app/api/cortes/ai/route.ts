@@ -221,51 +221,67 @@ export async function POST(request: Request) {
   // Try NVIDIA DeepSeek first
   const nvidiaKey = process.env.NVIDIA_API_KEY;
   if (nvidiaKey) {
-    const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${nvidiaKey}` },
-      body: JSON.stringify({
-        model: "deepseek-ai/deepseek-v4-pro",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        top_p: 0.95,
-        max_tokens: 800,
-      }),
-    });
-    if (response.ok) {
-      const payload = await response.json();
-      const answer = payload?.choices?.[0]?.message?.content?.trim();
-      if (answer) return NextResponse.json({ answer });
+    try {
+      const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${nvidiaKey}` },
+        body: JSON.stringify({
+          model: "deepseek-ai/deepseek-v4-pro",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2,
+          top_p: 0.95,
+          max_tokens: 800,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        const answer = payload?.choices?.[0]?.message?.content?.trim();
+        if (answer) return NextResponse.json({ answer });
+      }
+    } catch (e) {
+      console.error("NVIDIA API error:", e);
     }
   }
 
   // Try Claude next
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: process.env.CLAUDE_MODEL || "claude-3-5-sonnet-latest", max_tokens: 800, temperature: 0.2,
-        system: "Sos SantoBot, asistente financiero de Santo Restaurants. Respondé en español, breve y preciso. Solo usá los datos provistos.",
-        messages: [{ role: "user", content: prompt }] }),
-    });
-    if (response.ok) {
-      const payload = await response.json();
-      const answer = payload?.content?.map((block: { text?: string }) => block.text ?? "").join("").trim();
-      return NextResponse.json({ answer: answer || "No pude generar una respuesta." });
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: process.env.CLAUDE_MODEL || "claude-3-5-sonnet-latest", max_tokens: 800, temperature: 0.2,
+          system: "Sos SantoBot, asistente financiero de Santo Restaurants.",
+          messages: [{ role: "user", content: prompt }] }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        const answer = payload?.content?.map((block: { text?: string }) => block.text ?? "").join("").trim();
+        if (answer) return NextResponse.json({ answer });
+      }
+    } catch (e) {
+      console.error("Claude API error:", e);
     }
   }
 
   // Fallback to Gemini
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) return NextResponse.json({ error: "Falta GEMINI_API_KEY o ANTHROPIC_API_KEY." }, { status: 503 });
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const gResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 800 } }),
-  });
-  if (!gResp.ok) return NextResponse.json({ error: "El asistente no pudo responder." }, { status: 502 });
-  const gPayload = await gResp.json();
-  const answer = gPayload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("").trim();
-  return NextResponse.json({ answer: answer || "No pude generar una respuesta." });
+  if (!geminiKey) return NextResponse.json({ error: "No hay API key configurada (NVIDIA, Claude ni Gemini)." }, { status: 503 });
+  try {
+    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const gResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 800 } }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!gResp.ok) return NextResponse.json({ error: "El asistente no pudo responder." }, { status: 502 });
+    const gPayload = await gResp.json();
+    const answer = gPayload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("").trim();
+    return NextResponse.json({ answer: answer || "No pude generar una respuesta." });
+  } catch (e) {
+    console.error("Gemini API error:", e);
+    return NextResponse.json({ error: "Timeout al contactar el asistente." }, { status: 504 });
+  }
 }
