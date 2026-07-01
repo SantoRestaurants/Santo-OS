@@ -260,12 +260,12 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     monthChartData.sort((a, b) => a.fecha.localeCompare(b.fecha));
   }
 
-  /* Saldos from latest run that has data */
-  const latestRun = unitRuns.find((run) => {
+  /* Saldos from any run that has data */
+  const runWithSaldos = data.runs.find((run) => {
     const s = (run.output_payload?.saldos as Record<string, number> | undefined);
-    return s && Object.values(s).some((v) => v > 0);
-  }) || unitRuns[0];
-  const saldos: Record<string, number> = (latestRun?.output_payload?.saldos as Record<string, number> | undefined) ?? {};
+    return s && Object.values(s).some((v) => Number(v) > 0);
+  });
+  const saldos: Record<string, number> = (runWithSaldos?.output_payload?.saldos as Record<string, number> | undefined) ?? {};
 
   /* Week and month context for AI */
   const weekContext = {
