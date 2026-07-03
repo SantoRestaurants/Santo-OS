@@ -140,9 +140,10 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const latestRunWithForecast = monthRuns.find((run) => run.revision?.vta_por_dia && run.revision.vta_por_dia.length > 0);
   let forecastArray: Array<{ fecha?: string | null; meta_vta?: number | null; venta_real?: number | null }> = latestRunWithForecast?.revision?.vta_por_dia || [];
 
-  // If forecast document exists for this month, prefer its meta values
-  // (they may be more up-to-date than the run's embedded forecast)
-  if (selectedMonth) {
+  // If no run carries forecast rows for this month, fall back to the registered
+  // forecast document. When both exist, keep the run forecast so the chart and
+  // KPI cards use the same target basis.
+  if (selectedMonth && forecastArray.length === 0) {
     const forecastDoc = data.forecastDocuments.find(doc => {
       const meta = doc.metadata as Record<string, unknown>;
       return meta.month === selectedMonth;
