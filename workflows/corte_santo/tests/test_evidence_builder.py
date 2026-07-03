@@ -337,11 +337,11 @@ def test_cxc_transfer_payment_updates_paypal_tips_and_amex_photo_total() -> None
 
     assert result["status"] == "ready"
     assert result["income_register"]["amex"] == 78099.19
-    assert result["income_register"]["paypal"] == 513.0
+    assert result["income_register"]["paypal"] == 758.0
     assert result["income_register"]["propinas"] == 29557.12
     paypal_note = result["income_cell_notes"]["paypal"]
-    assert paypal_note["amount"] == 513.0
-    assert paypal_note["formula"] == "=3078-2565"
+    assert paypal_note["amount"] == 758.0
+    assert paypal_note["formula"] == "=245+3078-2565"
     assert "CXC MESERO MOV 89972 $245" in paypal_note["comment"]
     assert not any(check["check_key"] == "cxc_adjustment_vs_bancos_difference" for check in result["checks"])
 
@@ -391,13 +391,33 @@ def test_multiple_cxc_documents_combine_paypal_formula() -> None:
         config={"evidence_rules": {"evidence_tolerance": 0, "income_photo_override_tolerance": 0.1}},
     )
 
-    assert result["income_register"]["paypal"] == 513.0
+    assert result["income_register"]["paypal"] == 758.0
     assert result["income_register"]["propinas"] == 29557.12
     paypal_note = result["income_cell_notes"]["paypal"]
-    assert paypal_note["amount"] == 513.0
-    assert paypal_note["formula"] == "=3078-2565"
+    assert paypal_note["amount"] == 758.0
+    assert paypal_note["formula"] == "=245+3078-2565"
     assert "CXC MESERO MOV 89972 $245" in paypal_note["comment"]
     assert "PAGO CXC MOV 87028 TRANSFERENCIA" in paypal_note["comment"]
+
+
+def test_email_body_openings_are_authoritative_and_not_duplicated_by_images() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 0.0, "propina": 0.0}},
+        {"bancos": {"consumo": 0.0, "propina": 0.0}},
+        cxc_events=[
+            {"kind": "opening", "movement_id": "90348", "principal": 990.0, "description": "CXC movimiento 90348 $990"},
+            {"kind": "opening", "movement_id": "90359", "principal": 640.0, "description": "CXC movimiento 90359 $640"},
+        ],
+        vision_documents=[
+            {"document_type": "cxc", "status": "extracted", "values": {"canal": "cxc", "cxc_note_amount": 990.0, "paypal_amount": 990.0}},
+            {"document_type": "cxc", "status": "extracted", "values": {"canal": "cxc", "cxc_note_amount": 640.0, "paypal_amount": 640.0}},
+        ],
+        income_channels={"paypal": 0.0},
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["income_register"]["paypal"] == 1630.0
+    assert result["income_cell_notes"]["paypal"]["formula"] == "=990+640"
 
 
 def test_cxc_vision_failure_requires_review() -> None:

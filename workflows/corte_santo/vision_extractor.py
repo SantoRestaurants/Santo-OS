@@ -494,6 +494,8 @@ def _extract_cxc_totals(text: str) -> dict[str, Any] | None:
                 "canal": "cxc",
                 "comment_lines": comment_lines,
                 "cxc_note_amount": paypal_amount,
+                "paypal_amount": paypal_amount,
+                "paypal_formula_terms": cxc_charge_amounts,
             },
             "confidence": 0.9,
             "review_reason": None,

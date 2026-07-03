@@ -81,7 +81,14 @@ update Drive -> notify supervisor -> completed`
 - AMEX usually settles in 3-5 days.
 - Uber settles Mondays for the preceding Monday-Sunday period.
 - Rappi settles Fridays for the applicable weekly period.
-- CXC is included only when Wansoft identifies a CXC.
+- CxC lifecycle intent comes from the Corte email body; images provide amount,
+  channel and tip evidence.
+- On opening, add the principal to PayPal once and write the movement details in
+  the PayPal note.
+- On settlement, subtract the already recognized principal. Add only a newly
+  known tip to PayPal/Propinas; a cash settlement has zero PayPal delta.
+- Persist one `corte_receivables` row per stable movement so reprocessing cannot
+  recognize principal twice.
 - Unclassified deposits or uncertain matches require review.
 
 ### Additional Activity

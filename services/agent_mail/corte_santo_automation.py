@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from services.drive_connector.connector import build_drive_client
+from workflows.corte_santo.cxc import parse_cxc_events
 
 WORKFLOW_KEY = "corte_santo_daily_sales_reconciliation"
 GOOGLE_DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -323,6 +324,7 @@ def run_corte_initial_from_message(
 
     message_id = source_message.get("message_id") or source_message.get("id")
     subject = str(source_message.get("subject") or "")
+    body = str(source_message.get("body_text") or source_message.get("body") or "")
     business_date = _business_date(subject)
     restaurant_key = _restaurant_key(subject)
     if not message_id or not business_date or not restaurant_key:
@@ -384,6 +386,7 @@ def run_corte_initial_from_message(
             "workbook_paths": paths,
             "workbook_outputs": outputs,
             "drive_file_ids": drive_file_ids,
+            "cxc_events": parse_cxc_events(body),
         },
     }
     if workbook_missing:

@@ -235,7 +235,8 @@ def test_local_ocr_cxc_ticket_charge_becomes_paypal_component() -> None:
     assert result is not None
     assert result["values"]["canal"] == "cxc"
     assert result["values"]["cxc_note_amount"] == 245.0
-    assert "paypal_amount" not in result["values"]
+    assert result["values"]["paypal_amount"] == 245.0
+    assert result["values"]["paypal_formula_terms"] == [245.0]
 
 
 def test_local_ocr_cxc_transfer_line_infers_account_from_tip() -> None:
@@ -316,7 +317,7 @@ def test_local_ocr_cxc_ticket_uses_gran_total_when_payment_line_is_noisy() -> No
 
     assert result is not None
     assert result["values"]["cxc_note_amount"] == 245.0
-    assert "paypal_amount" not in result["values"]
+    assert result["values"]["paypal_amount"] == 245.0
 
 
 def test_local_ocr_detalle_efectivo_extracts_courtesy() -> None:

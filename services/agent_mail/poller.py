@@ -29,6 +29,7 @@ import httpx
 
 from services.agent_mail.intake import intake_email, message_content_fingerprint
 from services.agent_mail.corte_santo_automation import run_corte_initial_from_message
+from workflows.corte_santo.cxc import parse_cxc_events, receivable_key
 from services.ai.classifier import classify_email, summarize_email
 from services.drive_connector.connector import save_document
 
@@ -346,6 +347,49 @@ class SupabaseWriter:
         )
         if resp.status_code >= 400:
             logger.error("Failed to upsert corte_daily_record: %s %s", resp.status_code, resp.text)
+            return False
+        return True
+
+    def upsert_corte_receivable(self, record: dict[str, Any]) -> bool:
+        """Persist an idempotent CxC lifecycle row."""
+        if record.get("status") == "settled" and record.get("movement_id"):
+            existing = self.http.get(
+                "/rest/v1/corte_receivables",
+                params={
+                    "restaurant_id": f"eq.{record['restaurant_id']}",
+                    "movement_id": f"eq.{record['movement_id']}",
+                    "select": "id",
+                    "limit": "1",
+                },
+            )
+            rows = existing.json() if existing.status_code < 400 else []
+            if isinstance(rows, list) and rows:
+                resp = self.http.patch(
+                    f"/rest/v1/corte_receivables?id=eq.{rows[0]['id']}",
+                    json={
+                        "settled_on": record.get("settled_on"),
+                        "settled_principal": record.get("settled_principal"),
+                        "settlement_tip": record.get("settlement_tip", 0),
+                        "status": "settled",
+                        "evidence": record.get("evidence", {}),
+                        "source_workflow_run_id": record.get("source_workflow_run_id"),
+                    },
+                )
+                return resp.status_code < 400
+            record = {
+                **record,
+                "settled_on": None,
+                "settled_principal": 0,
+                "status": "requires_review",
+            }
+        resp = self.http.post(
+            "/rest/v1/corte_receivables",
+            params={"on_conflict": "receivable_key"},
+            headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+            json=record,
+        )
+        if resp.status_code >= 400:
+            logger.error("Failed to upsert corte_receivable: %s %s", resp.status_code, resp.text)
             return False
         return True
 
@@ -772,6 +816,7 @@ def poll_and_classify(
                             "waiting_for_input", "completed", "requires_review"
                         ):
                             wr = corte_stage.get("workflow_result", {}).get("workflow_run", {})
+                            cxc_events = parse_cxc_events(body)
                             inp = wr.get("input_payload", {}) or {}
                             register = (
                                 (wr.get("canonical_evidence", {}) or {})
@@ -809,6 +854,25 @@ def poll_and_classify(
                                 output_payload,
                                 status="waiting_for_input",
                             )
+                            for event in cxc_events:
+                                movement_id = event.get("movement_id")
+                                stable_receivable_key = receivable_key(
+                                    restaurant_id, corte_business_date, event
+                                )
+                                is_settlement = event.get("kind") == "settlement"
+                                supabase.upsert_corte_receivable({
+                                    "receivable_key": stable_receivable_key,
+                                    "restaurant_id": restaurant_id,
+                                    "movement_id": movement_id,
+                                    "opened_on": corte_business_date,
+                                    "principal": event.get("principal"),
+                                    "settled_on": corte_business_date if is_settlement else None,
+                                    "settled_principal": event.get("principal") if is_settlement else 0,
+                                    "status": "settled" if is_settlement else "open",
+                                    "source_provider_message_id": message_id,
+                                    "source_workflow_run_id": run_id,
+                                    "evidence": event,
+                                })
                             if restaurant_id and register:
                                 from workflows.corte_santo.daily_record import (
                                     build_daily_record,

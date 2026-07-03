@@ -220,6 +220,7 @@ def build_canonical_evidence(
     bank_statement: dict[str, Any] | None = None,
     income_channels: dict[str, Any] | None = None,
     income_adjustments: dict[str, Any] | None = None,
+    cxc_events: list[dict[str, Any]] | None = None,
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create canonical reconciliation and income-registration values."""
@@ -379,6 +380,21 @@ def build_canonical_evidence(
     paypal_cxc_total = 0.0
     paypal_note_values: dict[str, Any] = {"comment_lines": [], "paypal_formula_terms": []}
     paypal_note_channel = None
+    opening_events = [
+        event for event in (cxc_events or [])
+        if isinstance(event, dict) and event.get("kind") == "opening" and (_amount(event.get("principal")) or 0) > 0
+    ]
+    for event in opening_events:
+        principal = _amount(event.get("principal")) or 0.0
+        paypal_cxc_total = round(paypal_cxc_total + principal, 2)
+        paypal_note_values["paypal_formula_terms"].append(principal)
+        movement = str(event.get("movement_id") or "").strip()
+        description = str(event.get("description") or "").strip()
+        note_line = f"CXC MOV {movement} ${principal:g}" if movement else f"CXC ${principal:g}"
+        if description:
+            note_line = description
+        if note_line not in paypal_note_values["comment_lines"]:
+            paypal_note_values["comment_lines"].append(note_line)
     for cxc_candidate in _vision_documents_of_type(vision_documents, "cxc"):
         candidate_values = cxc_candidate.get("values") if isinstance(cxc_candidate.get("values"), dict) else {}
         candidate_paypal = _amount(candidate_values.get("paypal_amount"))
@@ -391,15 +407,19 @@ def build_canonical_evidence(
             for line in candidate_lines:
                 if line not in paypal_note_values["comment_lines"]:
                     paypal_note_values["comment_lines"].append(line)
-            if candidate_note_amount is not None and candidate_note_amount > 0:
-                note_line = f"CXC efectivo ${candidate_note_amount:g}"
+            if candidate_note_amount is not None and candidate_note_amount > 0 and not opening_events:
+                note_line = f"CXC ${candidate_note_amount:g}"
                 if note_line not in paypal_note_values["comment_lines"]:
                     paypal_note_values["comment_lines"].append(note_line)
-            continue
+            if opening_events:
+                continue
         if candidate_note_amount is not None and candidate_note_amount > 0:
             for line in candidate_lines:
                 if line not in paypal_note_values["comment_lines"]:
                     paypal_note_values["comment_lines"].append(line)
+            if not opening_events:
+                paypal_cxc_total = round(paypal_cxc_total + candidate_note_amount, 2)
+                paypal_note_values["paypal_formula_terms"].append(candidate_note_amount)
         if candidate_paypal is None or candidate_paypal <= 0:
             continue
         candidate_propina = _amount(candidate_values.get("propina")) or 0.0

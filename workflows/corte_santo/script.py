@@ -750,6 +750,7 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 bank_statement=bank_statement,
                 income_channels=payload.get("income_channels"),
                 income_adjustments=payload.get("income_adjustments"),
+                cxc_events=payload.get("cxc_events"),
                 config=config,
             )
             canonical_inputs = canonical_evidence["reconciliation_inputs"]
