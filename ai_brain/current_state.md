@@ -43,6 +43,17 @@
   advisor warnings concern pre-existing Santo Private booking policy and Auth
   leaked-password protection, outside this Corte migration.
 
+## 2026-07-03 - Global outstanding card corrected
+
+- Socios now computes `Falta por entrar hasta hoy` independently from the
+  selected day. It uses the latest non-empty bank/revision outstanding snapshot
+  for the selected unit on or before today and displays its reconciliation
+  cutoff date.
+- Production data currently yields MXN 70,815.24 with a cutoff of 2026-06-29.
+  Runs for 2026-06-30 and 2026-07-01 contain neither expected collection items
+  nor a bank reconciliation snapshot, so those amounts cannot be inferred
+  safely and remain an upstream persistence gap.
+
 Last updated: 2026-06-24.
 
 ## Active Handoff

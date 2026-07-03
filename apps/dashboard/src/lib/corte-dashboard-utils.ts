@@ -17,6 +17,7 @@ type RunLike = {
     vta_por_dia?: Array<{ fecha?: string | null; meta_vta?: number | null; venta_real?: number | null }>;
     vta_al_dia?: { venta_real?: number | null; meta_vta?: number | null };
     reconciliation_totals?: { total_real?: number | null; total_sistema?: number | null; difference?: number | null };
+    falta_por_entrar?: Record<string, number>;
   } | null;
   documents?: DocumentLike[];
   exceptions?: unknown[];
@@ -156,6 +157,50 @@ export function duplicateRunsByDay<T extends RunLike>(runs: T[]) {
   ).filter(([, items]) => items.length > 1);
 }
 
+export type OutstandingSnapshot = {
+  asOfDate: string;
+  entries: Array<{ channel: string; amount: number }>;
+  total: number;
+};
+
+export function getOutstandingThroughDate(runs: RunLike[], throughDate: string): OutstandingSnapshot | null {
+  const candidates = runs
+    .filter((run) => Boolean(run.business_date && run.business_date <= throughDate))
+    .map((run) => {
+      const payload = run.output_payload ?? {};
+      const revisionDocument = isRecord(payload.revision_document) ? payload.revision_document : null;
+      const bankReconciliation = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
+      const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
+      const nestedBankReconciliation = bankStage && isRecord(bankStage.bank_reconciliation)
+        ? bankStage.bank_reconciliation
+        : null;
+      const raw = run.revision?.falta_por_entrar
+        ?? (revisionDocument && isRecord(revisionDocument.falta_por_entrar) ? revisionDocument.falta_por_entrar : null)
+        ?? (bankReconciliation && isRecord(bankReconciliation.pending_collections) ? bankReconciliation.pending_collections : null)
+        ?? (nestedBankReconciliation && isRecord(nestedBankReconciliation.pending_collections) ? nestedBankReconciliation.pending_collections : null);
+
+      if (!raw) return null;
+      const entries = Object.entries(raw)
+        .map(([channel, amount]) => ({ channel, amount: Number(amount) }))
+        .filter((entry) => Number.isFinite(entry.amount) && entry.amount > 0)
+        .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
+      if (entries.length === 0) return null;
+
+      return {
+        asOfDate: run.business_date as string,
+        createdAt: run.created_at,
+        entries,
+        total: entries.reduce((sum, entry) => sum + entry.amount, 0),
+      };
+    })
+    .filter((item): item is OutstandingSnapshot & { createdAt: string } => item !== null)
+    .sort((a, b) => b.asOfDate.localeCompare(a.asOfDate) || b.createdAt.localeCompare(a.createdAt));
+
+  const latest = candidates[0];
+  if (!latest) return null;
+  return { asOfDate: latest.asOfDate, entries: latest.entries, total: latest.total };
+}
+
 function compareRunQuality(a: RunLike, b: RunLike) {
   return scoreRun(b) - scoreRun(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 }
@@ -163,7 +208,7 @@ function compareRunQuality(a: RunLike, b: RunLike) {
 function scoreRun(run: RunLike) {
   let score = 0;
   // Bank-validated runs should ALWAYS win, even over revision data
-  const op = (run as any).output_payload || {};
+  const op = run.output_payload ?? {};
   if (op.bank_validation_status === "bank_validated" || op.stage === "bank_validated") score += 200;
   if (run.revision?.reconciliation_totals?.total_real) score += 100;
   if (dailyForecastMeta(run) != null) score += 20;

@@ -1,5 +1,5 @@
 import { getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
+import { dailyForecastMeta, dailySales, dedupeRunsByDay, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
 import Link from "next/link";
 import Image from "next/image";
 import { SociosChart } from "./SociosChart";
@@ -50,8 +50,6 @@ function dateLabel(value: string | null | undefined, mode: "short" | "long" = "l
     year: mode === "long" ? "numeric" : undefined,
   }).format(parsed);
 }
-
-function runTotal(run: ReconciliationRun) { return dailySales(run); }
 
 function isBankValidated(run: ReconciliationRun) {
   return run.status === "completed" || run.status === "bank_validated" || run.documents.some(d => d.document_type === "amex_statement" || d.document_type === "banorte_statement");
@@ -112,7 +110,10 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   /* navigation state */
   const todayMonth = new Date().toISOString().slice(0, 7);
   const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
+  const unitAllRuns = allRuns.filter(r => getUnit(r) === selectedUnit);
   const unitRuns = runs.filter(r => getUnit(r) === selectedUnit);
+  const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  const outstanding = getOutstandingThroughDate(unitAllRuns, todayMexico);
 
   const allMonths = Array.from(new Set(unitRuns.map(r => monthKey(r.business_date)))).sort().reverse();
 
@@ -589,19 +590,16 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                     </div>
 
                     {/* falta por entrar */}
-                    {(() => {
-                      const op = selectedRun.output_payload as any;
-                      const fpe = (selectedRun.revision?.falta_por_entrar ?? op?.revision_document?.falta_por_entrar) as Record<string, number> | undefined;
-                      if (!fpe || Object.keys(fpe).length === 0) return null;
-                      const entries = Object.entries(fpe).filter(([, v]) => Number(v) > 0);
-                      if (entries.length === 0) return null;
+                    {outstanding && (() => {
                       return (
                         <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
-                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "16px" }}>Falta por entrar en la cuenta</div>
-                          {entries.map(([key, value]) => (
-                            <div key={key} className="flex justify-between" style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                              <span style={{ color: C.dim, fontSize: "13px" }}>{key}</span>
-                              <span style={{ color: C.red, fontWeight: 600, fontSize: "14px" }}>{moneyFull(Number(value))}</span>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falta por entrar hasta hoy</div>
+                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
+                          <div className="display-font" style={{ color: C.red, fontSize: "30px", fontWeight: 700, marginBottom: "12px" }}>{moneyFull(outstanding.total)}</div>
+                          {outstanding.entries.map(({ channel, amount }) => (
+                            <div key={channel} className="flex justify-between" style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                              <span style={{ color: C.dim, fontSize: "13px" }}>{channel}</span>
+                              <span style={{ color: C.red, fontWeight: 600, fontSize: "14px" }}>{moneyFull(amount)}</span>
                             </div>
                           ))}
                         </div>
