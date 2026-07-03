@@ -60,12 +60,36 @@ export type ForecastDocument = {
   metadata: Record<string, unknown>;
 };
 
+export type CorteDailyRecord = {
+  id: string;
+  restaurant_id: string;
+  business_date: string;
+  amex: number;
+  debito: number;
+  credito: number;
+  efectivo: number;
+  transferencia: number;
+  total: number;
+  paypal: number;
+  uber_eats: number;
+  rappi: number;
+  propinas: number;
+  venta_bruta: number | null;
+  total_bruto: number | null;
+  forecast_target: number | null;
+  source_kind: string;
+  source_workflow_run_id: string | null;
+  parser_version: string;
+  restaurants?: { restaurant_key?: string; display_name?: string } | null;
+};
+
 export type ReconciliationData = {
   status: ReconciliationStatus;
   missingConfig: string[];
   error: string | null;
   runs: ReconciliationRun[];
   forecastDocuments: ForecastDocument[];
+  dailyRecords: CorteDailyRecord[];
 };
 
 type RunRow = {
@@ -85,18 +109,18 @@ export { APPROVAL_REVIEW_KEY };
 export async function getReconciliationData(skipAuth: boolean = false): Promise<ReconciliationData> {
   const config = getSupabasePublicConfig();
   if (!config.configured) {
-    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [] };
+    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
   }
 
   const supabase = skipAuth ? createSupabaseServiceClient() : await createSupabaseServerClient();
   if (!supabase) {
-    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [] };
+    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
   }
 
   if (!skipAuth) {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      return { status: "auth_required", missingConfig: [], error: null, runs: [], forecastDocuments: [] };
+      return { status: "auth_required", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
     }
 
     const role = user.app_metadata?.role;
@@ -104,7 +128,7 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
       // Falback to people table if app_metadata is not yet set
       const { data: person } = await supabase.from("people").select("role_key").eq("email", user.email).single();
       if (!person || person.role_key !== "supervisor") {
-        return { status: "unauthorized", missingConfig: [], error: null, runs: [], forecastDocuments: [] };
+        return { status: "unauthorized", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
       }
     }
   }
@@ -118,7 +142,19 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     .limit(500);
 
   if (runsResult.error) {
-    return { status: "query_failed", missingConfig: [], error: runsResult.error.message, runs: [], forecastDocuments: [] };
+    return { status: "query_failed", missingConfig: [], error: runsResult.error.message, runs: [], forecastDocuments: [], dailyRecords: [] };
+  }
+
+  let dailyRecords: CorteDailyRecord[] = [];
+  try {
+    const result = await supabase
+      .from("corte_daily_records")
+      .select("id,restaurant_id,business_date,amex,debito,credito,efectivo,transferencia,total,paypal,uber_eats,rappi,propinas,venta_bruta,total_bruto,forecast_target,source_kind,source_workflow_run_id,parser_version,restaurants(restaurant_key,display_name)")
+      .order("business_date", { ascending: false })
+      .limit(1000);
+    if (!result.error) dailyRecords = (result.data ?? []) as unknown as CorteDailyRecord[];
+  } catch {
+    // Canonical table is introduced with a compatibility window.
   }
 
   const runs = (runsResult.data ?? []) as RunRow[];
@@ -137,8 +173,9 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
       status: "ready",
       missingConfig: [],
       error: null,
-      runs: [],
+      runs: dailyRecords.map(dailyRecordAsRun),
       forecastDocuments: (forecastResult.data ?? []) as ForecastDocument[],
+      dailyRecords,
     };
   }
 
@@ -187,7 +224,7 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     exceptionsResult.error;
 
   if (firstError) {
-    return { status: "query_failed", missingConfig: [], error: firstError.message, runs: [], forecastDocuments: [] };
+    return { status: "query_failed", missingConfig: [], error: firstError.message, runs: [], forecastDocuments: [], dailyRecords };
   }
 
   const emailsByRun = groupByRunId(emailsResult.data ?? []);
@@ -196,36 +233,85 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
   const reviewsByRun = groupByRunId(reviewsResult.data ?? []);
   const exceptionsByRun = groupByRunId(exceptionsResult.data ?? []);
 
-  return {
-    status: "ready",
-    missingConfig: [],
-    error: null,
-    runs: runs.map((run) => {
+  const hydratedRuns: ReconciliationRun[] = runs.map((run) => {
+      const daily = dailyRecords.find((record) => record.source_workflow_run_id === run.id)
+        ?? dailyRecords.find((record) => record.business_date === run.business_date);
       const linkedDocs = documentsByRun.get(run.id) ?? [];
       const dateDocs = run.business_date ? documentsByDate.get(run.business_date) ?? [] : [];
       let rev = extractRevisionDocument({ ...run, business_date: run.business_date ?? "" });
-      // Fallback: build revision from raw output_payload if extraction fails
       if (!rev) {
         const op = run.output_payload as Record<string, any> | undefined;
         const rawRev = op?.revision_document as Record<string, any> | undefined;
         if (rawRev) rev = rawRev as any;
       }
-      // Ensure falta_por_entrar is carried through
       const rawOp = run.output_payload as Record<string, any> | undefined;
       const rawRevDoc = rawOp?.revision_document as Record<string, any> | undefined;
-      if (rawRevDoc?.falta_por_entrar && !rev?.falta_por_entrar) {
-        if (rev) (rev as any).falta_por_entrar = rawRevDoc.falta_por_entrar;
+      if (rawRevDoc?.falta_por_entrar && !rev?.falta_por_entrar && rev) {
+        (rev as any).falta_por_entrar = rawRevDoc.falta_por_entrar;
       }
       return {
         ...run,
+        output_payload: daily ? {
+          ...run.output_payload,
+          daily_record: daily,
+          income_register: dailyIncomeRegister(daily),
+        } : run.output_payload,
         revision: rev,
         email: firstForRun(emailsByRun, run.id) as ReconciliationRun["email"],
         documents: dedupeDocuments([...linkedDocs, ...dateDocs]) as ReconciliationRun["documents"],
         reviews: (reviewsByRun.get(run.id) ?? []) as ReconciliationRun["reviews"],
         exceptions: (exceptionsByRun.get(run.id) ?? []) as ReconciliationRun["exceptions"],
       };
-    }),
+    });
+
+  const runDates = new Set(hydratedRuns.map((run) => run.business_date));
+  for (const daily of dailyRecords) {
+    if (runDates.has(daily.business_date)) continue;
+    hydratedRuns.push(dailyRecordAsRun(daily));
+  }
+
+  return {
+    status: "ready",
+    missingConfig: [],
+    error: null,
+    runs: hydratedRuns,
     forecastDocuments: (forecastResult.data ?? []) as ForecastDocument[],
+    dailyRecords,
+  };
+}
+
+function dailyIncomeRegister(record: CorteDailyRecord) {
+  return {
+    amex: record.amex,
+    debito: record.debito,
+    credito: record.credito,
+    efectivo: record.efectivo,
+    transferencia: record.transferencia,
+    paypal: record.paypal,
+    uber: record.uber_eats,
+    rappi: record.rappi,
+    propinas: record.propinas,
+  };
+}
+
+function dailyRecordAsRun(record: CorteDailyRecord): ReconciliationRun {
+  const storedUnit = record.restaurants?.restaurant_key ?? record.restaurants?.display_name;
+  const unit = !storedUnit || storedUnit === "default_restaurant_confirm" || storedUnit === "[CONFIRM] First P0 restaurant/unit"
+    ? "SANTO"
+    : storedUnit;
+  return {
+    id: `daily:${record.id}`,
+    business_date: record.business_date,
+    status: "completed",
+    source_channel: "system",
+    requires_review_reason: null,
+    created_at: `${record.business_date}T00:00:00Z`,
+    output_payload: { daily_record: record, income_register: dailyIncomeRegister(record) },
+    revision: { unidad: unit, restaurant_key: unit, business_date: record.business_date },
+    email: null,
+    documents: [],
+    reviews: [],
+    exceptions: [],
   };
 }
 

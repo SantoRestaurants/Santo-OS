@@ -31,7 +31,17 @@ These are the confirmed missing inputs before later P0 PRs can safely finalize w
 - Corte exception severities and reviewer routing (tolerance is confirmed at 0).
 - Confirmation of the exact corte Excel column headers per unit so the
   `excel_layout.column_label_map` default matches production files (drives Option B extraction).
-- Exact PayPal settlement/matching rule and source evidence.
+- Exact production examples for the now-described CxC/PayPal lifecycle: one
+  creation email body, one settlement email body and its CxC image, including
+  the stable movement/customer/reference fields available to identify the same
+  receivable across both dates.
+- Exact Corte workbook examples identifying the `Venta Bruta` and `Total Bruto`
+  headers/cells. `Venta Real` is confirmed to use `Venta Bruta`; extraction must
+  be validated against the real layout before backfilling history.
+- Confirm whether `Falta por entrar hasta hoy` uses the expected settlement date
+  or the original business date as its aging date for each channel. The balance
+  itself is confirmed to include all unmatched items through today and to be
+  independent of the selected dashboard day.
 - Confirmation of whether Rappi's operational period ends Thursday or Friday;
   the PDF contains both phrasings.
 - Drive file IDs for the active SANTO Ingresos and Forecast workbooks, plus the

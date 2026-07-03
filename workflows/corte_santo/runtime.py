@@ -207,7 +207,17 @@ def run_initial_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[s
             {"status": "requires_review", "review_reason": "revision_document_missing"},
             config.get("supervisor_email"),
         )
-    venta_bruta = revision_document.get("reconciliation_totals", {}).get("total_real")
+    from workflows.corte_santo.daily_record import spreadsheet_totals
+
+    canonical_evidence = workflow_result.get("workflow_run", {}).get("canonical_evidence", {})
+    income_register = canonical_evidence.get("income_register") or payload.get("income_register") or {}
+    daily_totals = spreadsheet_totals(income_register)
+    venta_bruta = daily_totals["venta_bruta"]
+    revision_document["daily_financial_record"] = {
+        "venta_bruta": venta_bruta,
+        "total_bruto": daily_totals["total_bruto"],
+        "parser_version": "corte_daily_record_v1",
+    }
     forecast = writer.write_forecast(
         str(paths.get("forecast", "")),
         str(outputs.get("forecast", "")),

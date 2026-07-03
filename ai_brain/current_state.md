@@ -1,5 +1,48 @@
 # Current State
 
+## 2026-07-02 - Corte daily-record stabilization started
+
+- Added a proposed `corte_daily_records` migration with one unique row per
+  restaurant/date and explicit channel, `venta_bruta`, `total_bruto`, forecast
+  and source-version fields. The migration has not yet been applied remotely.
+- Confirmed from historical Ingresos evidence that `Total Bruto` is the payment
+  channel total and `Venta Bruta = Total Bruto - Propinas`; Forecast and Socios
+  must use Venta Bruta rather than reconciliation `total_real`.
+- Added an idempotent, dry-run-first historical workbook importer and dual-write
+  support for future Agent Mail Cortes. Existing workflow-run JSON remains as a
+  compatibility/audit path.
+- Dashboard data loading now prefers canonical daily records when available and
+  can expose historical days without synthetic workflow runs.
+- CxC creation/settlement events and item-level outstanding collections remain
+  the next stabilization slice; do not encode them as daily JSON snapshots.
+
+## 2026-07-03 - Historical Ingresos dry run validated
+
+- Production project URL confirmed as `https://tstesjnefidyxryitfmi.supabase.co`,
+  but the connected Supabase account currently has no permission for that
+  project and no replacement service key is available in the local environment.
+- Parsed 10 supplied Ingresos workbooks under
+  `C:\Users\dchac\Downloads\SANTO`: 304 unique daily records from 2025-06-01
+  through 2026-05-31.
+- Validated zero duplicate dates and zero mismatches for
+  `Venta Bruta = Total Bruto - Propinas`. The single zero-sales record is
+  2025-12-25 and is retained as a real closed day.
+- The importer now supports the real layered workbook headers and explicitly
+  rebases stale internal dates from the month/year in the filename. This fixes
+  the January 2026 workbook whose cells still contain January 2024 dates.
+- Missing supplied months remain visible gaps: August and September 2025, plus
+  June 2026 onward.
+- Supabase access was restored and migration `corte_daily_records` was applied
+  to project `tstesjnefidyxryitfmi`. All 304 validated rows were imported in
+  idempotent batches and re-queried successfully.
+- Remote totals exactly match the local source audit: Venta Bruta
+  `32,862,233.35`, Total Bruto `36,481,635.50`, Propinas `3,619,402.15`, with
+  zero duplicate dates and zero formula mismatches.
+- Migration `harden_set_updated_at_search_path` fixed the Supabase advisor
+  warning for the shared updated-at trigger function. Remaining security
+  advisor warnings concern pre-existing Santo Private booking policy and Auth
+  leaked-password protection, outside this Corte migration.
+
 Last updated: 2026-06-24.
 
 ## Active Handoff

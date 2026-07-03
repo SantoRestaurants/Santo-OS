@@ -1,3 +1,4 @@
+import os
 import openpyxl
 import httpx
 
@@ -12,8 +13,8 @@ for sheet in wb.sheetnames:
                 print(f'Found substring "{cell}" in {sheet} at row {r_idx+1} col {c_idx+1}')
 
 print("\n--- DB SEARCH ---")
-supabase_url = "https://tstesjnefidyxryitfmi.supabase.co"
-service_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzdGVzam5lZmlkeXhyeWl0Zm1pIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDMyNTczNiwiZXhwIjoyMDk1OTAxNzM2fQ.44AE5MDIiReSTgUxzY5Xl83hfklhKzocgEJXzg48Ee4"
+supabase_url = os.environ["SUPABASE_URL"]
+service_key = os.environ["SUPABASE_SERVICE_KEY"]
 
 headers = {
     "apikey": service_key,

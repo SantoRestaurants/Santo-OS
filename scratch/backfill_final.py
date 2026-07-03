@@ -2,12 +2,13 @@
 Backfill final v2 - sin metas (meta_vta = null/0, diferencia = 0).
 El usuario cargará las metas después con PDF.
 """
+import os
 import httpx
 import openpyxl
 import datetime
 
-SUPABASE_URL = "https://tstesjnefidyxryitfmi.supabase.co"
-SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzdGVzam5lZmlkeXhyeWl0Zm1pIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDMyNTczNiwiZXhwIjoyMDk1OTAxNzM2fQ.44AE5MDIiReSTgUxzY5Xl83hfklhKzocgEJXzg48Ee4"
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 
 HEADERS = {
     "apikey": SERVICE_KEY,

@@ -95,6 +95,10 @@ export function dailyForecastMeta(run: RunLike) {
 }
 
 export function dailySales(run: RunLike) {
+  const dailyRecord = run.output_payload?.daily_record;
+  if (isRecord(dailyRecord) && typeof dailyRecord.venta_bruta === "number") {
+    return dailyRecord.venta_bruta;
+  }
   const total = run.revision?.reconciliation_totals?.total_real;
   if (typeof total === "number") return total;
 

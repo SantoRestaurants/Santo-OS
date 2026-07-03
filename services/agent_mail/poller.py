@@ -288,6 +288,23 @@ class SupabaseWriter:
             return data[0].get("id")
         return None
 
+    def get_restaurant_id(self, restaurant_key: str) -> str | None:
+        """Resolve the stable restaurant UUID used by canonical daily records."""
+        candidates = [restaurant_key]
+        if restaurant_key.lower() == "santo":
+            candidates.append("default_restaurant_confirm")
+        for candidate in candidates:
+            resp = self.http.get(
+                "/rest/v1/restaurants",
+                params={"restaurant_key": f"eq.{candidate}", "select": "id", "limit": "1"},
+            )
+            if resp.status_code >= 400:
+                continue
+            data = resp.json()
+            if isinstance(data, list) and data:
+                return data[0].get("id")
+        return None
+
     def upsert_workflow_run(self, run: dict[str, Any]) -> str | None:
         """Upsert a workflow_run. Returns the run ID."""
         resp = self.http.post(
@@ -316,6 +333,19 @@ class SupabaseWriter:
         )
         if resp.status_code >= 400:
             logger.error("Failed to update workflow_run output: %s %s", resp.status_code, resp.text)
+            return False
+        return True
+
+    def upsert_corte_daily_record(self, record: dict[str, Any]) -> bool:
+        """Dual-write one canonical day without creating another workflow run."""
+        resp = self.http.post(
+            "/rest/v1/corte_daily_records",
+            params={"on_conflict": "restaurant_id,business_date"},
+            headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+            json=record,
+        )
+        if resp.status_code >= 400:
+            logger.error("Failed to upsert corte_daily_record: %s %s", resp.status_code, resp.text)
             return False
         return True
 
@@ -694,6 +724,9 @@ def poll_and_classify(
                 workflow_key = result["command"]["workflow_key"]
                 workflow_id = supabase.get_workflow_id(workflow_key)
                 if workflow_id:
+                    command_payload = result["command"].get("payload", {})
+                    restaurant_key = command_payload.get("restaurant_key") or "santo"
+                    restaurant_id = supabase.get_restaurant_id(restaurant_key)
                     idem_key = hashlib.sha256(
                         f"agent_mail:{email_record['provider_message_id']}".encode()
                     ).hexdigest()[:32]
@@ -707,6 +740,7 @@ def poll_and_classify(
 
                     run_id = supabase.upsert_workflow_run({
                         "workflow_id": workflow_id,
+                        "restaurant_id": restaurant_id,
                         "business_date": corte_business_date,
                         "status": "requires_review",
                         "source_channel": "agent_mail",
@@ -775,6 +809,34 @@ def poll_and_classify(
                                 output_payload,
                                 status="waiting_for_input",
                             )
+                            if restaurant_id and register:
+                                from workflows.corte_santo.daily_record import (
+                                    build_daily_record,
+                                    spreadsheet_totals,
+                                )
+
+                                totals = spreadsheet_totals(register)
+                                day_total = sum(
+                                    float(register.get(key) or 0)
+                                    for key in ("amex", "debito", "credito", "efectivo")
+                                )
+                                forecast_target = None
+                                revision = wr.get("revision_document") or {}
+                                for forecast_day in revision.get("vta_por_dia", []):
+                                    if forecast_day.get("fecha") == wr.get("business_date"):
+                                        forecast_target = forecast_day.get("meta_vta")
+                                        break
+                                supabase.upsert_corte_daily_record(build_daily_record(
+                                    restaurant_id=restaurant_id,
+                                    business_date=wr.get("business_date"),
+                                    income_register=register,
+                                    venta_bruta=totals["venta_bruta"],
+                                    total=day_total,
+                                    total_bruto=totals["total_bruto"],
+                                    forecast_target=forecast_target,
+                                    source_kind="automatic_corte",
+                                    source_workflow_run_id=run_id,
+                                ))
 
             # If requires_review → create exception
             elif result["status"] == "requires_review":
