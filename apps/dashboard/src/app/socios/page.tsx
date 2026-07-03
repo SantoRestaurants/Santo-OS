@@ -137,8 +137,16 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const monthRuns = unitRuns.filter(r => monthKey(r.business_date) === selectedMonth);
 
   /* Forecast extraction */
-  const latestRunWithForecast = monthRuns.find((run) => run.revision?.vta_por_dia && run.revision.vta_por_dia.length > 0);
-  let forecastArray: Array<{ fecha?: string | null; meta_vta?: number | null; venta_real?: number | null }> = latestRunWithForecast?.revision?.vta_por_dia || [];
+  const runForecasts = monthRuns
+    .map((run) => run.revision?.vta_por_dia ?? [])
+    .filter((rows) => rows.some((row) => row.fecha?.startsWith(`${selectedMonth}-`)));
+  let forecastArray: Array<{ fecha?: string | null; meta_vta?: number | null; venta_real?: number | null }> = runForecasts
+    .sort((a, b) => {
+      const total = (rows: typeof a) => rows
+        .filter((row) => row.fecha?.startsWith(`${selectedMonth}-`))
+        .reduce((sum, row) => sum + (typeof row.meta_vta === "number" ? row.meta_vta : 0), 0);
+      return total(b) - total(a);
+    })[0] ?? [];
 
   // If no run carries forecast rows for this month, fall back to the registered
   // forecast document. When both exist, keep the run forecast so the chart and
@@ -164,18 +172,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     }
   }
 
-  /* Build lookup map for forecast doc venta_real to override run values */
-  const fcVentaMap = new Map<string, number>();
-  forecastArray.forEach(item => {
-    if (item.fecha && typeof item.venta_real === "number" && item.venta_real > 0) {
-      fcVentaMap.set(item.fecha, item.venta_real);
-    }
-  });
   function dayVenta(run: ReconciliationRun) {
-    const sales = dailySales(run);
-    if (sales > 0) return sales;
-    const fcVal = run.business_date ? fcVentaMap.get(run.business_date) : undefined;
-    return fcVal ?? 0;
+    return dailySales(run);
   }
 
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "");
@@ -232,7 +230,9 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     const date = f.fecha;
     if (!date) return null;
     const run = monthRuns.find(r => r.business_date === date);
-    const vta = run ? dayVenta(run) : (typeof f.venta_real === "number" ? f.venta_real : 0);
+    // Forecast workbooks provide targets only. Actual sales must come from a
+    // real Corte/canonical daily record, never from a rebased prior month.
+    const vta = run ? dayVenta(run) : 0;
     const meta = typeof f.meta_vta === "number" ? f.meta_vta : 0;
     return {
       fecha: date,

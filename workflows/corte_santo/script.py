@@ -414,7 +414,9 @@ def build_revision_document(
                 from workflows.corte_santo.workbook_writer import read_forecast_daily_sales
                 forecast_layout = config.get("forecast_layout")
                 vta_por_dia_rows = read_forecast_daily_sales(
-                    forecast_path, layout=forecast_layout
+                    forecast_path,
+                    layout=forecast_layout,
+                    target_month=str(payload.get("business_date") or "")[:7] or None,
                 )
             except Exception:
                 pass

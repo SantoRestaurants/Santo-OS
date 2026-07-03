@@ -192,12 +192,29 @@ def _select_drive_workbook(
     kind: str,
     business_date: str | None,
 ) -> tuple[dict[str, Any] | None, str | None]:
+    target_month_name = ""
+    target_year = ""
+    if business_date:
+        try:
+            target_year, month, _day = business_date.split("-")
+            target_month_name = MONTH_NAMES_BY_NUMBER.get(int(month), "")
+        except (ValueError, TypeError):
+            pass
     scored = [
         (_workbook_score(item, kind, business_date), item)
         for item in files
         if isinstance(item, dict)
     ]
     candidates = [(score, item) for score, item in scored if score >= 0]
+    if target_month_name and target_year:
+        exact_month = [
+            (score, item) for score, item in candidates
+            if target_month_name in _normalize_label(str(item.get("name") or ""))
+            and target_year in _normalize_label(str(item.get("name") or ""))
+        ]
+        if not exact_month:
+            return None, f"drive_{kind}_workbook_not_found_for_month:{business_date[:7]}"
+        candidates = exact_month
     if not candidates:
         return None, f"drive_{kind}_workbook_not_found"
     candidates.sort(key=lambda pair: (pair[0], str(pair[1].get("modifiedTime") or "")), reverse=True)

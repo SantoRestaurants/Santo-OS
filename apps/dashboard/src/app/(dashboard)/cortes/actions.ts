@@ -80,10 +80,15 @@ export async function saveManualCorrection(formData: FormData) {
   if (!field || !valueRaw) redirect(withQuery(returnTo, "error", "manual_correction_missing"));
   const value = Number(valueRaw);
   if (!Number.isFinite(value)) redirect(withQuery(returnTo, "error", "manual_correction_value_invalid"));
+  const fieldName = field.replace(/^income_(?:register|channels)\./, "");
+  const fieldMap: Record<string, string> = { uber: "uber_eats" };
+  const dailyField = fieldMap[fieldName] ?? fieldName;
+  const editable = new Set(["amex", "debito", "credito", "efectivo", "transferencia", "paypal", "uber_eats", "rappi", "propinas"]);
+  if (!editable.has(dailyField)) redirect(withQuery(returnTo, "error", "manual_correction_field_invalid"));
 
   const { data: run, error } = await serviceClient
     .from("workflow_runs")
-    .select("output_payload")
+    .select("output_payload,restaurant_id,business_date")
     .eq("id", workflowRunId)
     .single();
 
@@ -103,6 +108,42 @@ export async function saveManualCorrection(formData: FormData) {
   ];
 
   setNestedRevisionValue(payload, field, value);
+
+  const { data: dailyRecord, error: dailyError } = await serviceClient
+    .from("corte_daily_records")
+    .select("*")
+    .eq("restaurant_id", run.restaurant_id)
+    .eq("business_date", run.business_date)
+    .maybeSingle();
+  if (dailyError || !dailyRecord) redirect(withQuery(returnTo, "error", dailyError?.message ?? "daily_record_not_found"));
+
+  const corrected = { ...dailyRecord, [dailyField]: value } as Record<string, unknown>;
+  const amount = (name: string) => Number(corrected[name] ?? 0);
+  const total = amount("amex") + amount("debito") + amount("credito") + amount("efectivo");
+  const totalBruto = total + amount("transferencia") + amount("paypal") + amount("uber_eats") + amount("rappi");
+  const ventaBruta = totalBruto - amount("propinas");
+  const dailyPatch = {
+    [dailyField]: value,
+    total: Math.round(total * 100) / 100,
+    total_bruto: Math.round(totalBruto * 100) / 100,
+    venta_bruta: Math.round(ventaBruta * 100) / 100,
+    source_kind: "manual_correction",
+    reviewed_at: new Date().toISOString(),
+  };
+  Object.assign(corrected, dailyPatch);
+  const { error: dailyUpdateError } = await serviceClient
+    .from("corte_daily_records")
+    .update(dailyPatch)
+    .eq("id", dailyRecord.id);
+  if (dailyUpdateError) redirect(withQuery(returnTo, "error", dailyUpdateError.message));
+
+  payload.daily_record = corrected;
+  payload.income_register = {
+    amex: corrected.amex, debito: corrected.debito, credito: corrected.credito,
+    efectivo: corrected.efectivo, transferencia: corrected.transferencia,
+    paypal: corrected.paypal, uber: corrected.uber_eats, rappi: corrected.rappi,
+    propinas: corrected.propinas,
+  };
 
   const { error: updateError } = await serviceClient
     .from("workflow_runs")

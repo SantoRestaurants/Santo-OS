@@ -15,14 +15,16 @@ type InlineEditTableProps = {
   debito: number;
   credito: number;
   efectivo: number;
+  transferencia: number;
   paypal: number;
   uber: number;
   rappi: number;
   propinas: number;
-  total: number;
+  ventaBruta: number;
+  totalBruto: number;
 };
 
-export function InlineEditTable({ runId, returnTo, amex, debito, credito, efectivo, paypal, uber, rappi, propinas, total }: InlineEditTableProps) {
+export function InlineEditTable({ runId, returnTo, amex, debito, credito, efectivo, transferencia, paypal, uber, rappi, propinas, ventaBruta, totalBruto }: InlineEditTableProps) {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>("");
   const [editNote, setEditNote] = useState<string>("");
@@ -124,11 +126,12 @@ export function InlineEditTable({ runId, returnTo, amex, debito, credito, efecti
             <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Debito</th>
             <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Credito</th>
             <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>EFECTIVO</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>TOTAL</th>
+            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>TRANSFERENCIA</th>
             <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>PAYPAL</th>
             <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>UBEREATS</th>
             <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>RAPPI</th>
             <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Propinas</th>
+            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Total Bruto</th>
             <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Venta Bruta</th>
           </tr>
         </thead>
@@ -139,12 +142,13 @@ export function InlineEditTable({ runId, returnTo, amex, debito, credito, efecti
             <Cell field="debito" value={debito} />
             <Cell field="credito" value={credito} />
             <Cell field="efectivo" value={efectivo} />
-            <td className="px-2 py-2 text-right font-semibold" style={{ color: GOLD }}>{money(amex + debito + credito + efectivo)}</td>
+            <Cell field="transferencia" value={transferencia} />
             <Cell field="paypal" value={paypal} />
             <Cell field="uber" value={uber} />
             <Cell field="rappi" value={rappi} />
             <Cell field="propinas" value={propinas} />
-            <td className="px-2 py-2 text-right font-semibold" style={{ color: GOLD }}>{money(total)}</td>
+            <td className="px-2 py-2 text-right font-semibold" style={{ color: INK }}>{money(totalBruto)}</td>
+            <td className="px-2 py-2 text-right font-semibold" style={{ color: GOLD }}>{money(ventaBruta)}</td>
           </tr>
         </tbody>
       </table>

@@ -1,10 +1,12 @@
-import { CheckCircle2, Clock3, FileSpreadsheet } from "lucide-react";
+import { CheckCircle2, Clock3 } from "lucide-react";
 import Link from "next/link";
 
 import { approveAgentMailStage } from "./actions";
 import { BankUploadForm } from "./BankUploadForm";
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailySales, dedupeRunsByDay } from "@/lib/corte-dashboard-utils";
+import { EmailEvidence } from "@/components/cortes/EmailEvidence";
+import { InlineEditTable } from "../cortes/InlineEditTable";
 
 const INK = "#282521";
 const MUTED = "#766f65";
@@ -88,6 +90,8 @@ function RunCard({ run }: { run: ReconciliationRun }) {
   const canUploadBanks = approved && run.status !== "completed" && Boolean(run.business_date);
   const difference = amountFrom(run, "reconciliation_totals.difference") ?? 0;
   const bankDocs = run.documents.filter((doc) => doc.document_type === "amex_statement" || doc.document_type === "banorte_statement");
+  const register = (run.output_payload.income_register ?? {}) as Record<string, number>;
+  const daily = (run.output_payload.daily_record ?? {}) as Record<string, number>;
 
   return (
     <section className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
@@ -110,21 +114,21 @@ function RunCard({ run }: { run: ReconciliationRun }) {
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <Stat label="Venta real" value={formatCurrency(dailySales(run))} color={GOLD} />
-            <Stat label="Total real" value={formatCurrency(amountFrom(run, "reconciliation_totals.total_real"))} />
-            <Stat label="Diferencia" value={formatCurrency(difference)} color={difference === 0 ? "#4CAF82" : "#E05A5A"} />
+            <Stat label="Total conciliado" value={formatCurrency(amountFrom(run, "reconciliation_totals.total_real"))} />
+            <Stat label="Diferencia conciliación" value={formatCurrency(difference)} color={difference === 0 ? "#4CAF82" : "#E05A5A"} />
           </div>
 
           <div className="rounded-md border p-4" style={{ borderColor: LINE, background: "#fbfaf7" }}>
-            <div className="mb-3 flex items-center gap-2 text-xs" style={{ color: MUTED }}>
-              <FileSpreadsheet className="h-4 w-4" />
-              Revisión automática del correo
-            </div>
-            <div className="grid gap-2 text-xs sm:grid-cols-2">
-              <Mini label="Formato de Excel" value={run.revision?.formato_corte ?? "-"} />
-              <Mini label="Archivos adjuntos" value={String(run.documents.filter((doc) => doc.source_system === "agent_mail").length)} />
-              <Mini label="Gastos extra reportados" value={String(run.revision?.gastos_adicionales?.length ?? 0)} />
-              <Mini label="Alertas del sistema" value={String(run.exceptions.filter((ex) => ex.status !== "resolved").length)} />
-            </div>
+            <InlineEditTable
+              runId={run.id} returnTo="/conciliacion"
+              amex={Number(daily.amex ?? register.amex ?? 0)} debito={Number(daily.debito ?? register.debito ?? 0)}
+              credito={Number(daily.credito ?? register.credito ?? 0)} efectivo={Number(daily.efectivo ?? register.efectivo ?? 0)}
+              transferencia={Number(daily.transferencia ?? register.transferencia ?? 0)} paypal={Number(daily.paypal ?? register.paypal ?? 0)}
+              uber={Number(daily.uber_eats ?? register.uber ?? 0)} rappi={Number(daily.rappi ?? register.rappi ?? 0)}
+              propinas={Number(daily.propinas ?? register.propinas ?? 0)}
+              totalBruto={Number(daily.total_bruto ?? run.revision?.daily_financial_record?.total_bruto ?? 0)}
+              ventaBruta={Number(daily.venta_bruta ?? run.revision?.daily_financial_record?.venta_bruta ?? dailySales(run))}
+            />
             {run.requires_review_reason && (
               <p className="mt-3 rounded-md px-3 py-2 text-xs" style={{ color: "#E08A3A", background: "#E08A3A11", border: "1px solid #E08A3A33" }}>
                 Motivo: {run.requires_review_reason}
@@ -166,16 +170,8 @@ function RunCard({ run }: { run: ReconciliationRun }) {
           />
         </div>
       </div>
+      <div className="px-5 pb-5"><EmailEvidence run={run} /></div>
     </section>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between rounded-md px-3 py-2" style={{ background: PANEL, border: `1px solid ${LINE}` }}>
-      <span style={{ color: MUTED }}>{label}</span>
-      <span style={{ color: INK, fontWeight: 600 }}>{value}</span>
-    </div>
   );
 }
 

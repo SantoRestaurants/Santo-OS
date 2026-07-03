@@ -100,14 +100,11 @@ export function dailySales(run: RunLike) {
   if (isRecord(dailyRecord) && typeof dailyRecord.venta_bruta === "number") {
     return dailyRecord.venta_bruta;
   }
-  const total = run.revision?.reconciliation_totals?.total_real;
-  if (typeof total === "number") return total;
-
   const date = run.business_date;
   const row = run.revision?.vta_por_dia?.find((item) => item.fecha === date);
   if (typeof row?.venta_real === "number" && row.venta_real > 0) return row.venta_real;
 
-  return run.revision?.vta_al_dia?.venta_real ?? 0;
+  return 0;
 }
 
 export function dedupeRunsByDay<T extends RunLike>(runs: T[]) {

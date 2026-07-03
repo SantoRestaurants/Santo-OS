@@ -153,6 +153,7 @@ def _base_email_message(email: dict[str, Any], processing_status: str) -> dict[s
         "raw_metadata": {
             "idempotency_key": _email_idempotency_key(email),
             "message_content_fingerprint": message_content_fingerprint(email),
+            "body_text": email.get("body_text") or email.get("body") or "",
             "attachments": email.get("attachments", []),
             "labels": email.get("labels", []),
         },

@@ -58,6 +58,11 @@ export type RevisionDocument = {
     difference: number;
     tolerance: number;
   };
+  daily_financial_record?: {
+    venta_bruta: number;
+    total_bruto: number;
+    parser_version?: string;
+  };
 };
 
 export type CorteListResult = {

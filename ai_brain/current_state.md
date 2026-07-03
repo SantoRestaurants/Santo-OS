@@ -1,5 +1,20 @@
 # Current State
 
+## 2026-07-03 - Forecast source discipline and supervisor review
+
+- Socios selects one consistent monthly target source for KPI and charts and
+  never treats Forecast workbook values as observed sales. Rebased prior-month
+  sales can no longer appear as future daily sales.
+- Manual Corte corrections now update the canonical `corte_daily_records` row,
+  recompute `total_bruto` and `venta_bruta`, and preserve an audited workflow
+  correction event.
+- Agent Mail now persists the email body and links the email plus attachments to
+  the workflow run. Conciliacion and Corte detail expose editable channel values,
+  the original email and signed evidence links.
+- Drive workbook discovery now requires the exact business month. A missing July
+  workbook returns review instead of modifying June. Automatic month-template
+  creation remains pending as a separate controlled workflow.
+
 ## 2026-07-02 - Corte daily-record stabilization started
 
 - Added a proposed `corte_daily_records` migration with one unique row per

@@ -138,7 +138,7 @@ export function RevisionDetailView({ revision, corte }: { revision: RevisionDocu
               <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "#666", marginBottom: 16 }}>CONCILIACION</div>
               <div style={{ display: "flex", gap: 24 }}>
                 <div>
-                  <div style={{ fontSize: 10, color: "#666", letterSpacing: 1 }}>TOTAL REAL</div>
+                  <div style={{ fontSize: 10, color: "#666", letterSpacing: 1 }}>TOTAL CONCILIADO</div>
                   <div style={{ fontSize: 18, fontWeight: 600, color: GOLD }}>{formatCurrency(revision.reconciliation_totals.total_real)}</div>
                 </div>
                 <div>
@@ -146,7 +146,7 @@ export function RevisionDetailView({ revision, corte }: { revision: RevisionDocu
                   <div style={{ fontSize: 18, fontWeight: 600, color: CREAM }}>{formatCurrency(revision.reconciliation_totals.total_sistema)}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: "#666", letterSpacing: 1 }}>DIFERENCIA</div>
+                  <div style={{ fontSize: 10, color: "#666", letterSpacing: 1 }}>DIFERENCIA CONCILIACION</div>
                   <div style={{ fontSize: 18, fontWeight: 600, color: diffColor(revision.reconciliation_totals.difference) }}>{formatCurrency(revision.reconciliation_totals.difference)}</div>
                 </div>
               </div>

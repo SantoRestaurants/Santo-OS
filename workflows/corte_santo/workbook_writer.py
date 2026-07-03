@@ -27,6 +27,7 @@ def read_forecast_daily_sales(
     source_path: str,
     *,
     layout: dict[str, Any] | None = None,
+    target_month: str | None = None,
 ) -> list[dict[str, Any]]:
     """Read daily sales rows from the Forecast workbook.
 
@@ -73,7 +74,18 @@ def read_forecast_daily_sales(
 
         meta = float(meta_val) if meta_val is not None else 0.0
         venta = float(venta_val) if venta_val is not None else 0.0
+        if target_month and fecha_str[:7] != target_month:
+            try:
+                fecha = date.fromisoformat(fecha_str)
+                year, month = (int(part) for part in target_month.split("-"))
+                fecha_str = date(year, month, fecha.day).isoformat()
+                dia_name = _day_name_es(date.fromisoformat(fecha_str).weekday())
+                venta = 0.0
+            except (ValueError, TypeError):
+                continue
         diff = float(diff_val) if diff_val is not None else (venta - meta)
+        if target_month:
+            diff = venta - meta
 
         if meta > 0 or venta > 0:
             rows.append({
@@ -153,6 +165,7 @@ def _rebase_projection_month(
     date_column: int,
     start_row: int,
     end_row: int,
+    clear_columns: tuple[str, ...] = (),
 ) -> list[dict[str, Any]] | None:
     """Rebase a stale 1..N projection date series onto the target month."""
     days = monthrange(target.year, target.month)[1]
@@ -170,6 +183,10 @@ def _rebase_projection_month(
         after = datetime(target.year, target.month, offset)
         ws.cell(row, date_column).value = after
         changes.append({"cell": ws.cell(row, date_column).coordinate, "before": before, "after": after})
+        for column in clear_columns:
+            cell = ws[f"{column}{row}"]
+            changes.append({"cell": cell.coordinate, "before": cell.value, "after": None})
+            cell.value = None
     return changes
 
 
@@ -324,6 +341,7 @@ def write_forecast(
             date_column=int(date_column),
             start_row=int(data_start_row),
             end_row=int(data_end_row),
+            clear_columns=(str(venta_real_column),),
         )
         if rebased is not None:
             date_changes = rebased

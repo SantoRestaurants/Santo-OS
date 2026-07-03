@@ -289,6 +289,26 @@ class SupabaseWriter:
             return data[0].get("id")
         return None
 
+    def link_email_evidence(self, email_id: str, workflow_run_id: str, document_ids: list[str]) -> bool:
+        email_resp = self.http.patch(
+            "/rest/v1/email_messages",
+            params={"id": f"eq.{email_id}"},
+            json={"workflow_run_id": workflow_run_id},
+        )
+        if email_resp.status_code >= 400:
+            logger.error("Failed to link email_message: %s %s", email_resp.status_code, email_resp.text)
+            return False
+        if document_ids:
+            docs_resp = self.http.patch(
+                "/rest/v1/documents",
+                params={"id": f"in.({','.join(document_ids)})"},
+                json={"email_message_id": email_id, "workflow_run_id": workflow_run_id},
+            )
+            if docs_resp.status_code >= 400:
+                logger.error("Failed to link email documents: %s %s", docs_resp.status_code, docs_resp.text)
+                return False
+        return True
+
     def get_restaurant_id(self, restaurant_key: str) -> str | None:
         """Resolve the stable restaurant UUID used by canonical daily records."""
         candidates = [restaurant_key]
@@ -677,7 +697,8 @@ def poll_and_classify(
                 "requires_review_reason": email_record.get("requires_review_reason"),
                 "raw_metadata": email_record.get("raw_metadata", {}),
             }
-            supabase.upsert_email_message(supabase_record)
+            stored_email = supabase.upsert_email_message(supabase_record)
+            stored_email_id = str((stored_email or {}).get("id") or "")
 
             # Write events
             for event in result.get("events", []):
@@ -686,6 +707,7 @@ def poll_and_classify(
             # Handle attachments — download and store
             attachments = msg.get("attachments") or []
             message_id = msg.get("message_id", "")
+            stored_document_ids: list[str] = []
             for att in attachments:
                 att_id = att.get("attachment_id")
                 filename = att.get("filename", "unknown")
@@ -714,7 +736,7 @@ def poll_and_classify(
                             f"{_safe_storage_segment(str(att_id), fallback='attachment')}"
                         )
                         source_hash = hashlib.sha256(content).hexdigest()
-                        supabase.insert_document({
+                        document_id = supabase.insert_document({
                             "document_key": document_key,
                             "document_type": "email_attachment",
                             "source_system": "agent_mail",
@@ -728,6 +750,8 @@ def poll_and_classify(
                                 "attachment_id": att_id,
                             },
                         })
+                        if document_id:
+                            stored_document_ids.append(document_id)
                         if drive_config is not None:
                             workflow_key = result.get("command", {}).get("workflow_key", "")
                             folder_key = drive_config.get("workflow_folder_map", {}).get(
@@ -798,6 +822,8 @@ def poll_and_classify(
                     })
 
                     if run_id:
+                        if stored_email_id:
+                            supabase.link_email_evidence(stored_email_id, run_id, stored_document_ids)
                         # Create a review for the human
                         supabase.insert_review({
                             "workflow_run_id": run_id,
