@@ -1,5 +1,18 @@
 # Current State
 
+## 2026-07-03 - July 1 restored and review UI compacted
+
+- Reconstructed the missing canonical daily row for 2026-07-01 from its
+  persisted workflow income channels: Total Bruto MXN 129,454.40, Propinas
+  MXN 11,447.40 and Venta Bruta MXN 118,007.00.
+- Conciliacion now opens only the latest day by default and uses a responsive
+  channel editor instead of a wide table. Agent Mail attachments are hidden
+  until storage delivery is reliable; the original email body remains visible.
+- The same channel editor is now available in the main Cortes day view as well
+  as the detail page.
+- Removed per-document signed URL generation from dashboard reads, eliminating
+  unnecessary Storage calls during day/month navigation.
+
 ## 2026-07-03 - Forecast source discipline and supervisor review
 
 - Socios selects one consistent monthly target source for KPI and charts and

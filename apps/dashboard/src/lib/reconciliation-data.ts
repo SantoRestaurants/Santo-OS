@@ -230,12 +230,8 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
   }
 
   const emailsByRun = groupByRunId(emailsResult.data ?? []);
-  const hydratedDocuments = await Promise.all((documentsResult.data ?? []).map(async (doc) => ({
-    ...doc,
-    view_url: !skipAuth ? await signedDocumentUrl(supabase, doc.source_uri) : doc.source_uri,
-  })));
-  const documentsByRun = groupByRunId(hydratedDocuments);
-  const documentsByDate = groupByDocumentDate(hydratedDocuments);
+  const documentsByRun = groupByRunId(documentsResult.data ?? []);
+  const documentsByDate = groupByDocumentDate(documentsResult.data ?? []);
   const reviewsByRun = groupByRunId(reviewsResult.data ?? []);
   const exceptionsByRun = groupByRunId(exceptionsResult.data ?? []);
 
@@ -284,16 +280,6 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     forecastDocuments: (forecastResult.data ?? []) as ForecastDocument[],
     dailyRecords,
   };
-}
-
-async function signedDocumentUrl(client: any, sourceUri: string | null) {
-  if (!sourceUri) return null;
-  const marker = "/storage/v1/object/public/documents/";
-  const index = sourceUri.indexOf(marker);
-  if (index < 0) return sourceUri;
-  const path = decodeURIComponent(sourceUri.slice(index + marker.length));
-  const { data, error } = await client.storage.from("documents").createSignedUrl(path, 60 * 60);
-  return error ? sourceUri : data?.signedUrl ?? sourceUri;
 }
 
 function dailyIncomeRegister(record: CorteDailyRecord) {

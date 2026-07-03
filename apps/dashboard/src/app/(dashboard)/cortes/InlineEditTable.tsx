@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Check, X, Edit2 } from "lucide-react";
+import { Check, Edit2, X } from "lucide-react";
 
 const INK = "#282521";
 const MUTED = "#766f65";
 const LINE = "#ded7ca";
 const GOLD = "#e8463b";
 
-type InlineEditTableProps = {
+type Props = {
   runId: string;
   returnTo: string;
   amex: number;
@@ -24,135 +24,70 @@ type InlineEditTableProps = {
   totalBruto: number;
 };
 
-export function InlineEditTable({ runId, returnTo, amex, debito, credito, efectivo, transferencia, paypal, uber, rappi, propinas, ventaBruta, totalBruto }: InlineEditTableProps) {
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState<string>("");
-  const [editNote, setEditNote] = useState<string>("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+const FIELDS = [
+  ["amex", "AMEX"], ["debito", "Débito"], ["credito", "Crédito"],
+  ["efectivo", "Efectivo"], ["transferencia", "Transferencia"],
+  ["paypal", "PayPal"], ["uber", "Uber Eats"], ["rappi", "Rappi"],
+  ["propinas", "Propinas"],
+] as const;
 
-  const money = (val: number) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(val);
-
-  const handleEdit = (field: string, value: number) => {
-    setEditingField(field);
-    setEditValue(value.toString());
-    setEditNote("");
+export function InlineEditTable(props: Props) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [value, setValue] = useState("");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const values: Record<string, number> = {
+    amex: props.amex, debito: props.debito, credito: props.credito,
+    efectivo: props.efectivo, transferencia: props.transferencia,
+    paypal: props.paypal, uber: props.uber, rappi: props.rappi,
+    propinas: props.propinas,
   };
+  const money = (amount: number) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(amount);
 
-  const handleCancel = () => {
-    setEditingField(null);
-    setEditValue("");
-    setEditNote("");
-  };
+  function begin(field: string, amount: number) {
+    setEditing(field);
+    setValue(String(amount));
+    setNote("");
+  }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingField || !editValue || isSubmitting) return;
-
-    setIsSubmitting(true);
-    const formData = new FormData();
-    formData.append("workflowRunId", runId);
-    formData.append("returnTo", returnTo);
-    formData.append("field", `income_register.${editingField}`);
-    formData.append("value", editValue);
-    formData.append("note", editNote || "Corrección manual desde tabla");
-
-    try {
-      // In a real Server Action component, we'd import saveManualCorrection directly
-      // but since we can't easily pass it from a client component without props drilling,
-      // we'll submit it to the form action using standard HTML form submission.
-      const form = e.target as HTMLFormElement;
-      form.submit();
-    } catch (err) {
-      console.error("Failed to submit correction", err);
-      setIsSubmitting(false);
-    }
-  };
-
-  const Cell = ({ field, value, isGold = false }: { field: string, value: number, isGold?: boolean }) => {
-    if (editingField === field) {
-      return (
-        <td className="px-2 py-2 min-w-[200px] border" style={{ borderColor: GOLD, background: "#fffaf0" }}>
-          <form action="/cortes/api/correct" method="POST" onSubmit={handleSubmit} className="flex flex-col gap-2">
-            <input type="hidden" name="action" value="saveManualCorrection" />
-            <div className="flex gap-1">
-              <input 
-                autoFocus
-                type="number" 
-                step="0.01"
-                value={editValue} 
-                onChange={e => setEditValue(e.target.value)} 
-                className="w-full rounded border px-2 py-1 text-xs"
-                style={{ borderColor: LINE, color: INK }}
-                placeholder="Valor"
-                required
-              />
-              <button type="submit" disabled={isSubmitting} className="rounded p-1 text-white disabled:opacity-50" style={{ background: GOLD }}>
-                <Check className="h-3 w-3" />
-              </button>
-              <button type="button" onClick={handleCancel} disabled={isSubmitting} className="rounded border p-1" style={{ borderColor: LINE, color: MUTED }}>
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-            <input 
-              type="text" 
-              value={editNote} 
-              onChange={e => setEditNote(e.target.value)} 
-              className="w-full rounded border px-2 py-1 text-xs"
-              style={{ borderColor: LINE, color: INK }}
-              placeholder="Motivo (opcional)"
-            />
-          </form>
-        </td>
-      );
-    }
-
-    return (
-      <td className="px-2 py-2 text-right group relative cursor-pointer hover:bg-gray-50" style={{ color: isGold ? GOLD : INK, fontWeight: isGold ? 600 : 400 }} onClick={() => handleEdit(field, value)}>
-        <div className="flex items-center justify-end gap-2">
-          <Edit2 className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: MUTED }} />
-          <span>{money(value)}</span>
-        </div>
-      </td>
-    );
-  };
+  function cancel() {
+    setEditing(null);
+    setValue("");
+    setNote("");
+  }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ borderBottom: `1px solid ${LINE}` }}>
-            <th className="px-2 py-2 text-left font-semibold" style={{ color: MUTED }}>RESTAURANTE</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Amex</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Debito</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Credito</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>EFECTIVO</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>TRANSFERENCIA</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>PAYPAL</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>UBEREATS</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>RAPPI</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Propinas</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Total Bruto</th>
-            <th className="px-2 py-2 text-right font-semibold" style={{ color: MUTED }}>Venta Bruta</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="px-2 py-2 font-semibold" style={{ color: INK }}>Valores</td>
-            <Cell field="amex" value={amex} />
-            <Cell field="debito" value={debito} />
-            <Cell field="credito" value={credito} />
-            <Cell field="efectivo" value={efectivo} />
-            <Cell field="transferencia" value={transferencia} />
-            <Cell field="paypal" value={paypal} />
-            <Cell field="uber" value={uber} />
-            <Cell field="rappi" value={rappi} />
-            <Cell field="propinas" value={propinas} />
-            <td className="px-2 py-2 text-right font-semibold" style={{ color: INK }}>{money(totalBruto)}</td>
-            <td className="px-2 py-2 text-right font-semibold" style={{ color: GOLD }}>{money(ventaBruta)}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p className="mt-2 text-xs text-right" style={{ color: MUTED }}>Clickeá en un valor para corregirlo. Todo cambio genera auditoría.</p>
+    <div className="min-w-0">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {FIELDS.map(([field, label]) => editing === field ? (
+          <form key={field} action="/cortes/api/correct" method="POST" onSubmit={() => setSubmitting(true)} className="rounded-md border p-3" style={{ borderColor: GOLD, background: "#fffaf0" }}>
+            <input type="hidden" name="workflowRunId" value={props.runId} />
+            <input type="hidden" name="returnTo" value={props.returnTo} />
+            <input type="hidden" name="field" value={`income_register.${field}`} />
+            <div className="mb-2 text-[11px] font-semibold uppercase" style={{ color: MUTED }}>{label}</div>
+            <div className="flex min-w-0 gap-1">
+              <input autoFocus name="value" type="number" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} className="min-w-0 flex-1 rounded border px-2 py-1.5 text-sm" style={{ borderColor: LINE, color: INK }} required />
+              <button type="submit" disabled={submitting} aria-label="Guardar" className="rounded p-1.5 text-white disabled:opacity-50" style={{ background: GOLD }}><Check className="h-4 w-4" /></button>
+              <button type="button" onClick={cancel} disabled={submitting} aria-label="Cancelar" className="rounded border p-1.5" style={{ borderColor: LINE, color: MUTED }}><X className="h-4 w-4" /></button>
+            </div>
+            <input name="note" value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 w-full rounded border px-2 py-1.5 text-xs" style={{ borderColor: LINE, color: INK }} placeholder="Motivo (opcional)" />
+          </form>
+        ) : (
+          <button key={field} type="button" onClick={() => begin(field, values[field] ?? 0)} className="group flex min-w-0 items-center justify-between gap-3 rounded-md border p-3 text-left hover:bg-[#fbfaf7]" style={{ borderColor: LINE }}>
+            <span className="truncate text-[11px] font-semibold uppercase" style={{ color: MUTED }}>{label}</span>
+            <span className="flex shrink-0 items-center gap-2 text-sm font-semibold" style={{ color: INK }}>{money(values[field] ?? 0)}<Edit2 className="h-3.5 w-3.5 opacity-40 group-hover:opacity-100" style={{ color: GOLD }} /></span>
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <Summary label="Total Bruto" value={money(props.totalBruto)} />
+        <Summary label="Venta Bruta" value={money(props.ventaBruta)} accent />
+      </div>
+      <p className="mt-2 text-xs" style={{ color: MUTED }}>Seleccioná un valor para corregirlo. Todo cambio queda auditado.</p>
     </div>
   );
+}
+
+function Summary({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return <div className="rounded-md border p-3" style={{ borderColor: accent ? GOLD : LINE }}><div className="text-[11px] uppercase" style={{ color: MUTED }}>{label}</div><div className="mt-1 font-semibold" style={{ color: accent ? GOLD : INK }}>{value}</div></div>;
 }

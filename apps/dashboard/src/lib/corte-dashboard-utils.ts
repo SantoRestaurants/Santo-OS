@@ -17,6 +17,7 @@ type RunLike = {
     vta_por_dia?: Array<{ fecha?: string | null; meta_vta?: number | null; venta_real?: number | null }>;
     vta_al_dia?: { venta_real?: number | null; meta_vta?: number | null };
     reconciliation_totals?: { total_real?: number | null; total_sistema?: number | null; difference?: number | null };
+    daily_financial_record?: { venta_bruta?: number | null; total_bruto?: number | null };
     falta_por_entrar?: Record<string, number>;
   } | null;
   documents?: DocumentLike[];
@@ -100,6 +101,8 @@ export function dailySales(run: RunLike) {
   if (isRecord(dailyRecord) && typeof dailyRecord.venta_bruta === "number") {
     return dailyRecord.venta_bruta;
   }
+  const persistedDaily = run.revision?.daily_financial_record?.venta_bruta;
+  if (typeof persistedDaily === "number") return persistedDaily;
   const date = run.business_date;
   const row = run.revision?.vta_por_dia?.find((item) => item.fecha === date);
   if (typeof row?.venta_real === "number" && row.venta_real > 0) return row.venta_real;

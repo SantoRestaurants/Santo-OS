@@ -85,7 +85,7 @@ function Stat({ label, value, color = INK }: { label: string; value: string; col
   );
 }
 
-function RunCard({ run }: { run: ReconciliationRun }) {
+function RunCard({ run, defaultOpen = false }: { run: ReconciliationRun; defaultOpen?: boolean }) {
   const approved = hasApproval(run);
   const canUploadBanks = approved && run.status !== "completed" && Boolean(run.business_date);
   const difference = amountFrom(run, "reconciliation_totals.difference") ?? 0;
@@ -94,8 +94,8 @@ function RunCard({ run }: { run: ReconciliationRun }) {
   const daily = (run.output_payload.daily_record ?? {}) as Record<string, number>;
 
   return (
-    <section className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
-      <div className="flex flex-col gap-4 border-b px-5 py-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: LINE }}>
+    <details open={defaultOpen} className="rounded-md border" style={{ borderColor: LINE, background: PANEL }}>
+      <summary className="flex cursor-pointer list-none flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p style={{ color: INK, fontSize: 15, fontWeight: 650 }}>{formatDate(run.business_date)}</p>
           <p className="mt-1 text-xs" style={{ color: MUTED }}>
@@ -108,7 +108,7 @@ function RunCard({ run }: { run: ReconciliationRun }) {
             {approved ? "Aprobado por supervisora" : "Pendiente de aprobación"}
           </span>
         </div>
-      </div>
+      </summary>
 
       <div className="grid gap-4 p-5 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-4">
@@ -171,7 +171,7 @@ function RunCard({ run }: { run: ReconciliationRun }) {
         </div>
       </div>
       <div className="px-5 pb-5"><EmailEvidence run={run} /></div>
-    </section>
+    </details>
   );
 }
 
@@ -227,8 +227,8 @@ export default async function ConciliacionPage({ searchParams }: { searchParams:
         )}
 
         <div className="flex flex-col gap-4">
-          {dedupeRunsByDay(data.runs).map((run) => (
-            <RunCard key={run.id} run={run} />
+          {dedupeRunsByDay(data.runs).map((run, index) => (
+            <RunCard key={run.id} run={run} defaultOpen={index === 0} />
           ))}
         </div>
       </div>

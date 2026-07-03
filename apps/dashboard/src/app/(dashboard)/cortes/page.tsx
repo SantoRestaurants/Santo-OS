@@ -13,6 +13,7 @@ import Link from "next/link";
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
 import { CorteAiBox } from "./CorteAiBox";
+import { InlineEditTable } from "./InlineEditTable";
 
 type SearchParams = Promise<{ unit?: string; year?: string; month?: string; week?: string; day?: string }>;
 
@@ -152,33 +153,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth);
 
-  // Lookup forecast doc venta_real for accurate daily sales
-  const fcVentaMap = new Map<string, number>();
-  if (selectedMonth) {
-    const forecastDoc = data.forecastDocuments.find(doc => {
-      const meta = doc.metadata as Record<string, unknown>;
-      return meta.month === selectedMonth;
-    });
-    if (forecastDoc) {
-      const docVta = (forecastDoc.metadata as Record<string, unknown>).vta_por_dia;
-      if (Array.isArray(docVta)) {
-        for (const item of docVta) {
-          const fecha = (item as Record<string, unknown>).fecha as string | undefined;
-          const vr = (item as Record<string, unknown>).venta_real;
-          if (fecha && typeof vr === "number" && vr > 0) {
-            fcVentaMap.set(fecha, vr);
-          }
-        }
-        // Override monthTotal with forecast doc values
-        monthTotal = (docVta as Array<Record<string, unknown>>).reduce((sum, item) => {
-          return sum + (typeof item.venta_real === "number" ? item.venta_real : 0);
-        }, 0);
-      }
-    }
-  }
   function cortesDayVenta(run: ReconciliationRun) {
-    const fcVal = run.business_date ? fcVentaMap.get(run.business_date) : undefined;
-    return fcVal ?? runTotal(run);
+    return runTotal(run);
   }
 
   const monthDiff = monthMetaToDate != null ? monthTotal - monthMetaToDate : monthMeta != null ? monthTotal - monthMeta : null;
@@ -452,33 +428,17 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                   {(() => {
                     const reg = (selectedRun.output_payload?.income_register ?? {}) as Record<string, number>;
                     const ch = (selectedRun.output_payload?.income_channels ?? {}) as Record<string, number>;
-                    const channels = [
-                      { key: "amex", label: "AMEX" },
-                      { key: "debito", label: "Debito" },
-                      { key: "credito", label: "Credito" },
-                      { key: "efectivo", label: "Efectivo" },
-                      { key: "paypal", label: "PayPal" },
-                      { key: "uber", label: "Uber" },
-                      { key: "rappi", label: "Rappi" },
-                      { key: "propinas", label: "Propinas" },
-                    ];
-                    return (
-                      <div className="space-y-1 text-xs">
-                        {channels.map(c => {
-                          const val = reg[c.key] ?? ch[c.key] ?? 0;
-                          return (
-                            <div key={c.key} className="flex justify-between rounded-md border px-2.5 py-1.5" style={{ borderColor: LINE }}>
-                              <span style={{ color: MUTED }}>{c.label}</span>
-                              <span className="font-semibold" style={{ color: INK }}>{money(val)}</span>
-                            </div>
-                          );
-                        })}
-                        <div className="flex justify-between rounded-md border px-2.5 py-1.5 font-semibold" style={{ borderColor: GOLD }}>
-                          <span style={{ color: INK }}>Total</span>
-                          <span style={{ color: GOLD }}>{money(cortesDayVenta(selectedRun))}</span>
-                        </div>
-                      </div>
-                    );
+                    const daily = (selectedRun.output_payload?.daily_record ?? {}) as Record<string, number>;
+                    const totalBruto = Number(daily.total_bruto ?? selectedRun.revision?.daily_financial_record?.total_bruto ?? 0);
+                    return <InlineEditTable
+                      runId={selectedRun.id} returnTo={returnTo}
+                      amex={Number(daily.amex ?? reg.amex ?? ch.amex ?? 0)} debito={Number(daily.debito ?? reg.debito ?? ch.debito ?? 0)}
+                      credito={Number(daily.credito ?? reg.credito ?? ch.credito ?? 0)} efectivo={Number(daily.efectivo ?? reg.efectivo ?? ch.efectivo ?? 0)}
+                      transferencia={Number(daily.transferencia ?? reg.transferencia ?? ch.transferencia ?? 0)} paypal={Number(daily.paypal ?? reg.paypal ?? ch.paypal ?? 0)}
+                      uber={Number(daily.uber_eats ?? reg.uber ?? ch.uber ?? 0)} rappi={Number(daily.rappi ?? reg.rappi ?? ch.rappi ?? 0)}
+                      propinas={Number(daily.propinas ?? reg.propinas ?? ch.propinas ?? 0)} totalBruto={totalBruto}
+                      ventaBruta={Number(daily.venta_bruta ?? selectedRun.revision?.daily_financial_record?.venta_bruta ?? cortesDayVenta(selectedRun))}
+                    />;
                   })()}
                 </div>
 
@@ -550,12 +510,12 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                     <FolderOpen className="h-4 w-4" />
                     Archivos de este dia
                   </div>
-                  {["Corte", "Bancos", "Evidencia"].map((group) => {
+                  {["Corte", "Bancos"].map((group) => {
                     const docs = group === "Corte" 
                       ? selectedRun.documents.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report"].includes(doc.document_type))
                       : group === "Bancos"
                       ? selectedRun.documents.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type))
-                      : selectedRun.documents.filter((doc) => !["corte_excel", "daily_sales_report", "revision_report", "amex_statement", "banorte_statement"].includes(doc.document_type));
+                      : [];
                     return (
                       <div key={group} className="mb-3">
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{group}</div>
