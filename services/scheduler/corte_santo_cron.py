@@ -352,12 +352,21 @@ def run_bank_watcher_once(
             except Exception:
                 continue
         bd = run.get("business_date") or ""
-
-        # Skip already validated days
-        if op.get("bank_validation_status") == "bank_validated" or op.get("stage") == "bank_validated":
+        if bd > effective_date:
             continue
+
         bank = op.get("bank_reconciliation") or {}
-        if bank.get("status") == "bank_validated":
+        revision = op.get("revision_document") or {}
+        pending = bank.get("pending_collections") or revision.get("falta_por_entrar") or {}
+
+        # Skip only genuinely settled days. Older runs could be labelled
+        # bank_validated while still carrying pending collections.
+        marked_validated = (
+            op.get("bank_validation_status") == "bank_validated"
+            or op.get("stage") == "bank_validated"
+            or bank.get("status") == "bank_validated"
+        )
+        if marked_validated and not pending:
             continue
 
         ir = op.get("income_register") or {}
@@ -372,7 +381,9 @@ def run_bank_watcher_once(
                 amex_val = float(ir2.get("amex", 0))
 
         # Only use runs that have income_register data, regardless of status
-        channels_to_track = ["amex", "uber", "rappi", "paypal", "debito", "credito", "efectivo", "transferencia"]
+        # Transferencia is evidence/adjustment already represented inside the
+        # PayPal value written to Ingresos; tracking it again double-counts it.
+        channels_to_track = ["amex", "uber", "rappi", "paypal", "debito", "credito", "efectivo"]
         has_any = any(float(ir.get(ch, 0)) > 0 for ch in channels_to_track)
         if has_any:
             if bd in seen_dates:
@@ -627,17 +638,47 @@ def run_bank_watcher_once(
             if day_total > 0:
                 result["falta_por_entrar_por_dia"][bd] = day_total
 
-    return result
+    # Persist the bank snapshot on the run selected by the operator. This must
+    # happen before returning; otherwise Drive is updated but Dashboard keeps
+    # rendering the stale stage-1 payload.
     try:
         for pr in pending_runs:
             if pr["business_date"] == effective_date:
-                persist = dict(result)
-                persist["income_register"] = latest_stage1.get("income_register") or {}
-                persist["income_channels"] = latest_stage1.get("income_channels") or {}
-                persist["expected_collections"] = expected_cols
-                persist["business_date"] = effective_date
-                persist["drive_file_ids"] = latest_stage1.get("drive_file_ids") or {}
-                supabase.update_workflow_run_output(pr["id"], persist, status=result.get("status"))
+                response = httpx.get(
+                    f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}&select=output_payload",
+                    headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                rows = response.json()
+                current_op = rows[0].get("output_payload") or {}
+                if isinstance(current_op, str):
+                    current_op = json.loads(current_op)
+                revision = current_op.get("revision_document") or {}
+                pending_collections = bank_result.get("pending_collections") or {}
+                persisted_bank_status = (
+                    "bank_validated"
+                    if bank_result.get("status") == "bank_validated" and not pending_collections
+                    else "bank_requires_review"
+                )
+                revision["falta_por_entrar"] = pending_collections
+                revision["bank_validation_status"] = persisted_bank_status
+                current_op["revision_document"] = revision
+                current_op["bank_reconciliation"] = bank_result
+                current_op["falta_por_entrar_por_dia"] = result["falta_por_entrar_por_dia"]
+                current_op["bank_validation_status"] = persisted_bank_status
+                current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
+                update = httpx.patch(
+                    f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
+                    json={"output_payload": current_op},
+                    headers={
+                        "apikey": service_key,
+                        "Authorization": f"Bearer {service_key}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=10.0,
+                )
+                update.raise_for_status()
                 logging.info("Persisted bank stage summary for %s", effective_date)
                 break
     except Exception:

@@ -92,6 +92,10 @@ export function hasForecastSourceForMonth(runs: RunLike[], month: string) {
 export function dailyForecastMeta(run: RunLike) {
   const date = run.business_date;
   if (!date) return null;
+  const dailyRecord = run.output_payload?.daily_record;
+  if (isRecord(dailyRecord) && typeof dailyRecord.forecast_target === "number") {
+    return dailyRecord.forecast_target;
+  }
   const row = run.revision?.vta_por_dia?.find((item) => item.fecha === date);
   return typeof row?.meta_vta === "number" ? row.meta_vta : null;
 }
