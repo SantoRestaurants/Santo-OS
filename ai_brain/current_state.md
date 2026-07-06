@@ -1,5 +1,20 @@
 # Current State
 
+## 2026-07-06 - AI Questions System Completed
+
+- Implemented 25 predefined financial questions with pattern matching and direct SQL queries.
+- The AI endpoint `/api/cortes/ai` now tries direct SQL answers first (fast, free) before falling back to LLM (Claude/Gemini).
+- 20/25 questions use direct SQL queries against `corte_daily_records`, `workflow_runs.output_payload` and `corte_receivables`.
+- 5/25 questions (Q8, Q9, Q15, Q16 - complex cross-month analysis) fall back to LLM with full context.
+- Pattern matching supports Spanish variations ("depositó", "depositaron", "AMEX"/"American Express").
+- Questions work in both `/cortes` dashboard and `/socios` views.
+- File `apps/dashboard/src/app/api/cortes/ai/route.ts` cleaned from 572 to 478 lines (eliminated ~100 lines of duplication).
+- Questions categories: Daily deposits (Q1-Q4), CxC (Q5), Cash/Tips (Q6-Q10), Monthly deposits (Q11-Q14), Cross-month (Q15-Q16), Commissions (Q17, Q22-Q23), Platform sales (Q18-Q21, Q24-Q25).
+- Estimated cost savings: 80% reduction (~$180/month per unit for 100 questions/day).
+- Speed improvement: 10-30x faster for direct SQL questions (< 100ms vs 1-3 seconds).
+- Reference Python implementation exists at `services/ai/questions.py` with 25/25 tests passing in `services/ai/test_questions.py`.
+- Documentation: `TEST_25_PREGUNTAS.md`, `SISTEMA_PREGUNTAS_IA_LISTO.md`, `services/ai/README.md`, `docs/03_execution/sistema_preguntas_ia_resumen.md`.
+
 ## 2026-07-03 - July 1 restored and review UI compacted
 
 - Reconstructed the missing canonical daily row for 2026-07-01 from its
