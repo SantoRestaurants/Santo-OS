@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authorizeRequest } from "@/lib/authz";
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
 const REPO = "SantoRestaurants/Santo-OS";
 
 export async function POST(request: NextRequest) {
+    const auth = await authorizeRequest(["supervisor"]);
+    if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: auth.status });
     if (!GITHUB_TOKEN) {
         return NextResponse.json(
             { error: "GITHUB_TOKEN not configured. Add it to Vercel environment variables." },

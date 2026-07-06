@@ -1,4 +1,5 @@
 00_INBOX_SANTO_RAW/06_credenciales_y_setup_NO_SUBIR/
+scratch/
 
 # Local environment and secrets
 *.env

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createSupabaseServerClient, createSupabaseServiceClient, getSupabasePublicConfig } from "@/lib/supabase/server";
+import { createSupabaseServerClient, getSupabasePublicConfig } from "@/lib/supabase/server";
 import { extractDateFromDocument } from "@/lib/corte-dashboard-utils";
 import { extractRevisionDocument, type RevisionDocument } from "@/lib/corte-data";
 
@@ -108,31 +108,29 @@ const APPROVAL_REVIEW_KEY = "corte_agent_mail_supervisor_approval";
 
 export { APPROVAL_REVIEW_KEY };
 
-export async function getReconciliationData(skipAuth: boolean = false): Promise<ReconciliationData> {
+export async function getReconciliationData(allowedRoles: readonly string[] = ["supervisor"]): Promise<ReconciliationData> {
   const config = getSupabasePublicConfig();
   if (!config.configured) {
     return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
   }
 
-  const supabase = skipAuth ? createSupabaseServiceClient() : await createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   if (!supabase) {
     return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
   }
 
-  if (!skipAuth) {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return { status: "auth_required", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
-    }
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return { status: "auth_required", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
+  }
 
-    const role = user.app_metadata?.role;
-    if (role !== "supervisor") {
-      // Falback to people table if app_metadata is not yet set
-      const { data: person } = await supabase.from("people").select("role_key").eq("email", user.email).single();
-      if (!person || person.role_key !== "supervisor") {
-        return { status: "unauthorized", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
-      }
-    }
+  let role = typeof user.app_metadata?.role === "string" ? user.app_metadata.role : null;
+  if (!role && user.email) {
+    const { data: person } = await supabase.from("people").select("role_key").eq("email", user.email).maybeSingle();
+    role = person?.role_key ?? null;
+  }
+  if (!role || !allowedRoles.includes(role)) {
+    return { status: "unauthorized", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
   }
 
   const runsResult = await supabase
@@ -181,7 +179,6 @@ export async function getReconciliationData(skipAuth: boolean = false): Promise<
     };
   }
 
-  // Build queries array - only include forecast query for skipAuth (socios) path
   const queries = [
     supabase
       .from("email_messages")

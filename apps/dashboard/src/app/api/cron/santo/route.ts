@@ -48,9 +48,10 @@ function formatIsoNoMs(date: Date) {
 }
 
 function yesterdayIso() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().split("T")[0];
+  const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  const d = new Date(`${todayMexico}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 function runCronProcess(args: string[], cwd: string): Promise<CronResult> {

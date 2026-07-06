@@ -46,8 +46,8 @@
 
 ## 2026-07-03 - Historical Ingresos dry run validated
 
-- Production project URL confirmed as `https://tstesjnefidyxryitfmi.supabase.co`,
-  but the connected Supabase account currently has no permission for that
+- Production Supabase project was confirmed through the connected environment,
+  but the connected Supabase account initially had no permission for that
   project and no replacement service key is available in the local environment.
 - Parsed 10 supplied Ingresos workbooks under
   `C:\Users\dchac\Downloads\SANTO`: 304 unique daily records from 2025-06-01
@@ -61,7 +61,7 @@
 - Missing supplied months remain visible gaps: August and September 2025, plus
   June 2026 onward.
 - Supabase access was restored and migration `corte_daily_records` was applied
-  to project `tstesjnefidyxryitfmi`. All 304 validated rows were imported in
+  to the production project. All 304 validated rows were imported in
   idempotent batches and re-queried successfully.
 - Remote totals exactly match the local source audit: Venta Bruta
   `32,862,233.35`, Total Bruto `36,481,635.50`, Propinas `3,619,402.15`, with
@@ -491,3 +491,20 @@ Activate and validate the Corte two-stage runtime in production:
 - Added `corte_receivables` with stable movement identity, RLS and source
   evidence. Backfilled the confirmed June 24, 27 and 29 openings: five rows,
   MXN 3,720 total open principal.
+
+## 2026-07-05 - P0 audit hardening
+
+- Financial and execution surfaces now enforce Supabase Auth and explicit role
+  allowlists. Anonymous `/socios`, Corte AI, workflow trigger and sandbox
+  access were removed.
+- The implicit NVIDIA/DeepSeek AI fallback was removed pending provider
+  governance approval.
+- Scheduler, Agent Mail and Vercel cron now calculate restaurant dates in
+  `America/Mexico_City`; UTC remains the timestamp transport convention.
+- CI now runs Python tests, dashboard lint and dashboard build. Local
+  verification passes with 150 Python tests, lint warnings only and a clean
+  production build.
+- Audit blocker still requiring owner action: the active Supabase service key
+  matches the key exposed in Git history, and the GitHub repository remains
+  public. Rotate the key in Supabase/local/Vercel/GitHub and make the repository
+  private before operational acceptance.

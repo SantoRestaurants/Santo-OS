@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
+import { authorizeRequest } from "@/lib/authz";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay } from "@/lib/corte-dashboard-utils";
 import { extractRevisionDocument } from "@/lib/corte-data";
 
@@ -14,10 +14,9 @@ type AiRequestBody = {
 };
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "Falta configurar GEMINI_API_KEY." }, { status: 503 });
-  }
+  const auth = await authorizeRequest(["supervisor", "socio"]);
+  if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: auth.status });
+  const { supabase } = auth;
 
   const body = await request.json().catch(() => null) as AiRequestBody | null;
   const runId = body?.runId;
@@ -25,15 +24,6 @@ export async function POST(request: Request) {
   if (!runId || !question) {
     return NextResponse.json({ error: "Falta la pregunta o el corte." }, { status: 400 });
   }
-
-  let supabase = await createSupabaseServerClient();
-  if (supabase) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) supabase = createSupabaseServiceClient();
-  } else {
-    supabase = createSupabaseServiceClient();
-  }
-  if (!supabase) return NextResponse.json({ error: "Falta configurar Supabase." }, { status: 503 });
 
   // Fetch selected run
   const { data: run, error } = await supabase
@@ -240,33 +230,10 @@ export async function POST(request: Request) {
     }
   }
 
-  // Try NVIDIA DeepSeek second
-  const nvidiaKey = process.env.NVIDIA_API_KEY;
-  if (nvidiaKey) {
-    try {
-      const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${nvidiaKey}` },
-        body: JSON.stringify({
-          model: "deepseek-ai/deepseek-v4-pro",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.2, top_p: 0.95, max_tokens: 800,
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (response.ok) {
-        const payload = await response.json();
-        const answer = payload?.choices?.[0]?.message?.content?.trim();
-        if (answer) return NextResponse.json({ answer });
-      }
-    } catch (e) {
-      console.error("NVIDIA API error:", e);
-    }
-  }
-
-  // Fallback to Gemini
+  // Gemini remains the only configured fallback used by the existing Corte
+  // vision pipeline. Additional providers require an explicit governance decision.
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) return NextResponse.json({ error: "No hay API key configurada (NVIDIA, Claude ni Gemini)." }, { status: 503 });
+  if (!geminiKey) return NextResponse.json({ error: "No hay un proveedor de IA aprobado y configurado." }, { status: 503 });
   try {
     const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
     const gResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {

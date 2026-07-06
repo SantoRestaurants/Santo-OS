@@ -32,6 +32,7 @@ from services.agent_mail.corte_santo_automation import run_corte_initial_from_me
 from workflows.corte_santo.cxc import parse_cxc_events, receivable_key
 from services.ai.classifier import classify_email, summarize_email
 from services.drive_connector.connector import save_document
+from services.business_time import business_today
 
 logger = logging.getLogger("agent_mail.poller")
 
@@ -804,7 +805,7 @@ def poll_and_classify(
                         corte_stage_result.get("workflow_result", {})
                         .get("workflow_run", {})
                         .get("business_date")
-                    ) or datetime.now(UTC).strftime("%Y-%m-%d")
+                    ) or business_today().isoformat()
 
                     run_id = supabase.upsert_workflow_run({
                         "workflow_id": workflow_id,

@@ -93,7 +93,14 @@ const C = {
 
 export default async function SociosPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const data = await getReconciliationData(true);
+  const data = await getReconciliationData(["supervisor", "socio"]);
+
+  if (data.status === "auth_required") {
+    return <main style={{ background: C.bg, color: C.ink, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}><Link href="/auth/sign-in">Iniciar sesión</Link></main>;
+  }
+  if (data.status === "unauthorized") {
+    return <main style={{ background: C.bg, color: C.ink, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>No tenés acceso al panel de socios.</main>;
+  }
 
   if (data.status === "requires_config") {
     return (

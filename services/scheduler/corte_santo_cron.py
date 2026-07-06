@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import sys
-from datetime import date, datetime, timedelta, UTC
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,7 @@ from services.agent_mail.poller import (
 )
 from services.drive_connector.connector import build_drive_client
 from services.drive_connector.corte_bank_watcher import poll_bank_folder_once
+from services.business_time import business_today
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +306,7 @@ def run_bank_watcher_once(
     try:
         cutoff_date = datetime.strptime(effective_date, "%Y-%m-%d").date()
     except ValueError:
-        cutoff_date = date.today()
+        cutoff_date = business_today()
     cutoff = (cutoff_date - timedelta(days=30)).isoformat()
 
     import httpx
@@ -680,7 +681,7 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
     )
     return {
         "status": status,
-        "ran_at": date.today().isoformat(),
+        "ran_at": business_today().isoformat(),
         "jobs": jobs,
     }
 

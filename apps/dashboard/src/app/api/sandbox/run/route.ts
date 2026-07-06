@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import os from "os";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { authorizeRequest } from "@/lib/authz";
 
 function getWorkspaceRoot() {
   let current = process.cwd();
@@ -185,6 +186,8 @@ function generateUtilityReceiptPdf(payload: any): Buffer {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await authorizeRequest(["supervisor"]);
+  if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: auth.status });
   const tempFiles: string[] = [];
   try {
     const { workflow, scenario, driveSettings } = await req.json();
@@ -194,6 +197,9 @@ export async function POST(req: NextRequest) {
         { error: "Workflow y scenario son obligatorios." },
         { status: 400 }
       );
+    }
+    if (typeof scenario !== "string" || !/^[a-z0-9_]+$/.test(scenario)) {
+      return NextResponse.json({ error: "Scenario inválido." }, { status: 400 });
     }
 
     const rootDir = getWorkspaceRoot();
