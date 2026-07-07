@@ -361,9 +361,6 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                         {statusText(selectedRun)}
                       </div>
                     </div>
-                    <Link href={`/cortes/${selectedRun.id}`} className="rounded-md border px-3 py-2 text-sm font-semibold" style={{ borderColor: LINE, color: INK }}>
-                      Ver detalle completo
-                    </Link>
                   </div>
                   <div className="mt-5 grid gap-2 md:grid-cols-4">
                     <div className="rounded-md border px-3 py-2 min-w-0 overflow-hidden" style={{ background: PANEL, borderColor: LINE }}>
