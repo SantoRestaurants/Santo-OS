@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { authorizeRequest } from "@/lib/authz";
-import { dailyForecastMeta, dailySales } from "@/lib/corte-dashboard-utils";
-import { extractRevisionDocument } from "@/lib/corte-data";
 // Removed hardcoded SQL functions. The LLM will now use raw data to answer directly.
 
 export async function POST(request: Request) {
@@ -103,132 +101,19 @@ export async function POST(request: Request) {
   // USE LLM (Claude/Gemini) with compact context
   // Only for questions that require narrative analysis
   // ========================================
-  const revision = contextRun ? extractRevisionDocument({ ...contextRun, business_date: contextRun.business_date ?? "" }) : null;
-  const ventaReal = contextRun ? dailySales({ ...contextRun, revision }) : 0;
-  const forecastDia = contextRun ? dailyForecastMeta({ ...contextRun, revision }) : null;
-  const op = (contextRun?.output_payload ?? {}) as Record<string, unknown>;
-  const ingresos = op.income_register ?? op.income_channels;
-  const fpe = revision?.falta_por_entrar as Record<string, number> | undefined;
-
-  function fmt(n: number | null | undefined) {
-    if (n == null || Number.isNaN(n)) return "$0.00";
-    return "$" + n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  function pct(a: number, b: number | null) {
-    if (!b || Number.isNaN(a) || Number.isNaN(b)) return "N/A";
-    return ((a - b) / b * 100).toFixed(1) + "%";
-  }
-
-  const safeVenta = ventaReal ?? 0;
-  const safeMeta = forecastDia ?? 0;
-  const diff = safeMeta > 0 ? safeVenta - safeMeta : null;
-
   const parts: string[] = [
-    "Sos SantoBot, el asistente financiero de Santo Restaurants. Le hablás a los socios y al equipo de administración del restaurante.",
-    "Reglas:",
-    "- Respondé siempre en español, con oraciones cortas, directas y precisas.",
-    "- Usá los datos provistos para responder.",
-    "- Si los datos necesarios no están disponibles, decí exactamente: 'No tengo ese dato.'",
-    "- Nunca inventes cifras. Solo respondé con lo que ves en los datos provistos.",
-    "- No sugieras acciones fiscales, bancarias ni legales.",
-    "",
+    "Sos SantoBot, el experto analista de datos y financiero de Santo Restaurants. Le hablás a los socios.",
+    "Reglas estrictas:",
+    "1. Respondé EXCLUSIVAMENTE a la pregunta del usuario. No des reportes de ventas, faltantes o pronósticos a menos que te lo hayan preguntado explícitamente.",
+    "2. Sé conciso y directo, sin rodeos. Da cifras exactas con el formato $0.00.",
+    "3. Para calcular conciliaciones o faltantes, confía ÚNICAMENTE en la tabla 'cuentas_por_cobrar' inyectada abajo. Esta tabla tiene la verdad absoluta sobre qué está pagado (status: settled) y qué falta (status: pending).",
+    "4. Si un registro en cuentas_por_cobrar tiene status 'settled', YA FUE DEPOSITADO Y CONCILIADO en la fecha 'settled_on'. No digas que faltan datos de conciliación si puedes ver los datos aquí.",
+    "5. Nunca inventes cifras. Si en toda la tabla inyectada no hay información, di 'No hay información registrada para ese cálculo'.",
+    ""
   ];
 
-  // Notify if using data from a different date
   if (effectiveDate !== (run?.business_date || body?.businessDate)) {
-    parts.push(
-      `NOTA IMPORTANTE: El día seleccionado no tiene datos completos.`,
-      `Estoy usando los datos más recientes disponibles del día ${effectiveDate}.`,
-      ""
-    );
-  }
-
-  parts.push(
-    "━━━ DATOS DEL DÍA ━━━",
-    `Fecha: ${effectiveDate || "No disponible"}`,
-    `Estado: ${contextRun?.status || "No disponible"}`,
-    `Venta real: ${fmt(ventaReal)}`,
-    `Meta forecast: ${fmt(forecastDia)}`,
-    diff != null ? `Diferencia vs forecast: ${fmt(diff)} (${pct(ventaReal, forecastDia)})` : "Sin forecast.",
-  );
-
-  // Income breakdown - keep compact
-  if (ingresos && typeof ingresos === "object" && Object.keys(ingresos as Record<string, unknown>).length > 0) {
-    const ir = ingresos as Record<string, number>;
-    parts.push("", "Ingresos del día:");
-    if (ir.amex) parts.push(`AMEX: ${fmt(ir.amex)}`);
-    if (ir.debito) parts.push(`Débito: ${fmt(ir.debito)}`);
-    if (ir.credito) parts.push(`Crédito: ${fmt(ir.credito)}`);
-    if (ir.efectivo) parts.push(`Efectivo: ${fmt(ir.efectivo)}`);
-    if (ir.propinas) parts.push(`Propinas: ${fmt(ir.propinas)}`);
-  }
-
-  // Falta por entrar - keep compact
-  if (fpe && Object.keys(fpe).length > 0) {
-    parts.push("", "━━━ FALTA POR ENTRAR ━━━");
-    Object.entries(fpe).forEach(([ch, amt]) => {
-      if (amt > 0) parts.push(`${ch}: ${fmt(amt)}`);
-    });
-  }
-
-  // Full month data - keep compact, don't send entire JSON dumps
-  if (selectedMonth) {
-    try {
-      const { data: wf } = await supabase.from("workflows").select("id").eq("workflow_key", "corte_santo_daily_sales_reconciliation").limit(1).single();
-      if (wf) {
-        const { data: monthRuns } = await supabase
-          .from("workflow_runs")
-          .select("id,business_date,status,output_payload")
-          .eq("workflow_id", wf.id)
-          .gte("business_date", `${selectedMonth}-01`)
-          .lte("business_date", `${selectedMonth}-31`)
-          .eq("source_channel", "agent_mail")
-          .order("business_date", { ascending: true })
-          .limit(50);
-
-        if (monthRuns?.length) {
-          const monthSummary = monthRuns.map((r: any) => {
-            const rop = r.output_payload ?? {};
-            const rir = rop.income_register as Record<string, number> | undefined;
-            const daily = rop.daily_record as Record<string, number> | undefined;
-            return {
-              fecha: r.business_date,
-              venta: Number(daily?.venta_bruta || 0),
-              amex: Number(rir?.amex || daily?.amex || 0),
-              efectivo: Number(rir?.efectivo || daily?.efectivo || 0),
-              propinas: Number(rir?.propinas || daily?.propinas || 0),
-            };
-          });
-
-          const totals = {
-            venta_total: monthSummary.reduce((s: number, d: any) => s + d.venta, 0),
-            amex_total: monthSummary.reduce((s: number, d: any) => s + d.amex, 0),
-            efectivo_total: monthSummary.reduce((s: number, d: any) => s + d.efectivo, 0),
-            propinas_total: monthSummary.reduce((s: number, d: any) => s + d.propinas, 0),
-          };
-
-          parts.push(
-            "",
-            "━━━ RESUMEN DEL MES ━━━",
-            `Días con corte: ${monthSummary.length}`,
-            `Venta total: ${fmt(totals.venta_total)}`,
-            `AMEX total: ${fmt(totals.amex_total)}`,
-            `Efectivo total: ${fmt(totals.efectivo_total)}`,
-            `Propinas total: ${fmt(totals.propinas_total)}`,
-          );
-        }
-      }
-    } catch { /* ignore month fetch errors */ }
-  }
-
-  // Week/month context - keep compact
-  if (body?.weekContext && body.weekContext.totalVendido > 0) {
-    const wc = body.weekContext;
-    parts.push("", `Semana: ${fmt(wc.totalVendido)} vendido, ${fmt(wc.totalMeta)} meta, ${wc.diasConCorte} días`);
-  }
-  if (body?.monthContext && body.monthContext.totalMeta > 0) {
-    const mc = body.monthContext;
-    parts.push("", `Mes: ${fmt(mc.totalVendido)} vendido, ${fmt(mc.totalMeta)} meta, ${mc.progressPct.toFixed(1)}% progreso`);
+    parts.push(`NOTA INTERNA: El día exacto pedido no tiene run, pero tienes los datos crudos abajo.`);
   }
   if (body?.unit) parts.push("", `Unidad: ${body.unit}`);
 
