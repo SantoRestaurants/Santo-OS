@@ -151,7 +151,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
   const returnTo = `/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
-  let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth);
+  let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth, data.forecastDocuments);
 
   function cortesDayVenta(run: ReconciliationRun) {
     return runTotal(run);
@@ -171,8 +171,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Link 
-              href={`/socios?month=${selectedMonth}`} 
+            <Link
+              href={`/socios?month=${selectedMonth}`}
               target="_blank"
               className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition-colors hover:bg-gray-50"
               style={{ borderColor: LINE, color: INK }}
@@ -511,11 +511,11 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                     Archivos de este dia
                   </div>
                   {["Corte", "Bancos"].map((group) => {
-                    const docs = group === "Corte" 
+                    const docs = group === "Corte"
                       ? selectedRun.documents.filter((doc) => ["corte_excel", "daily_sales_report", "revision_report"].includes(doc.document_type))
                       : group === "Bancos"
-                      ? selectedRun.documents.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type))
-                      : [];
+                        ? selectedRun.documents.filter((doc) => ["amex_statement", "banorte_statement"].includes(doc.document_type))
+                        : [];
                     return (
                       <div key={group} className="mb-3">
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>{group}</div>

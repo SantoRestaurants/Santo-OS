@@ -8,7 +8,7 @@ const MUTED = "#766f65";
 const LINE = "#ded7ca";
 const GOLD = "#e8463b";
 
-export function CorteAiBox({ runId }: { runId: string }) {
+export function CorteAiBox({ runId, selectedMonth, businessDate }: { runId: string; selectedMonth?: string; businessDate?: string }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,7 +30,7 @@ export function CorteAiBox({ runId }: { runId: string }) {
       const response = await fetch("/api/cortes/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId, question: trimmed }),
+        body: JSON.stringify({ runId, question: trimmed, selectedMonth, businessDate }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No se pudo consultar la IA.");

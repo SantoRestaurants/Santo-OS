@@ -183,7 +183,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     return dailySales(run);
   }
 
-  let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "");
+  let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth || "", data.forecastDocuments);
 
   // Recalculate monthTotal from actual Corte runs
   monthTotal = monthRuns.reduce((sum, run) => sum + dailySales(run), 0);
@@ -196,7 +196,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
     monthMeta = forecastArray
       .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
-    
+
     monthMetaToDate = forecastArray
       .filter(item => !latestDate || !item.fecha || item.fecha <= latestDate)
       .reduce((sum, item) => sum + (typeof item.meta_vta === "number" ? item.meta_vta : 0), 0);
@@ -303,7 +303,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;600;700;800&display=swap');
         
         body { background: ${C.bg} !important; color: ${C.ink} !important; margin: 0; }
@@ -518,7 +519,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
             {/* main content (detail + chart) */}
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-              
+
               {/* Chart */}
               <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px" }}>
                 <SociosChart monthData={monthChartData} weekData={weekChartData} />
@@ -532,7 +533,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
                 return (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
-                    
+
                     {/* venta bruta y KPIs del dia */}
                     <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>

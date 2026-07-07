@@ -75,8 +75,45 @@ export function extractMonthFromDocument(doc: DocumentLike) {
   return doc.created_at?.slice(0, 7) ?? new Date().toISOString().slice(0, 7);
 }
 
-export function hasForecastSourceForMonth(runs: RunLike[], month: string) {
-  return runs.some((run) => {
+export function resolveDailyForecast(
+  date: string,
+  run: RunLike | null,
+  forecastDocuments: Array<{ metadata?: Record<string, unknown> }>
+): number | null {
+  // 1. Try corte_daily_records.forecast_target
+  if (run) {
+    const dailyRecord = run.output_payload?.daily_record;
+    if (isRecord(dailyRecord) && typeof dailyRecord.forecast_target === "number") {
+      return dailyRecord.forecast_target;
+    }
+  }
+
+  // 2. Try revision.vta_por_dia exact row
+  if (run) {
+    const row = run.revision?.vta_por_dia?.find((item) => item.fecha === date);
+    if (typeof row?.meta_vta === "number") return row.meta_vta;
+  }
+
+  // 3. Try monthly forecast document
+  const month = date.slice(0, 7);
+  const forecastDoc = forecastDocuments.find(doc => {
+    const meta = doc.metadata as Record<string, unknown>;
+    return meta?.month === month;
+  });
+  if (forecastDoc) {
+    const vta = (forecastDoc.metadata as Record<string, unknown>)?.vta_por_dia;
+    if (Array.isArray(vta)) {
+      const dayRow = vta.find((item: any) => item.fecha === date);
+      if (typeof dayRow?.meta_vta === "number") return dayRow.meta_vta;
+    }
+  }
+
+  return null;
+}
+
+export function hasForecastSourceForMonth(runs: RunLike[], month: string, forecastDocuments?: Array<{ metadata?: Record<string, unknown> }>) {
+  // Check runs first
+  const hasRunForecast = runs.some((run) => {
     const payload = run.output_payload ?? {};
     const driveIds = payload.drive_file_ids;
     const workbookPaths = payload.workbook_paths;
@@ -87,17 +124,23 @@ export function hasForecastSourceForMonth(runs: RunLike[], month: string) {
       return extractMonthFromDocument(doc) === month;
     });
   });
+
+  if (hasRunForecast) return true;
+
+  // Check registered forecast documents
+  if (forecastDocuments) {
+    return forecastDocuments.some(doc => {
+      const meta = doc.metadata as Record<string, unknown>;
+      return meta?.month === month;
+    });
+  }
+
+  return false;
 }
 
-export function dailyForecastMeta(run: RunLike) {
-  const date = run.business_date;
-  if (!date) return null;
-  const dailyRecord = run.output_payload?.daily_record;
-  if (isRecord(dailyRecord) && typeof dailyRecord.forecast_target === "number") {
-    return dailyRecord.forecast_target;
-  }
-  const row = run.revision?.vta_por_dia?.find((item) => item.fecha === date);
-  return typeof row?.meta_vta === "number" ? row.meta_vta : null;
+export function dailyForecastMeta(run: RunLike, forecastDocuments?: Array<{ metadata?: Record<string, unknown> }>) {
+  if (!run.business_date) return null;
+  return resolveDailyForecast(run.business_date, run, forecastDocuments ?? []);
 }
 
 export function dailySales(run: RunLike) {
@@ -168,6 +211,8 @@ export type OutstandingSnapshot = {
 };
 
 export function getOutstandingThroughDate(runs: RunLike[], throughDate: string): OutstandingSnapshot | null {
+  // Find the most recent bank reconciliation snapshot on or before throughDate
+  // Priority: bank_reconciliation.pending_collections > revision.falta_por_entrar
   const candidates = runs
     .filter((run) => Boolean(run.business_date && run.business_date <= throughDate))
     .map((run) => {
@@ -178,10 +223,13 @@ export function getOutstandingThroughDate(runs: RunLike[], throughDate: string):
       const nestedBankReconciliation = bankStage && isRecord(bankStage.bank_reconciliation)
         ? bankStage.bank_reconciliation
         : null;
-      const raw = run.revision?.falta_por_entrar
+
+      // Prefer bank_reconciliation.pending_collections (most recent state after matching)
+      // This reflects items that remain unsettled after bank matching
+      const raw = (bankReconciliation && isRecord(bankReconciliation.pending_collections) ? bankReconciliation.pending_collections : null)
+        ?? (nestedBankReconciliation && isRecord(nestedBankReconciliation.pending_collections) ? nestedBankReconciliation.pending_collections : null)
         ?? (revisionDocument && isRecord(revisionDocument.falta_por_entrar) ? revisionDocument.falta_por_entrar : null)
-        ?? (bankReconciliation && isRecord(bankReconciliation.pending_collections) ? bankReconciliation.pending_collections : null)
-        ?? (nestedBankReconciliation && isRecord(nestedBankReconciliation.pending_collections) ? nestedBankReconciliation.pending_collections : null);
+        ?? run.revision?.falta_por_entrar;
 
       if (!raw) return null;
       const entries = Object.entries(raw)
@@ -237,8 +285,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-export function getMonthlyTotals(monthRuns: RunLike[], selectedMonth: string) {
-  const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
+export function getMonthlyTotals(monthRuns: RunLike[], selectedMonth: string, forecastDocuments?: Array<{ metadata?: Record<string, unknown> }>) {
+  const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth, forecastDocuments);
   const latestRunWithForecast = monthRuns.find((run) => run.revision?.vta_por_dia && run.revision.vta_por_dia.length > 0);
 
   // Find the latest date with actual data to cap month-to-date calculations
@@ -246,8 +294,8 @@ export function getMonthlyTotals(monthRuns: RunLike[], selectedMonth: string) {
   const latestDateWithData = runsWithSales.length > 0
     ? runsWithSales.reduce((latest, r) => (r.business_date && (!latest || r.business_date > latest) ? r.business_date : latest), null as string | null)
     : monthRuns.length > 0
-    ? monthRuns.reduce((latest, r) => (r.business_date && (!latest || r.business_date > latest) ? r.business_date : latest), null as string | null)
-    : null;
+      ? monthRuns.reduce((latest, r) => (r.business_date && (!latest || r.business_date > latest) ? r.business_date : latest), null as string | null)
+      : null;
 
   const isUpTo = (date: string | null | undefined) => {
     if (!latestDateWithData || !date) return true;
@@ -286,6 +334,6 @@ export function getMonthlyTotals(monthRuns: RunLike[], selectedMonth: string) {
   const monthTotal = monthRuns.reduce((sum, run) => sum + dailySales(run), 0);
   const monthMeta = forecastReady ? monthRuns.reduce((sum, run) => sum + (dailyForecastMeta(run) ?? 0), 0) : null;
   const monthMetaToDate = forecastReady ? monthRuns.reduce((sum, run) => sum + (isUpTo(run.business_date) ? (dailyForecastMeta(run) ?? 0) : 0), 0) : null;
-  
+
   return { monthTotal, monthMeta, monthMetaToDate };
 }

@@ -8,6 +8,7 @@ type AiRequestBody = {
   runId?: string;
   question?: string;
   unit?: string;
+  businessDate?: string;
   weekContext?: { totalVendido: number; totalMeta: number; diasConCorte: number; cortes: Array<{ fecha: string; venta: number; meta: number | null; status: string }> };
   monthContext?: { totalVendido: number; totalMeta: number; progressPct: number };
   selectedMonth?: string;
@@ -21,29 +22,42 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as AiRequestBody | null;
   const runId = body?.runId;
   const question = body?.question?.trim();
-  if (!runId || !question) {
-    return NextResponse.json({ error: "Falta la pregunta o el corte." }, { status: 400 });
+  if (!question) {
+    return NextResponse.json({ error: "Falta la pregunta." }, { status: 400 });
   }
 
-  // Fetch selected run
-  const { data: run, error } = await supabase
-    .from("workflow_runs")
-    .select("id,business_date,status,source_channel,requires_review_reason,created_at,output_payload")
-    .eq("id", runId)
-    .single();
-  if (error || !run) return NextResponse.json({ error: "No encontré ese corte." }, { status: 404 });
+  let run: any = null;
+  let effectiveDate: string | null = null;
+  let selectedMonth = body?.selectedMonth;
 
-  const selectedMonth = body.selectedMonth || run.business_date?.slice(0, 7);
+  // Fetch run if runId provided and not a stub
+  if (runId && runId !== "stub-today") {
+    const { data, error } = await supabase
+      .from("workflow_runs")
+      .select("id,business_date,status,source_channel,requires_review_reason,created_at,output_payload")
+      .eq("id", runId)
+      .single();
+    if (!error && data) {
+      run = data;
+      effectiveDate = data.business_date;
+      selectedMonth = selectedMonth || data.business_date?.slice(0, 7);
+    }
+  }
+
+  // If stub or no run, use businessDate from body or today
+  if (!effectiveDate) {
+    effectiveDate = body?.businessDate || new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+    selectedMonth = selectedMonth || effectiveDate.slice(0, 7);
+  }
 
   // ========================================
-  // ALWAYS USE LLM WITH FULL CONTEXT
-  // If the selected day has no data, find the most recent day with data
+  // USE LLM (Claude/Gemini) WITH FULL CONTEXT
+  // All questions go through LLM for narrative analysis
   // ========================================
   let contextRun = run;
-  let effectiveDate = run.business_date;
 
-  // If current run has no useful data, find the latest run with data
-  if (!run.output_payload || Object.keys(run.output_payload).length === 0 || run.status === "requires_review") {
+  // If no run or stub, find the latest run with data
+  if (!run || !run.output_payload || Object.keys(run.output_payload).length === 0 || run?.status === "requires_review") {
     const { data: latestRun } = await supabase
       .from("workflow_runs")
       .select("id,business_date,status,source_channel,requires_review_reason,created_at,output_payload")
@@ -57,18 +71,21 @@ export async function POST(request: Request) {
 
     if (latestRun) {
       contextRun = latestRun;
-      effectiveDate = latestRun.business_date;
-      console.log(`[AI] Using latest available data from ${effectiveDate} instead of ${run.business_date}`);
+      if (!effectiveDate || effectiveDate === new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" })) {
+        effectiveDate = latestRun.business_date;
+        console.log(`[AI] Using latest available data from ${effectiveDate}`);
+      }
     }
   }
 
   // ========================================
-  // USE LLM (Claude/Gemini) with full context
+  // USE LLM (Claude/Gemini) with compact context
+  // Only for questions that require narrative analysis
   // ========================================
-  const revision = extractRevisionDocument({ ...contextRun, business_date: contextRun.business_date ?? "" });
-  const ventaReal = dailySales({ ...contextRun, revision });
-  const forecastDia = dailyForecastMeta({ ...contextRun, revision });
-  const op = (contextRun.output_payload ?? {}) as Record<string, unknown>;
+  const revision = contextRun ? extractRevisionDocument({ ...contextRun, business_date: contextRun.business_date ?? "" }) : null;
+  const ventaReal = contextRun ? dailySales({ ...contextRun, revision }) : 0;
+  const forecastDia = contextRun ? dailyForecastMeta({ ...contextRun, revision }) : null;
+  const op = (contextRun?.output_payload ?? {}) as Record<string, unknown>;
   const bankRec = op.bank_reconciliation as Record<string, unknown> | undefined;
   const ingresos = op.income_register ?? op.income_channels;
   const fpe = revision?.falta_por_entrar as Record<string, number> | undefined;
@@ -78,7 +95,7 @@ export async function POST(request: Request) {
     if (n == null || Number.isNaN(n)) return "$0.00";
     return "$" + n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-  function pct(a: number, b: number) {
+  function pct(a: number, b: number | null) {
     if (!b || Number.isNaN(a) || Number.isNaN(b)) return "N/A";
     return ((a - b) / b * 100).toFixed(1) + "%";
   }
@@ -91,18 +108,17 @@ export async function POST(request: Request) {
     "Sos SantoBot, el asistente financiero de Santo Restaurants. Le hablás a los socios y al equipo de administración del restaurante.",
     "Reglas:",
     "- Respondé siempre en español, con oraciones cortas, directas y precisas.",
-    "- Usá los DATOS DEL DÍA, DATOS DEL MES, BANCOS, SALDOS y COBROS PENDIENTES para responder.",
+    "- Usá los datos provistos para responder.",
     "- Si los datos necesarios no están disponibles, decí exactamente: 'No tengo ese dato.'",
     "- Nunca inventes cifras. Solo respondé con lo que ves en los datos provistos.",
     "- No sugieras acciones fiscales, bancarias ni legales.",
-    "- Para preguntas de porcentajes, calculá con precisión y mostrá el resultado.",
     "",
   ];
 
   // Notify if using data from a different date
-  if (effectiveDate !== run.business_date) {
+  if (effectiveDate !== (run?.business_date || body?.businessDate)) {
     parts.push(
-      `NOTA IMPORTANTE: El día seleccionado (${run.business_date}) no tiene datos completos.`,
+      `NOTA IMPORTANTE: El día seleccionado no tiene datos completos.`,
       `Estoy usando los datos más recientes disponibles del día ${effectiveDate}.`,
       ""
     );
@@ -111,45 +127,32 @@ export async function POST(request: Request) {
   parts.push(
     "━━━ DATOS DEL DÍA ━━━",
     `Fecha: ${effectiveDate || "No disponible"}`,
-    `Estado: ${contextRun.status || "No disponible"}`,
-    `Venta real: ${fmt(safeVenta)}`,
-    `Meta forecast: ${fmt(safeMeta)}`,
-    diff != null ? `Diferencia vs forecast: ${fmt(diff)} (${pct(safeVenta, safeMeta)})` : "Sin forecast.",
-    `Total Real (terminal): ${fmt(revision?.reconciliation_totals?.total_real)}`,
-    `Total Sistema: ${fmt(revision?.reconciliation_totals?.total_sistema)}`,
-    `Diferencia: ${fmt(revision?.reconciliation_totals?.difference)}`,
+    `Estado: ${contextRun?.status || "No disponible"}`,
+    `Venta real: ${fmt(ventaReal)}`,
+    `Meta forecast: ${fmt(forecastDia)}`,
+    diff != null ? `Diferencia vs forecast: ${fmt(diff)} (${pct(ventaReal, forecastDia)})` : "Sin forecast.",
   );
 
-  // Income breakdown
+  // Income breakdown - keep compact
   if (ingresos && typeof ingresos === "object" && Object.keys(ingresos as Record<string, unknown>).length > 0) {
-    parts.push("", "Desglose de ingresos del día:", JSON.stringify(ingresos, null, 2));
+    const ir = ingresos as Record<string, number>;
+    parts.push("", "Ingresos del día:");
+    if (ir.amex) parts.push(`AMEX: ${fmt(ir.amex)}`);
+    if (ir.debito) parts.push(`Débito: ${fmt(ir.debito)}`);
+    if (ir.credito) parts.push(`Crédito: ${fmt(ir.credito)}`);
+    if (ir.efectivo) parts.push(`Efectivo: ${fmt(ir.efectivo)}`);
+    if (ir.propinas) parts.push(`Propinas: ${fmt(ir.propinas)}`);
   }
 
-  // Bank reconciliation data
-  if (bankRec) {
-    const am = bankRec.amex_matches as Array<Record<string, unknown>> | undefined;
-    const pi = bankRec.pending_items as Array<Record<string, unknown>> | undefined;
-    const bv = bankRec.batch_validation as Array<Record<string, unknown>> | undefined;
-    const mf = bankRec.missing_funds as Record<string, number> | undefined;
-
-    parts.push("", "━━━ DATOS BANCARIOS ━━━");
-    if (am?.length) parts.push(`Pagos AMEX matcheados: ${am.length}`, JSON.stringify(am.slice(0, 10), null, 2));
-    if (pi?.length) parts.push(`Pagos pendientes: ${pi.length}`, JSON.stringify(pi.slice(0, 10), null, 2));
-    if (bv?.length) parts.push(`Validación de batches Banorte: ${JSON.stringify(bv, null, 2)}`);
-    if (mf) parts.push(`Fondos faltantes: ${JSON.stringify(mf)}`);
-  }
-
-  // Falta por entrar
+  // Falta por entrar - keep compact
   if (fpe && Object.keys(fpe).length > 0) {
-    parts.push("", "━━━ FALTA POR ENTRAR EN LA CUENTA ━━━", JSON.stringify(fpe, null, 2));
+    parts.push("", "━━━ FALTA POR ENTRAR ━━━");
+    Object.entries(fpe).forEach(([ch, amt]) => {
+      if (amt > 0) parts.push(`${ch}: ${fmt(amt)}`);
+    });
   }
 
-  // Saldos
-  if (saldos && Object.values(saldos).some(v => v > 0)) {
-    parts.push("", "━━━ SALDOS ━━━", JSON.stringify(saldos, null, 2));
-  }
-
-  // Full month data
+  // Full month data - keep compact, don't send entire JSON dumps
   if (selectedMonth) {
     try {
       const { data: wf } = await supabase.from("workflows").select("id").eq("workflow_key", "corte_santo_daily_sales_reconciliation").limit(1).single();
@@ -165,93 +168,56 @@ export async function POST(request: Request) {
           .limit(50);
 
         if (monthRuns?.length) {
-          // Build plain objects for dedup
-          const plainRuns = monthRuns.map(r => ({
-            id: r.id, business_date: r.business_date, status: r.status,
-            source_channel: (r as any).source_channel || "agent_mail",
-            requires_review_reason: (r as any).requires_review_reason || null,
-            created_at: (r as any).created_at || "",
-            output_payload: r.output_payload,
-            revision: extractRevisionDocument({ ...r, business_date: r.business_date ?? "", source_channel: (r as any).source_channel || "agent_mail", requires_review_reason: (r as any).requires_review_reason || null, created_at: (r as any).created_at || "" } as any) ?? undefined,
-            documents: [] as any[], reviews: [] as any[], exceptions: [] as any[], email: null,
-          }));
-          const deduped = (dedupeRunsByDay as any)(plainRuns);
-
-          const monthSummary = (deduped as any[]).map((run: any) => {
-            const rop: any = run.output_payload ?? {};
+          const monthSummary = monthRuns.map((r: any) => {
+            const rop = r.output_payload ?? {};
             const rir = rop.income_register as Record<string, number> | undefined;
-            const rrev = run.revision as any;
+            const daily = rop.daily_record as Record<string, number> | undefined;
             return {
-              fecha: run.business_date,
-              status: run.status,
-              venta_real: dailySales(run as any) ?? 0,
-              total_real: rrev?.reconciliation_totals?.total_real ?? 0,
-              amex: rir?.amex ?? 0,
-              debito: rir?.debito ?? 0,
-              credito: rir?.credito ?? 0,
-              efectivo: rir?.efectivo ?? 0,
-              paypal: rir?.paypal ?? 0,
-              uber: rir?.uber ?? 0,
-              rappi: rir?.rappi ?? 0,
-              propinas: rir?.propinas ?? 0,
-              plataformas: rir?.plataformas ?? 0,
-              bancos: rir?.bancos ?? 0,
-              bank_validated: rop.bank_validation_status === "bank_validated",
-              falta_por_entrar: rrev?.falta_por_entrar ?? {},
-              saldos: rop.saldos ?? {},
+              fecha: r.business_date,
+              venta: Number(daily?.venta_bruta || 0),
+              amex: Number(rir?.amex || daily?.amex || 0),
+              efectivo: Number(rir?.efectivo || daily?.efectivo || 0),
+              propinas: Number(rir?.propinas || daily?.propinas || 0),
             };
           });
 
-          // Monthly totals
           const totals = {
-            amex: monthSummary.reduce((s, d) => s + d.amex, 0),
-            debito: monthSummary.reduce((s, d) => s + d.debito, 0),
-            credito: monthSummary.reduce((s, d) => s + d.credito, 0),
-            efectivo: monthSummary.reduce((s, d) => s + d.efectivo, 0),
-            uber: monthSummary.reduce((s, d) => s + d.uber, 0),
-            rappi: monthSummary.reduce((s, d) => s + d.rappi, 0),
-            propinas: monthSummary.reduce((s, d) => s + d.propinas, 0),
-            venta_real: monthSummary.reduce((s, d) => s + d.venta_real, 0),
-            total_real: monthSummary.reduce((s, d) => s + d.total_real, 0),
-            bancos: monthSummary.reduce((s, d) => s + d.bancos, 0),
-            plataformas: monthSummary.reduce((s, d) => s + d.plataformas, 0),
+            venta_total: monthSummary.reduce((s: number, d: any) => s + d.venta, 0),
+            amex_total: monthSummary.reduce((s: number, d: any) => s + d.amex, 0),
+            efectivo_total: monthSummary.reduce((s: number, d: any) => s + d.efectivo, 0),
+            propinas_total: monthSummary.reduce((s: number, d: any) => s + d.propinas, 0),
           };
-
-          const validatedCount = monthSummary.filter(d => d.bank_validated).length;
-          const pendingCount = monthSummary.length - validatedCount;
 
           parts.push(
             "",
             "━━━ RESUMEN DEL MES ━━━",
-            `Días con corte: ${monthSummary.length} | Validados con banco: ${validatedCount} | Pendientes: ${pendingCount}`,
-            "",
-            "Totales mensuales:",
-            JSON.stringify(totals, null, 2),
-            "",
-            "Detalle diario:",
-            JSON.stringify(monthSummary, null, 2),
+            `Días con corte: ${monthSummary.length}`,
+            `Venta total: ${fmt(totals.venta_total)}`,
+            `AMEX total: ${fmt(totals.amex_total)}`,
+            `Efectivo total: ${fmt(totals.efectivo_total)}`,
+            `Propinas total: ${fmt(totals.propinas_total)}`,
           );
         }
       }
     } catch { /* ignore month fetch errors */ }
   }
 
-  // Week/month context
-  if (body.weekContext && body.weekContext.totalVendido > 0) {
+  // Week/month context - keep compact
+  if (body?.weekContext && body.weekContext.totalVendido > 0) {
     const wc = body.weekContext;
-    parts.push("", "━━━ CONTEXTO DE LA SEMANA ━━━", `Total: ${fmt(wc.totalVendido)} | Meta: ${fmt(wc.totalMeta)} | Días: ${wc.diasConCorte}`);
+    parts.push("", `Semana: ${fmt(wc.totalVendido)} vendido, ${fmt(wc.totalMeta)} meta, ${wc.diasConCorte} días`);
   }
-  if (body.monthContext && body.monthContext.totalMeta > 0) {
+  if (body?.monthContext && body.monthContext.totalMeta > 0) {
     const mc = body.monthContext;
-    parts.push("", "━━━ CONTEXTO DEL MES ━━━", `Total: ${fmt(mc.totalVendido)} | Meta mensual: ${fmt(mc.totalMeta)} | Progreso: ${mc.progressPct.toFixed(1)}%`);
+    parts.push("", `Mes: ${fmt(mc.totalVendido)} vendido, ${fmt(mc.totalMeta)} meta, ${mc.progressPct.toFixed(1)}% progreso`);
   }
-  if (body.unit) parts.push("", `Unidad: ${body.unit}`);
+  if (body?.unit) parts.push("", `Unidad: ${body.unit}`);
 
   parts.push("", `PREGUNTA: ${question}`, "", "Respondé solo lo que te preguntaron con los datos provistos. Sé preciso con cifras y porcentajes.");
 
   const prompt = parts.join("\n");
 
-  // Try Claude first
+  // Try Claude first (primary provider)
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
     try {
@@ -259,37 +225,36 @@ export async function POST(request: Request) {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
         body: JSON.stringify({
-          model: process.env.CLAUDE_MODEL || "claude-3-5-sonnet-latest", max_tokens: 800, temperature: 0.2,
+          model: process.env.CLAUDE_MODEL || "claude-3-5-sonnet-latest", max_tokens: 600, temperature: 0.2,
           system: "Sos SantoBot, asistente financiero de Santo Restaurants.",
           messages: [{ role: "user", content: prompt }]
         }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(10000),
       });
       if (response.ok) {
         const payload = await response.json();
         const answer = payload?.content?.map((block: { text?: string }) => block.text ?? "").join("").trim();
-        if (answer) return NextResponse.json({ answer });
+        if (answer) return NextResponse.json({ answer, mode: "llm" });
       }
     } catch (e) {
       console.error("Claude API error:", e);
     }
   }
 
-  // Gemini remains the only configured fallback used by the existing Corte
-  // vision pipeline. Additional providers require an explicit governance decision.
+  // Gemini fallback
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) return NextResponse.json({ error: "No hay un proveedor de IA aprobado y configurado." }, { status: 503 });
   try {
     const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
     const gResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 800 } }),
-      signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 600 } }),
+      signal: AbortSignal.timeout(10000),
     });
     if (!gResp.ok) return NextResponse.json({ error: "El asistente no pudo responder." }, { status: 502 });
     const gPayload = await gResp.json();
     const answer = gPayload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("").trim();
-    return NextResponse.json({ answer: answer || "No pude generar una respuesta." });
+    return NextResponse.json({ answer: answer || "No pude generar una respuesta.", mode: "llm" });
   } catch (e) {
     console.error("Gemini API error:", e);
     return NextResponse.json({ error: "Timeout al contactar el asistente." }, { status: 504 });

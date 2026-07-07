@@ -34,7 +34,7 @@ type Props = {
   monthContext?: MonthContext;
 };
 
-export function SociosAiBox({ runId, unit, weekContext, monthContext }: Props) {
+export function SociosAiBox({ runId, unit, weekContext, monthContext, selectedMonth }: Props & { selectedMonth?: string }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
@@ -56,7 +56,7 @@ export function SociosAiBox({ runId, unit, weekContext, monthContext }: Props) {
       const response = await fetch("/api/cortes/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId, question: trimmed, unit, weekContext, monthContext }),
+        body: JSON.stringify({ runId, question: trimmed, unit, weekContext, monthContext, selectedMonth }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No se pudo consultar la IA.");
@@ -74,7 +74,7 @@ export function SociosAiBox({ runId, unit, weekContext, monthContext }: Props) {
         <Bot size={14} />
         Consultar Asistente IA
       </div>
-      
+
       <textarea
         rows={2}
         value={question}
@@ -94,7 +94,7 @@ export function SociosAiBox({ runId, unit, weekContext, monthContext }: Props) {
         onFocus={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.2)")}
         onBlur={(e) => (e.target.style.borderColor = C.border)}
       />
-      
+
       <div style={{ marginTop: "12px", display: "flex", justifyContent: "flex-end" }}>
         <button
           type="button"
@@ -122,7 +122,7 @@ export function SociosAiBox({ runId, unit, weekContext, monthContext }: Props) {
           {error}
         </div>
       )}
-      
+
       {answer && (
         <div style={{ marginTop: "16px", padding: "16px", border: `1px solid ${C.border}`, background: C.bg, color: C.dim, fontSize: "13px", lineHeight: "1.6", whiteSpace: "pre-wrap", fontFamily: "var(--font-geist-sans), sans-serif" }}>
           {answer}

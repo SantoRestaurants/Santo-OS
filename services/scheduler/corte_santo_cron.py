@@ -310,104 +310,187 @@ def run_bank_watcher_once(
     cutoff = (cutoff_date - timedelta(days=30)).isoformat()
 
     import httpx
-    resp_all = httpx.get(
-        f"{supabase_url}/rest/v1/workflow_runs",
+    
+    # ── PRIORITY 1: Check corte_receivables table for canonical outstanding balance ──
+    # This table tracks settlement status and is the source of truth for pending collections
+    resp_receivables = httpx.get(
+        f"{supabase_url}/rest/v1/corte_receivables",
         params={
-            "select": "id,business_date,status,output_payload",
-            "business_date": f"gte.{cutoff}",
-            "source_channel": "eq.agent_mail",
-            "order": "business_date.asc",
-            "limit": "50",
+            "select": "receivable_key,opened_on,principal,settled_principal,status",
+            "status": "eq.open",
+            "opened_on": f"gte.{cutoff}",
+            "opened_on": f"lte.{effective_date}",
+            "order": "opened_on.asc",
         },
         headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
         timeout=30.0,
     )
-    if resp_all.status_code >= 400:
-        return {
-            "status": "requires_review",
-            "requires_review_reason": f"supabase_query_failed:{resp_all.status_code}",
-            "watcher_result": watcher,
-        }
-    all_runs = resp_all.json()
-    if not isinstance(all_runs, list) or not all_runs:
-        return {
-            "status": "requires_review",
-            "requires_review_reason": "no_pending_runs_found",
-            "watcher_result": watcher,
-        }
-
-    # Build expected_collections from ALL days with AMEX data (last 30 days)
-    # Prefer runs with income_register, skip already bank_validated
+    
     expected_cols: list[dict[str, Any]] = []
-    pending_runs: list[dict[str, Any]] = []
-    latest_stage1: dict[str, Any] = {}
-    latest_bd = ""
-    seen_dates: set[str] = set()
-
-    for run in all_runs:
-        op = run.get("output_payload") or {}
-        if isinstance(op, str):
-            try:
-                op = json.loads(op)
-            except Exception:
-                continue
-        bd = run.get("business_date") or ""
-        if bd > effective_date:
-            continue
-
-        bank = op.get("bank_reconciliation") or {}
-        revision = op.get("revision_document") or {}
-        pending = bank.get("pending_collections") or revision.get("falta_por_entrar") or {}
-
-        # Skip only genuinely settled days. Older runs could be labelled
-        # bank_validated while still carrying pending collections.
-        marked_validated = (
-            op.get("bank_validation_status") == "bank_validated"
-            or op.get("stage") == "bank_validated"
-            or bank.get("status") == "bank_validated"
-        )
-        if marked_validated and not pending:
-            continue
-
-        ir = op.get("income_register") or {}
-        amex_val = float(ir.get("amex", 0))
-
-        # Also check nested paths
-        if not amex_val:
-            wf_result = op.get("workflow_result") or {}
-            wf_run = wf_result.get("workflow_run") or {}
-            ir2 = wf_run.get("canonical_evidence", {}).get("income_register") or {}
-            if isinstance(ir2, dict):
-                amex_val = float(ir2.get("amex", 0))
-
-        # Only use runs that have income_register data, regardless of status
-        # Transferencia is evidence/adjustment already represented inside the
-        # PayPal value written to Ingresos; tracking it again double-counts it.
-        channels_to_track = ["amex", "uber", "rappi", "paypal", "debito", "credito", "efectivo"]
-        has_any = any(float(ir.get(ch, 0)) > 0 for ch in channels_to_track)
-        if has_any:
-            if bd in seen_dates:
-                continue
-            seen_dates.add(bd)
-            for ch in channels_to_track:
-                val = float(ir.get(ch, 0))
-                if val > 0:
+    
+    if resp_receivables.status_code < 400:
+        receivables_data = resp_receivables.json()
+        if isinstance(receivables_data, list) and receivables_data:
+            # Build expected_collections from corte_receivables (canonical source)
+            logging.info(f"Found {len(receivables_data)} open receivables in corte_receivables table")
+            for rec in receivables_data:
+                principal = float(rec.get("principal", 0))
+                settled = float(rec.get("settled_principal", 0))
+                pending_amount = principal - settled
+                
+                if pending_amount > 0:
+                    # Parse receivable_key format: "{business_date}:{channel}"
+                    key = rec.get("receivable_key", "")
+                    parts = key.split(":", 1)
+                    bd = parts[0] if len(parts) > 0 else rec.get("opened_on")
+                    channel = parts[1] if len(parts) > 1 else "unknown"
+                    
                     expected_cols.append({
                         "business_date": bd,
-                        "channel": ch,
-                        "amount": val,
-                        "expected_deposit": val,
+                        "channel": channel,
+                        "amount": pending_amount,
+                        "expected_deposit": pending_amount,
                         "source_date": bd,
+                        "receivable_key": key,
                     })
-            pending_runs.append({
-                "id": run["id"], "business_date": bd, "amex": float(ir.get("amex", 0)),
-                "income_channels": ir, "income_register": ir,
-                "revision_document": op.get("revision_document"),
-            })
+            
+            if expected_cols:
+                logging.info(f"Built {len(expected_cols)} expected collections from corte_receivables")
+                # Skip the old workflow_runs reconstruction logic
+                # Jump directly to bank file download
+                pending_runs = []  # Will be populated from workflow_runs for other metadata
+    
+    # ── FALLBACK: If corte_receivables is empty, reconstruct from workflow_runs (legacy path) ──
+    if not expected_cols:
+        logging.warning("corte_receivables table is empty or unavailable, falling back to workflow_runs reconstruction")
+        resp_all = httpx.get(
+            f"{supabase_url}/rest/v1/workflow_runs",
+            params={
+                "select": "id,business_date,status,output_payload",
+                "business_date": f"gte.{cutoff}",
+                "source_channel": "eq.agent_mail",
+                "order": "business_date.asc",
+                "limit": "50",
+            },
+            headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+            timeout=30.0,
+        )
+        if resp_all.status_code >= 400:
+        if resp_all.status_code >= 400:
+            return {
+                "status": "requires_review",
+                "requires_review_reason": f"supabase_query_failed:{resp_all.status_code}",
+                "watcher_result": watcher,
+            }
+        all_runs = resp_all.json()
+        if not isinstance(all_runs, list) or not all_runs:
+            return {
+                "status": "requires_review",
+                "requires_review_reason": "no_pending_runs_found",
+                "watcher_result": watcher,
+            }
 
-        if bd > latest_bd:
-            latest_bd = bd
-            latest_stage1 = op
+        # Build expected_collections from ALL days with AMEX data (last 30 days)
+        # Prefer runs with income_register, skip already bank_validated
+        pending_runs: list[dict[str, Any]] = []
+        latest_stage1: dict[str, Any] = {}
+        latest_bd = ""
+        seen_dates: set[str] = set()
+
+        for run in all_runs:
+        for run in all_runs:
+            op = run.get("output_payload") or {}
+            if isinstance(op, str):
+                try:
+                    op = json.loads(op)
+                except Exception:
+                    continue
+            bd = run.get("business_date") or ""
+            if bd > effective_date:
+                continue
+
+            bank = op.get("bank_reconciliation") or {}
+            revision = op.get("revision_document") or {}
+            pending = bank.get("pending_collections") or revision.get("falta_por_entrar") or {}
+
+            # Skip only genuinely settled days. Older runs could be labelled
+            # bank_validated while still carrying pending collections.
+            marked_validated = (
+                op.get("bank_validation_status") == "bank_validated"
+                or op.get("stage") == "bank_validated"
+                or bank.get("status") == "bank_validated"
+            )
+            if marked_validated and not pending:
+                continue
+
+            ir = op.get("income_register") or {}
+            amex_val = float(ir.get("amex", 0))
+
+            # Also check nested paths
+            if not amex_val:
+                wf_result = op.get("workflow_result") or {}
+                wf_run = wf_result.get("workflow_run") or {}
+                ir2 = wf_run.get("canonical_evidence", {}).get("income_register") or {}
+                if isinstance(ir2, dict):
+                    amex_val = float(ir2.get("amex", 0))
+
+            # Only use runs that have income_register data, regardless of status
+            # Transferencia is evidence/adjustment already represented inside the
+            # PayPal value written to Ingresos; tracking it again double-counts it.
+            channels_to_track = ["amex", "uber", "rappi", "paypal", "debito", "credito", "efectivo"]
+            has_any = any(float(ir.get(ch, 0)) > 0 for ch in channels_to_track)
+            if has_any:
+                if bd in seen_dates:
+                    continue
+                seen_dates.add(bd)
+                for ch in channels_to_track:
+                    val = float(ir.get(ch, 0))
+                    if val > 0:
+                        expected_cols.append({
+                            "business_date": bd,
+                            "channel": ch,
+                            "amount": val,
+                            "expected_deposit": val,
+                            "source_date": bd,
+                        })
+                pending_runs.append({
+                    "id": run["id"], "business_date": bd, "amex": float(ir.get("amex", 0)),
+                    "income_channels": ir, "income_register": ir,
+                    "revision_document": op.get("revision_document"),
+                })
+
+            if bd > latest_bd:
+                latest_bd = bd
+                latest_stage1 = op
+    
+    # ── Now we have expected_cols from either corte_receivables or workflow_runs ──
+    # Fetch latest workflow run data for Drive file IDs and other metadata
+    if not pending_runs:
+        # If we used corte_receivables path, we still need workflow_runs for metadata
+        resp_meta = httpx.get(
+            f"{supabase_url}/rest/v1/workflow_runs",
+            params={
+                "select": "id,business_date,status,output_payload",
+                "business_date": f"gte.{cutoff}",
+                "source_channel": "eq.agent_mail",
+                "order": "business_date.desc",
+                "limit": "1",
+            },
+            headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+            timeout=30.0,
+        )
+        if resp_meta.status_code < 400:
+            meta_runs = resp_meta.json()
+            if isinstance(meta_runs, list) and meta_runs:
+                latest_run = meta_runs[0]
+                latest_op = latest_run.get("output_payload") or {}
+                if isinstance(latest_op, str):
+                    try:
+                        latest_op = json.loads(latest_op)
+                    except:
+                        latest_op = {}
+                latest_stage1 = latest_op
+                latest_bd = latest_run.get("business_date", "")
 
     if not expected_cols:
         return {
