@@ -1,5 +1,20 @@
 # Current State
 
+## 2026-07-07 - Outstanding bank carry-forward and current-day forecast repaired
+
+- Bank watcher reconstruction now starts from the latest persisted
+  `bank_reconciliation.pending_items` snapshot and adds only newer Corte days.
+  Items matched by a later statement are no longer recreated from the original
+  income register, and an empty snapshot remains authoritative instead of
+  reviving an older non-empty balance.
+- `/cortes` now resolves the selected day's forecast from the registered
+  monthly Forecast document, including the synthetic current-day row before a
+  real Corte exists, and uses the same global outstanding snapshot as `/socios`.
+- Regression tests cover settled historical items, new pending items and empty
+  authoritative snapshots. Dashboard production build passes locally.
+- Production inspection found no `workflow_runs` or `corte_daily_records` row
+  for 2026-07-06; Agent Mail reprocessing is required after deployment.
+
 ## 2026-07-06 - AI Questions System Completed
 
 - Implemented 25 predefined financial questions with pattern matching and direct SQL queries.

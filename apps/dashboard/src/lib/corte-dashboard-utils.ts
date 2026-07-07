@@ -236,7 +236,6 @@ export function getOutstandingThroughDate(runs: RunLike[], throughDate: string):
         .map(([channel, amount]) => ({ channel, amount: Number(amount) }))
         .filter((entry) => Number.isFinite(entry.amount) && entry.amount > 0)
         .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
-      if (entries.length === 0) return null;
 
       return {
         asOfDate: run.business_date as string,

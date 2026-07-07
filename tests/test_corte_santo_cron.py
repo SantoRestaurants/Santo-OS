@@ -47,3 +47,79 @@ def test_run_all_aggregates_requires_review(monkeypatch):
 
     assert result["status"] == "requires_review"
     assert result["jobs"][0]["job"] == "agent-mail"
+
+
+def test_expected_collections_carry_only_latest_unmatched_items():
+    runs = [
+        {
+            "id": "june-28",
+            "business_date": "2026-06-28",
+            "output_payload": {"income_register": {"amex": 30000, "debito": 20000}},
+        },
+        {
+            "id": "july-04-snapshot",
+            "business_date": "2026-07-04",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {
+                            "business_date": "2026-06-28",
+                            "source_date": "2026-06-28",
+                            "channel": "debito",
+                            "amount": 20000,
+                            "expected_deposit": 20000,
+                        }
+                    ],
+                    "pending_collections": {"debito": 20000},
+                }
+            },
+        },
+        {
+            "id": "july-05",
+            "business_date": "2026-07-05",
+            "output_payload": {"income_register": {"uber": 8000}},
+        },
+    ]
+
+    expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-05")
+
+    assert {(item["channel"], item["amount"]) for item in expected} == {
+        ("debito", 20000),
+        ("uber", 8000),
+    }
+    assert not any(item["channel"] == "amex" for item in expected)
+
+
+def test_empty_latest_snapshot_does_not_revive_settled_items():
+    runs = [
+        {
+            "id": "old",
+            "business_date": "2026-06-28",
+            "output_payload": {"income_register": {"amex": 30000}},
+        },
+        {
+            "id": "settled",
+            "business_date": "2026-07-05",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [],
+                    "pending_collections": {},
+                }
+            },
+        },
+    ]
+
+    expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-05")
+
+    assert expected == []
+
+
+def test_pending_summary_uses_only_positive_unmatched_balances():
+    items = [
+        {"channel": "amex", "amount": 30000},
+        {"channel": "amex", "expected_deposit": 5000},
+        {"channel": "uber", "amount": 8000},
+        {"channel": "rappi", "amount": 0},
+    ]
+
+    assert cron._summarize_pending(items) == {"amex": 35000, "uber": 8000}

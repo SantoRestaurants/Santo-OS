@@ -11,7 +11,7 @@ import {
 import Link from "next/link";
 
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals } from "@/lib/corte-dashboard-utils";
+import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
 import { CorteAiBox } from "./CorteAiBox";
 import { InlineEditTable } from "./InlineEditTable";
 
@@ -101,12 +101,6 @@ function hasApproval(run: ReconciliationRun) {
 }
 
 function runTotal(run: ReconciliationRun) { return dailySales(run); }
-function runMeta(run: ReconciliationRun) { return dailyForecastMeta(run); }
-
-function runDiff(run: ReconciliationRun) {
-  const meta = runMeta(run);
-  return meta == null ? null : runTotal(run) - meta;
-}
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -138,7 +132,10 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const duplicateDates = duplicateRunsByDay(allRuns);
   const units = Array.from(new Set(runs.map(getUnit))).sort();
   const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
+  const unitAllRuns = allRuns.filter((run) => getUnit(run) === selectedUnit);
   const unitRuns = runs.filter((run) => getUnit(run) === selectedUnit);
+  const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  const outstanding = getOutstandingThroughDate(unitAllRuns, todayMexico);
   const years = Array.from(new Set(unitRuns.map((run) => yearKey(run.business_date)))).sort().reverse();
   const selectedYear = params.year && years.includes(params.year) ? params.year : years[0] ?? new Date().toISOString().slice(0, 4);
   const yearRuns = unitRuns.filter((run) => yearKey(run.business_date) === selectedYear);
@@ -150,8 +147,17 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const weekRuns = monthRuns.filter((run) => weekKey(run.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
   const returnTo = `/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
-  const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth);
+  const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth, data.forecastDocuments);
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth, data.forecastDocuments);
+
+  function runMeta(run: ReconciliationRun) {
+    return dailyForecastMeta(run, data.forecastDocuments);
+  }
+
+  function runDiff(run: ReconciliationRun) {
+    const meta = runMeta(run);
+    return meta == null ? null : runTotal(run) - meta;
+  }
 
   function cortesDayVenta(run: ReconciliationRun) {
     return runTotal(run);
@@ -404,17 +410,16 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                       <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Falta entrar</div>
                       {(() => {
                         // Bypass revision extraction, read directly from output_payload
-                        const rawOp = selectedRun.output_payload as Record<string, any> | null;
-                        const rawRev = rawOp?.revision_document as Record<string, any> | null;
-                        const fpe = (rawRev?.falta_por_entrar ?? {}) as Record<string, number>;
-                        const entries = Object.entries(fpe).filter(([, v]) => Number(v) > 0);
-                        if (entries.length === 0) return <div className="text-xs" style={{ color: MUTED }}>Nada pendiente</div>;
-                        return entries.map(([key, value]) => (
-                          <div key={key} className="flex justify-between text-xs py-0.5" style={{ color: INK }}>
-                            <span style={{ color: MUTED }}>{key}</span>
-                            <span className="font-medium">{money(Number(value))}</span>
+                        if (!outstanding) return <div className="text-xs" style={{ color: MUTED }}>Nada pendiente</div>;
+                        return <>
+                          <div className="mb-1 text-[10px]" style={{ color: MUTED }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
+                          {outstanding.entries.map(({ channel, amount }) => (
+                          <div key={channel} className="flex justify-between text-xs py-0.5" style={{ color: INK }}>
+                            <span style={{ color: MUTED }}>{channel}</span>
+                            <span className="font-medium">{money(amount)}</span>
                           </div>
-                        ));
+                          ))}
+                        </>;
                       })()}
                     </div>
                   </div>
