@@ -248,7 +248,12 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
     if (rec.status !== "open") continue;
     const amount = Number(rec.principal) - Number(rec.settled_principal);
     if (amount <= 0 || Number.isNaN(amount)) continue;
-    entriesMap.set(rec.receivable_key, (entriesMap.get(rec.receivable_key) ?? 0) + amount);
+    
+    // Extract channel from receivable_key (e.g. restaurant_id:date:channel)
+    const parts = rec.receivable_key.split(':');
+    const channel = parts.length >= 3 ? parts[2] : rec.receivable_key;
+    
+    entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
   }
 
   const entries = Array.from(entriesMap.entries())

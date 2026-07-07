@@ -137,7 +137,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
   const unitReceivables = data.receivables.filter((r) => {
     const rs = (r as any).restaurants;
-    const key = Array.isArray(rs) ? rs[0]?.restaurant_key : rs?.restaurant_key;
+    const rawKey = Array.isArray(rs) ? rs[0]?.restaurant_key : rs?.restaurant_key;
+    const key = rawKey === "default_restaurant_confirm" ? "SANTO" : rawKey?.toUpperCase();
     return key === selectedUnit;
   });
   const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, todayMexico);
