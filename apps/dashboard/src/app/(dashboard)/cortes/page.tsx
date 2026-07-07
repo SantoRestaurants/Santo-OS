@@ -151,7 +151,13 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth, data.forecastDocuments);
 
   function runMeta(run: ReconciliationRun) {
-    return dailyForecastMeta(run, data.forecastDocuments);
+    const direct = dailyForecastMeta(run, data.forecastDocuments);
+    if (direct != null || !run.business_date) return direct;
+    for (const carrier of monthRuns) {
+      const row = carrier.revision?.vta_por_dia?.find((item) => item.fecha === run.business_date);
+      if (typeof row?.meta_vta === "number") return row.meta_vta;
+    }
+    return null;
   }
 
   function runDiff(run: ReconciliationRun) {

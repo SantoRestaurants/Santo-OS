@@ -39,6 +39,27 @@ async function answerDirectQuestion(
       .maybeSingle();
     let target = typeof daily?.forecast_target === "number" ? daily.forecast_target : null;
     if (target == null) {
+      const { data: runs } = await supabase
+        .from("workflow_runs")
+        .select("output_payload")
+        .eq("workflow_key", "corte_santo_daily_sales_reconciliation")
+        .eq("source_channel", "agent_mail")
+        .gte("business_date", `${selectedMonth}-01`)
+        .lte("business_date", `${selectedMonth}-31`)
+        .order("business_date", { ascending: false })
+        .limit(20);
+      for (const candidate of runs ?? []) {
+        const rows = candidate.output_payload?.revision_document?.vta_por_dia;
+        const row = Array.isArray(rows)
+          ? rows.find((item: { fecha?: string }) => item.fecha === businessDate)
+          : null;
+        if (typeof row?.meta_vta === "number") {
+          target = row.meta_vta;
+          break;
+        }
+      }
+    }
+    if (target == null) {
       const { data: documents } = await supabase
         .from("documents")
         .select("metadata")

@@ -114,6 +114,9 @@ export function resolveDailyForecast(
 export function hasForecastSourceForMonth(runs: RunLike[], month: string, forecastDocuments?: Array<{ metadata?: Record<string, unknown> }>) {
   // Check runs first
   const hasRunForecast = runs.some((run) => {
+    if (run.revision?.vta_por_dia?.some((item) => item.fecha?.startsWith(`${month}-`) && typeof item.meta_vta === "number")) {
+      return true;
+    }
     const payload = run.output_payload ?? {};
     const driveIds = payload.drive_file_ids;
     const workbookPaths = payload.workbook_paths;

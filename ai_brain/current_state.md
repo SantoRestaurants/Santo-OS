@@ -22,6 +22,10 @@
   totals. The current-day UI passes its real business date/month even when the
   selected row is the non-persisted `stub-today`; narrative questions retain
   the compact Claude/Gemini fallback.
+- The registered Forecast documents stop at June, but the recovered July 6
+  run carries the complete 31-row July projection. `/cortes` and direct AI
+  forecast answers now use that monthly carrier for the synthetic July 7 row;
+  its confirmed target is 57,686.09 while observed sales remain absent.
 
 ## 2026-07-06 - AI Questions System Completed
 
