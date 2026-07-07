@@ -251,7 +251,18 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
     
     // Extract channel from receivable_key (e.g. restaurant_id:date:channel)
     const parts = rec.receivable_key.split(':');
-    const channel = parts.length >= 3 ? parts[2] : rec.receivable_key;
+    let channel = parts.length >= 3 ? parts[2] : (parts.length === 2 ? parts[1] : rec.receivable_key);
+    
+    // Normalize or use evidence for weird channels (e.g. 90348 or 785.00)
+    const knownChannels = ["amex", "debito", "credito", "efectivo", "uber_eats", "rappi"];
+    if (!knownChannels.includes(channel.toLowerCase())) {
+      const ev = (rec as any).evidence;
+      if (ev && typeof ev.description === "string") {
+        channel = ev.description;
+      } else {
+        channel = `Otros (${channel})`;
+      }
+    }
     
     entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
   }
