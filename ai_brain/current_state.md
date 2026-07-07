@@ -13,7 +13,15 @@
 - Regression tests cover settled historical items, new pending items and empty
   authoritative snapshots. Dashboard production build passes locally.
 - Production inspection found no `workflow_runs` or `corte_daily_records` row
-  for 2026-07-06; Agent Mail reprocessing is required after deployment.
+  for 2026-07-06. Agent Mail run `28885635127` recovered the source email and
+  created the run plus canonical daily row: Venta Bruta 108,836.26, Total Bruto
+  121,123.55 and forecast 35,511.06. It remains `waiting_for_input` because the
+  reconciliation difference is 535.00 and requires human review.
+- The Corte AI endpoint again answers deterministic questions directly for
+  daily sales, daily forecast, live outstanding balance and monthly channel
+  totals. The current-day UI passes its real business date/month even when the
+  selected row is the non-persisted `stub-today`; narrative questions retain
+  the compact Claude/Gemini fallback.
 
 ## 2026-07-06 - AI Questions System Completed
 

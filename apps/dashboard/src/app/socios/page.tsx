@@ -650,7 +650,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
                     {/* AI Box */}
                     <div style={{ gridColumn: "1 / -1" }}>
-                      <SociosAiBox runId={selectedRun.id} unit={selectedUnit} weekContext={weekContext} monthContext={monthContext} />
+                      <SociosAiBox runId={selectedRun.id} unit={selectedUnit} weekContext={weekContext} monthContext={monthContext} selectedMonth={selectedMonth} businessDate={selectedRun.business_date ?? undefined} />
                     </div>
 
                   </div>

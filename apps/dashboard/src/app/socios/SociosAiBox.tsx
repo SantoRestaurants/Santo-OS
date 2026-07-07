@@ -34,7 +34,7 @@ type Props = {
   monthContext?: MonthContext;
 };
 
-export function SociosAiBox({ runId, unit, weekContext, monthContext, selectedMonth }: Props & { selectedMonth?: string }) {
+export function SociosAiBox({ runId, unit, weekContext, monthContext, selectedMonth, businessDate }: Props & { selectedMonth?: string; businessDate?: string }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
@@ -56,7 +56,7 @@ export function SociosAiBox({ runId, unit, weekContext, monthContext, selectedMo
       const response = await fetch("/api/cortes/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId, question: trimmed, unit, weekContext, monthContext, selectedMonth }),
+        body: JSON.stringify({ runId, question: trimmed, unit, weekContext, monthContext, selectedMonth, businessDate }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No se pudo consultar la IA.");

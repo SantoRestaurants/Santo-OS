@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authorizeRequest } from "@/lib/authz";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay } from "@/lib/corte-dashboard-utils";
+import { dailyForecastMeta, dailySales } from "@/lib/corte-dashboard-utils";
 import { extractRevisionDocument } from "@/lib/corte-data";
 
 type AiRequestBody = {
@@ -13,6 +13,115 @@ type AiRequestBody = {
   monthContext?: { totalVendido: number; totalMeta: number; progressPct: number };
   selectedMonth?: string;
 };
+
+function normalizeQuestion(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function money(value: number) {
+  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(value);
+}
+
+async function answerDirectQuestion(
+  question: string,
+  supabase: any,
+  businessDate: string,
+  selectedMonth: string,
+): Promise<string | null> {
+  const q = normalizeQuestion(question);
+
+  if ((q.includes("forecast") || q.includes("meta")) && (q.includes("hoy") || q.includes("dia"))) {
+    const { data: daily } = await supabase
+      .from("corte_daily_records")
+      .select("forecast_target")
+      .eq("business_date", businessDate)
+      .limit(1)
+      .maybeSingle();
+    let target = typeof daily?.forecast_target === "number" ? daily.forecast_target : null;
+    if (target == null) {
+      const { data: documents } = await supabase
+        .from("documents")
+        .select("metadata")
+        .eq("document_type", "forecast_workbook")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      for (const document of documents ?? []) {
+        if (document.metadata?.month !== selectedMonth) continue;
+        const row = Array.isArray(document.metadata?.vta_por_dia)
+          ? document.metadata.vta_por_dia.find((item: { fecha?: string }) => item.fecha === businessDate)
+          : null;
+        if (typeof row?.meta_vta === "number") {
+          target = row.meta_vta;
+          break;
+        }
+      }
+    }
+    return target == null
+      ? `No hay una meta de forecast registrada para el ${businessDate}.`
+      : `La meta de forecast del ${businessDate} es ${money(target)}.`;
+  }
+
+  if (q.includes("falta") && (q.includes("entrar") || q.includes("deposit"))) {
+    const { data: runs } = await supabase
+      .from("workflow_runs")
+      .select("business_date,created_at,output_payload")
+      .eq("workflow_key", "corte_santo_daily_sales_reconciliation")
+      .eq("source_channel", "agent_mail")
+      .lte("business_date", businessDate)
+      .order("business_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(100);
+    for (const candidate of runs ?? []) {
+      const output = candidate.output_payload ?? {};
+      const bank = output.bank_reconciliation ?? output.bank_stage?.bank_reconciliation;
+      const revision = output.revision_document;
+      const hasBankSnapshot = bank && Object.prototype.hasOwnProperty.call(bank, "pending_collections");
+      const hasRevisionSnapshot = revision && Object.prototype.hasOwnProperty.call(revision, "falta_por_entrar");
+      if (!hasBankSnapshot && !hasRevisionSnapshot) continue;
+      const pending = (hasBankSnapshot ? bank.pending_collections : revision.falta_por_entrar) ?? {};
+      const entries = Object.entries(pending)
+        .map(([channel, amount]) => [channel, Number(amount)] as const)
+        .filter(([, amount]) => Number.isFinite(amount) && amount > 0);
+      const total = entries.reduce((sum, [, amount]) => sum + amount, 0);
+      if (total === 0) return `No hay importes pendientes por entrar, conciliado hasta ${candidate.business_date}.`;
+      const detail = entries.map(([channel, amount]) => `${channel}: ${money(amount)}`).join("; ");
+      return `Falta por entrar ${money(total)}, conciliado hasta ${candidate.business_date}. ${detail}.`;
+    }
+    return "Todavía no hay una conciliación bancaria disponible para calcular lo pendiente.";
+  }
+
+  const monthlyField = q.includes("uber") ? "uber_eats"
+    : q.includes("rappi") ? "rappi"
+      : q.includes("propina") ? "propinas"
+        : q.includes("efectivo") ? "efectivo"
+          : q.includes("amex") || q.includes("american express") ? "amex"
+            : null;
+  const asksMonthlyTotal = q.includes("mes") || q.includes("julio") || q.includes("junio") || q.includes("total");
+  if (monthlyField && asksMonthlyTotal && (q.includes("venta") || q.includes("recaud") || q.includes("monto"))) {
+    const { data: records } = await supabase
+      .from("corte_daily_records")
+      .select(`${monthlyField},venta_bruta`)
+      .gte("business_date", `${selectedMonth}-01`)
+      .lte("business_date", `${selectedMonth}-31`);
+    if (!records?.length) return `No hay cortes registrados para ${selectedMonth}.`;
+    const total = records.reduce((sum: number, row: Record<string, number | null>) => sum + Number(row[monthlyField] ?? 0), 0);
+    return `El total de ${monthlyField.replace("uber_eats", "Uber")} en ${selectedMonth} es ${money(total)}.`;
+  }
+
+  if (q.includes("venta") && (q.includes("hoy") || q.includes("dia"))) {
+    const { data: daily } = await supabase
+      .from("corte_daily_records")
+      .select("venta_bruta")
+      .eq("business_date", businessDate)
+      .limit(1)
+      .maybeSingle();
+    return typeof daily?.venta_bruta === "number"
+      ? `La Venta Bruta del ${businessDate} es ${money(daily.venta_bruta)}.`
+      : `El corte del ${businessDate} todavía no tiene venta real cargada.`;
+  }
+
+  return null;
+}
 
 export async function POST(request: Request) {
   const auth = await authorizeRequest(["supervisor", "socio"]);
@@ -48,6 +157,16 @@ export async function POST(request: Request) {
   if (!effectiveDate) {
     effectiveDate = body?.businessDate || new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
     selectedMonth = selectedMonth || effectiveDate.slice(0, 7);
+  }
+
+  const directAnswer = await answerDirectQuestion(
+    question,
+    supabase,
+    effectiveDate,
+    selectedMonth || effectiveDate.slice(0, 7),
+  );
+  if (directAnswer) {
+    return NextResponse.json({ answer: directAnswer, mode: "direct" });
   }
 
   // ========================================
@@ -86,10 +205,8 @@ export async function POST(request: Request) {
   const ventaReal = contextRun ? dailySales({ ...contextRun, revision }) : 0;
   const forecastDia = contextRun ? dailyForecastMeta({ ...contextRun, revision }) : null;
   const op = (contextRun?.output_payload ?? {}) as Record<string, unknown>;
-  const bankRec = op.bank_reconciliation as Record<string, unknown> | undefined;
   const ingresos = op.income_register ?? op.income_channels;
   const fpe = revision?.falta_por_entrar as Record<string, number> | undefined;
-  const saldos = op.saldos as Record<string, number> | undefined;
 
   function fmt(n: number | null | undefined) {
     if (n == null || Number.isNaN(n)) return "$0.00";
