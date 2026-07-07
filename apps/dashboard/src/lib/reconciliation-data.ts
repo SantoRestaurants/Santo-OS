@@ -86,6 +86,7 @@ export type CorteDailyRecord = {
 };
 
 export type CorteReceivable = {
+  restaurant_id: string;
   receivable_key: string;
   opened_on: string;
   principal: number;
@@ -282,7 +283,7 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
   // Fetch corte_receivables for canonical outstanding balance
   const receivablesResult = await supabase
     .from("corte_receivables")
-    .select("receivable_key,opened_on,principal,settled_principal,status")
+    .select("restaurant_id,receivable_key,opened_on,principal,settled_principal,status")
     .eq("status", "open")
     .order("opened_on", { ascending: false });
 

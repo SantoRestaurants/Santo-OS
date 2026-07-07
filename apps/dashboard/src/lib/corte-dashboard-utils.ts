@@ -213,46 +213,53 @@ export type OutstandingSnapshot = {
   total: number;
 };
 
-export function getOutstandingThroughDate(runs: RunLike[], throughDate: string): OutstandingSnapshot | null {
-  // Find the most recent bank reconciliation snapshot on or before throughDate
-  // Priority: bank_reconciliation.pending_collections > revision.falta_por_entrar
+export type CorteReceivableLike = {
+  restaurant_id: string;
+  receivable_key: string;
+  opened_on?: string;
+  principal: number | string;
+  settled_principal: number | string;
+  status: string;
+};
+
+export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteReceivableLike[], throughDate: string): OutstandingSnapshot | null {
+  // Find the most recent run that has bank reconciliation to determine the "asOfDate"
   const candidates = runs
     .filter((run) => Boolean(run.business_date && run.business_date <= throughDate))
-    .map((run) => {
-      const payload = run.output_payload ?? {};
-      const revisionDocument = isRecord(payload.revision_document) ? payload.revision_document : null;
-      const bankReconciliation = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
-      const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
-      const nestedBankReconciliation = bankStage && isRecord(bankStage.bank_reconciliation)
-        ? bankStage.bank_reconciliation
-        : null;
+    .sort((a, b) => (b.business_date as string).localeCompare(a.business_date as string) || b.created_at.localeCompare(a.created_at));
 
-      // Prefer bank_reconciliation.pending_collections (most recent state after matching)
-      const raw = (bankReconciliation && isRecord(bankReconciliation.pending_collections) ? bankReconciliation.pending_collections : null)
-        ?? (nestedBankReconciliation && isRecord(nestedBankReconciliation.pending_collections) ? nestedBankReconciliation.pending_collections : null)
-        ?? (revisionDocument && isRecord(revisionDocument.falta_por_entrar) ? revisionDocument.falta_por_entrar : null)
-        ?? run.revision?.falta_por_entrar;
+  const latestBankRun = candidates.find((run) => {
+    const payload = run.output_payload ?? {};
+    const bankReconciliation = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
+    const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
+    const nestedBankReconciliation = bankStage && isRecord(bankStage.bank_reconciliation)
+      ? bankStage.bank_reconciliation
+      : null;
+    return bankReconciliation || nestedBankReconciliation;
+  });
 
-      if (!raw) return null;
-      const entries = Object.entries(raw)
-        .map(([channel, amount]) => ({ channel, amount: Number(amount) }))
-        .filter((entry) => Number.isFinite(entry.amount) && entry.amount > 0)
-        .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
-      if (entries.length === 0) return null;
+  if (!latestBankRun) return null;
 
-      return {
-        asOfDate: run.business_date as string,
-        createdAt: run.created_at,
-        entries,
-        total: entries.reduce((sum, entry) => sum + entry.amount, 0),
-      };
-    })
-    .filter((item): item is OutstandingSnapshot & { createdAt: string } => item !== null)
-    .sort((a, b) => b.asOfDate.localeCompare(a.asOfDate) || b.createdAt.localeCompare(a.createdAt));
+  const asOfDate = latestBankRun.business_date as string;
 
-  const latest = candidates[0];
-  if (!latest) return null;
-  return { asOfDate: latest.asOfDate, entries: latest.entries, total: latest.total };
+  // Use corte_receivables as the canonical source for pending balances
+  const entriesMap = new Map<string, number>();
+  for (const rec of receivables) {
+    if (rec.status !== "open") continue;
+    const amount = Number(rec.principal) - Number(rec.settled_principal);
+    if (amount <= 0 || Number.isNaN(amount)) continue;
+    entriesMap.set(rec.receivable_key, (entriesMap.get(rec.receivable_key) ?? 0) + amount);
+  }
+
+  const entries = Array.from(entriesMap.entries())
+    .map(([channel, amount]) => ({ channel, amount }))
+    .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
+
+  return {
+    asOfDate,
+    entries,
+    total: entries.reduce((sum, entry) => sum + entry.amount, 0),
+  };
 }
 function compareRunQuality(a: RunLike, b: RunLike) {
   return scoreRun(b) - scoreRun(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
