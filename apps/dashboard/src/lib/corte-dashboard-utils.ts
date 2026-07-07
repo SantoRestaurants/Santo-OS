@@ -215,30 +215,33 @@ export type OutstandingSnapshot = {
 
 export function getOutstandingThroughDate(runs: RunLike[], throughDate: string): OutstandingSnapshot | null {
   // Find the most recent bank reconciliation snapshot on or before throughDate
-  // Priority: bank_reconciliation.pending_collections > revision.falta_por_entrar
+  // ONLY use runs that have been bank-matched (have bank_reconciliation.pending_collections)
+  // DO NOT use runs that only have revision.falta_por_entrar (pre-bank Excel data)
   const candidates = runs
     .filter((run) => Boolean(run.business_date && run.business_date <= throughDate))
     .map((run) => {
       const payload = run.output_payload ?? {};
-      const revisionDocument = isRecord(payload.revision_document) ? payload.revision_document : null;
       const bankReconciliation = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
       const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
       const nestedBankReconciliation = bankStage && isRecord(bankStage.bank_reconciliation)
         ? bankStage.bank_reconciliation
         : null;
 
-      // Prefer bank_reconciliation.pending_collections (most recent state after matching)
-      // This reflects items that remain unsettled after bank matching
+      // ONLY use bank_reconciliation.pending_collections (post-bank-matching state)
+      // This is the canonical source after bank files are processed
       const raw = (bankReconciliation && isRecord(bankReconciliation.pending_collections) ? bankReconciliation.pending_collections : null)
-        ?? (nestedBankReconciliation && isRecord(nestedBankReconciliation.pending_collections) ? nestedBankReconciliation.pending_collections : null)
-        ?? (revisionDocument && isRecord(revisionDocument.falta_por_entrar) ? revisionDocument.falta_por_entrar : null)
-        ?? run.revision?.falta_por_entrar;
+        ?? (nestedBankReconciliation && isRecord(nestedBankReconciliation.pending_collections) ? nestedBankReconciliation.pending_collections : null);
 
-      if (!raw) return null;
+      // If no bank reconciliation data, skip this run
+      if (!raw || !isRecord(raw)) return null;
+
       const entries = Object.entries(raw)
         .map(([channel, amount]) => ({ channel, amount: Number(amount) }))
         .filter((entry) => Number.isFinite(entry.amount) && entry.amount > 0)
         .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
+
+      // If no pending entries after bank matching, this date is fully settled
+      if (entries.length === 0) return null;
 
       return {
         asOfDate: run.business_date as string,
