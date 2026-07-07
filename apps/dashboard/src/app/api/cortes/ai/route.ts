@@ -109,6 +109,7 @@ export async function POST(request: Request) {
     "3. Para calcular conciliaciones o faltantes, confía ÚNICAMENTE en la tabla 'cuentas_por_cobrar' inyectada abajo. Esta tabla tiene la verdad absoluta sobre qué está pagado (status: settled) y qué falta (status: pending).",
     "4. Si un registro en cuentas_por_cobrar tiene status 'settled', YA FUE DEPOSITADO Y CONCILIADO en la fecha 'settled_on'. No digas que faltan datos de conciliación si puedes ver los datos aquí.",
     "5. Nunca inventes cifras. Si en toda la tabla inyectada no hay información, di 'No hay información registrada para ese cálculo'.",
+    "6. IMPORTANTE: Si te preguntan por una terminal específica (ej. Banorte, Clip, MercadoPago) y no ves ese nombre explícito en los datos (los canales comunes son amex, debito, credito, efectivo, uber_eats, rappi), asume que las ventas de tarjetas ('credito' y 'debito') procesan por esa terminal, a menos que el nombre no encaje en absoluto. Aún así, si no estás seguro de la equivalencia, di 'No tengo el dato desglosado por esa terminal específica'. No respondas con la Venta Bruta general si te preguntan por una terminal o canal.",
     ""
   ];
 
