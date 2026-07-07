@@ -3,6 +3,16 @@ import { NextResponse } from "next/server";
 import { authorizeRequest } from "@/lib/authz";
 // Removed hardcoded SQL functions. The LLM will now use raw data to answer directly.
 
+type AiRequestBody = {
+  runId?: string;
+  question?: string;
+  unit?: string;
+  businessDate?: string;
+  weekContext?: { totalVendido: number; totalMeta: number; diasConCorte: number; cortes: Array<{ fecha: string; venta: number; meta: number | null; status: string }> };
+  monthContext?: { totalVendido: number; totalMeta: number; progressPct: number };
+  selectedMonth?: string;
+};
+
 export async function POST(request: Request) {
   const auth = await authorizeRequest(["supervisor", "socio"]);
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: auth.status });
