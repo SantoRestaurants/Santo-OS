@@ -135,7 +135,11 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const unitAllRuns = allRuns.filter((run) => getUnit(run) === selectedUnit);
   const unitRuns = runs.filter((run) => getUnit(run) === selectedUnit);
   const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const unitReceivables = data.receivables.filter((r) => r.restaurant_id === selectedUnit);
+  const unitReceivables = data.receivables.filter((r) => {
+    const rs = (r as any).restaurants;
+    const key = Array.isArray(rs) ? rs[0]?.restaurant_key : rs?.restaurant_key;
+    return key === selectedUnit;
+  });
   const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, todayMexico);
   const years = Array.from(new Set(unitRuns.map((run) => yearKey(run.business_date)))).sort().reverse();
   const selectedYear = params.year && years.includes(params.year) ? params.year : years[0] ?? new Date().toISOString().slice(0, 4);

@@ -120,7 +120,11 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const unitAllRuns = allRuns.filter(r => getUnit(r) === selectedUnit);
   const unitRuns = runs.filter(r => getUnit(r) === selectedUnit);
   const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const unitReceivables = data.receivables.filter(r => r.restaurant_id === selectedUnit);
+  const unitReceivables = data.receivables.filter((r) => {
+    const rs = (r as any).restaurants;
+    const key = Array.isArray(rs) ? rs[0]?.restaurant_key : rs?.restaurant_key;
+    return key === selectedUnit;
+  });
   const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, todayMexico);
 
   const allMonths = Array.from(new Set(unitRuns.map(r => monthKey(r.business_date)))).sort().reverse();
