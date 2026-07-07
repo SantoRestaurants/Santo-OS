@@ -111,14 +111,27 @@ export async function POST(request: Request) {
   // USE LLM (Claude/Gemini) with compact context
   // Only for questions that require narrative analysis
   // ========================================
+  let faltaPorEntrarText = "";
+  if (contextRun?.output_payload?.revision_document?.falta_por_entrar) {
+    const falta = contextRun.output_payload.revision_document.falta_por_entrar;
+    if (Object.keys(falta).length > 0) {
+      faltaPorEntrarText = "SALDOS PENDIENTES DE INGRESAR AL BANCO (Falta por Entrar):\n";
+      for (const [canal, monto] of Object.entries(falta)) {
+        if (typeof monto === "number" && monto > 0) {
+          faltaPorEntrarText += `- ${canal}: $${monto.toFixed(2)}\n`;
+        }
+      }
+    }
+  }
+
   const parts: string[] = [
     "Sos SantoBot, el experto analista de datos y financiero de Santo Restaurants. Le hablás a los socios.",
     "Reglas estrictas:",
     "1. Respondé EXCLUSIVAMENTE a la pregunta del usuario. No des reportes de ventas, faltantes o pronósticos a menos que te lo hayan preguntado explícitamente.",
     "2. Sé conciso y directo, sin rodeos. Da cifras exactas con el formato $0.00.",
-    "3. Para calcular conciliaciones o faltantes, confía ÚNICAMENTE en la tabla 'cuentas_por_cobrar' inyectada abajo. Esta tabla tiene la verdad absoluta sobre qué está pagado (status: settled) y qué falta (status: pending).",
+    "3. Para calcular conciliaciones o 'cuánto falta por entrar', revisa los SALDOS PENDIENTES abajo, así como la tabla 'cuentas_por_cobrar'. La tabla cuentas_por_cobrar guarda los CXC manuales, y los SALDOS PENDIENTES tienen lo que falta depositar del banco por ventas (tarjetas, amex, uber, etc).",
     "4. Si un registro en cuentas_por_cobrar tiene status 'settled', YA FUE DEPOSITADO Y CONCILIADO en la fecha 'settled_on'. No digas que faltan datos de conciliación si puedes ver los datos aquí.",
-    "5. Nunca inventes cifras. Si en toda la tabla inyectada no hay información, di 'No hay información registrada para ese cálculo'.",
+    "5. Nunca inventes cifras. Si no hay información, di 'No hay información registrada para ese cálculo'.",
     "6. IMPORTANTE: Si te preguntan por una terminal específica (ej. Banorte, Clip, MercadoPago) y no ves ese nombre explícito en los datos (los canales comunes son amex, debito, credito, efectivo, uber_eats, rappi), asume que las ventas de tarjetas ('credito' y 'debito') procesan por esa terminal, a menos que el nombre no encaje en absoluto. Aún así, si no estás seguro de la equivalencia, di 'No tengo el dato desglosado por esa terminal específica'. No respondas con la Venta Bruta general si te preguntan por una terminal o canal.",
     ""
   ];
@@ -128,12 +141,15 @@ export async function POST(request: Request) {
   }
   if (body?.unit) parts.push("", `Unidad: ${body.unit}`);
 
+  if (faltaPorEntrarText) {
+    parts.push("", "━━━ DATOS DE CONCILIACIÓN BANCARIA ━━━", faltaPorEntrarText);
+  }
+
   if (rawMonthlyData && Object.keys(rawMonthlyData).length > 0) {
     parts.push(
       "",
       "━━━ DATOS CRUDOS DEL MES PARA ANÁLISIS ━━━",
       "Aquí tienes TODOS los datos crudos de ventas y cuentas por cobrar del mes solicitado.",
-      "Para preguntas de conciliación, depósitos o pendientes: usa 'cuentas_por_cobrar'. Si un registro tiene status 'settled', significa que el depósito ya entró al banco (conciliado) en la fecha 'settled_on'. Si dice 'pending', falta por entrar. Esto te permite calcular fechas cruzadas (ej. ventas de mayo pagadas en junio) y responder a la conciliación implícita.",
       "Si te piden sumar depósitos o ventas, suma directamente de esta data estructurada.",
       JSON.stringify(rawMonthlyData)
     );
