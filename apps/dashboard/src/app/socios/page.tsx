@@ -1,5 +1,5 @@
 import { getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, getMonthlyTotals, getOutstandingFromReceivables } from "@/lib/corte-dashboard-utils";
+import { dailyForecastMeta, dailySales, dedupeRunsByDay, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
 import Link from "next/link";
 import Image from "next/image";
 import { SociosChart } from "./SociosChart";
@@ -120,7 +120,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const unitAllRuns = allRuns.filter(r => getUnit(r) === selectedUnit);
   const unitRuns = runs.filter(r => getUnit(r) === selectedUnit);
   const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const outstanding = getOutstandingFromReceivables(data.receivables, todayMexico);
+  const outstanding = getOutstandingThroughDate(unitAllRuns, todayMexico);
 
   const allMonths = Array.from(new Set(unitRuns.map(r => monthKey(r.business_date)))).sort().reverse();
 

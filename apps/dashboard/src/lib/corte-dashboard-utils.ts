@@ -213,85 +213,31 @@ export type OutstandingSnapshot = {
   total: number;
 };
 
-/**
- * Get outstanding balance from corte_receivables table (canonical source)
- * This is the source of truth for pending collections that updates as payments settle
- */
-export function getOutstandingFromReceivables(
-  receivables: Array<{ receivable_key: string; opened_on: string; principal: number; settled_principal: number; status: string }>,
-  throughDate: string
-): OutstandingSnapshot | null {
-  // Group by channel and sum pending amounts
-  const byChannel = new Map<string, number>();
-  let latestDate = "";
-
-  for (const rec of receivables) {
-    if (rec.opened_on > throughDate) continue;
-    if (rec.status !== "open") continue;
-
-    const pending = rec.principal - rec.settled_principal;
-    if (pending <= 0) continue;
-
-    // Parse receivable_key format: "{business_date}:{channel}"
-    const parts = rec.receivable_key.split(":", 2);
-    const channel = parts[1] || "unknown";
-    const date = parts[0] || rec.opened_on;
-
-    if (date > latestDate) latestDate = date;
-
-    const current = byChannel.get(channel) || 0;
-    byChannel.set(channel, current + pending);
-  }
-
-  if (byChannel.size === 0) return null;
-
-  const entries = Array.from(byChannel.entries())
-    .map(([channel, amount]) => ({ channel, amount }))
-    .filter((entry) => entry.amount > 0)
-    .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
-
-  if (entries.length === 0) return null;
-
-  return {
-    asOfDate: latestDate || throughDate,
-    entries,
-    total: entries.reduce((sum, entry) => sum + entry.amount, 0),
-  };
-}
-
-/**
- * @deprecated Use getOutstandingFromReceivables instead
- * Get outstanding balance from workflow_runs (legacy fallback)
- */
-
 export function getOutstandingThroughDate(runs: RunLike[], throughDate: string): OutstandingSnapshot | null {
   // Find the most recent bank reconciliation snapshot on or before throughDate
-  // ONLY use runs that have been bank-matched (have bank_reconciliation.pending_collections)
-  // DO NOT use runs that only have revision.falta_por_entrar (pre-bank Excel data)
+  // Priority: bank_reconciliation.pending_collections > revision.falta_por_entrar
   const candidates = runs
     .filter((run) => Boolean(run.business_date && run.business_date <= throughDate))
     .map((run) => {
       const payload = run.output_payload ?? {};
+      const revisionDocument = isRecord(payload.revision_document) ? payload.revision_document : null;
       const bankReconciliation = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
       const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
       const nestedBankReconciliation = bankStage && isRecord(bankStage.bank_reconciliation)
         ? bankStage.bank_reconciliation
         : null;
 
-      // ONLY use bank_reconciliation.pending_collections (post-bank-matching state)
-      // This is the canonical source after bank files are processed
+      // Prefer bank_reconciliation.pending_collections (most recent state after matching)
       const raw = (bankReconciliation && isRecord(bankReconciliation.pending_collections) ? bankReconciliation.pending_collections : null)
-        ?? (nestedBankReconciliation && isRecord(nestedBankReconciliation.pending_collections) ? nestedBankReconciliation.pending_collections : null);
+        ?? (nestedBankReconciliation && isRecord(nestedBankReconciliation.pending_collections) ? nestedBankReconciliation.pending_collections : null)
+        ?? (revisionDocument && isRecord(revisionDocument.falta_por_entrar) ? revisionDocument.falta_por_entrar : null)
+        ?? run.revision?.falta_por_entrar;
 
-      // If no bank reconciliation data, skip this run
-      if (!raw || !isRecord(raw)) return null;
-
+      if (!raw) return null;
       const entries = Object.entries(raw)
         .map(([channel, amount]) => ({ channel, amount: Number(amount) }))
         .filter((entry) => Number.isFinite(entry.amount) && entry.amount > 0)
         .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
-
-      // If no pending entries after bank matching, this date is fully settled
       if (entries.length === 0) return null;
 
       return {
@@ -308,7 +254,6 @@ export function getOutstandingThroughDate(runs: RunLike[], throughDate: string):
   if (!latest) return null;
   return { asOfDate: latest.asOfDate, entries: latest.entries, total: latest.total };
 }
-
 function compareRunQuality(a: RunLike, b: RunLike) {
   return scoreRun(b) - scoreRun(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 }
