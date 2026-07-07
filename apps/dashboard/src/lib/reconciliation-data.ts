@@ -85,6 +85,14 @@ export type CorteDailyRecord = {
   restaurants?: { restaurant_key?: string; display_name?: string } | null;
 };
 
+export type CorteReceivable = {
+  receivable_key: string;
+  opened_on: string;
+  principal: number;
+  settled_principal: number;
+  status: string;
+};
+
 export type ReconciliationData = {
   status: ReconciliationStatus;
   missingConfig: string[];
@@ -92,6 +100,7 @@ export type ReconciliationData = {
   runs: ReconciliationRun[];
   forecastDocuments: ForecastDocument[];
   dailyRecords: CorteDailyRecord[];
+  receivables: CorteReceivable[];
 };
 
 type RunRow = {
@@ -111,17 +120,17 @@ export { APPROVAL_REVIEW_KEY };
 export async function getReconciliationData(allowedRoles: readonly string[] = ["supervisor"]): Promise<ReconciliationData> {
   const config = getSupabasePublicConfig();
   if (!config.configured) {
-    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
+    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [], dailyRecords: [], receivables: [] };
   }
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
-    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
+    return { status: "requires_config", missingConfig: config.missing, error: null, runs: [], forecastDocuments: [], dailyRecords: [], receivables: [] };
   }
 
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) {
-    return { status: "auth_required", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
+    return { status: "auth_required", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [], receivables: [] };
   }
 
   let role = typeof user.app_metadata?.role === "string" ? user.app_metadata.role : null;
@@ -130,7 +139,7 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
     role = person?.role_key ?? null;
   }
   if (!role || !allowedRoles.includes(role)) {
-    return { status: "unauthorized", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [] };
+    return { status: "unauthorized", missingConfig: [], error: null, runs: [], forecastDocuments: [], dailyRecords: [], receivables: [] };
   }
 
   const runsResult = await supabase
@@ -142,7 +151,7 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
     .limit(500);
 
   if (runsResult.error) {
-    return { status: "query_failed", missingConfig: [], error: runsResult.error.message, runs: [], forecastDocuments: [], dailyRecords: [] };
+    return { status: "query_failed", missingConfig: [], error: runsResult.error.message, runs: [], forecastDocuments: [], dailyRecords: [], receivables: [] };
   }
 
   let dailyRecords: CorteDailyRecord[] = [];
@@ -168,7 +177,7 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
       .is("workflow_run_id", null)
       .eq("document_type", "forecast_workbook")
       .order("created_at", { ascending: false });
-    
+
     return {
       status: "ready",
       missingConfig: [],
@@ -176,6 +185,7 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
       runs: dailyRecords.map(dailyRecordAsRun),
       forecastDocuments: (forecastResult.data ?? []) as ForecastDocument[],
       dailyRecords,
+      receivables: [],
     };
   }
 
@@ -223,7 +233,7 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
     exceptionsResult.error;
 
   if (firstError) {
-    return { status: "query_failed", missingConfig: [], error: firstError.message, runs: [], forecastDocuments: [], dailyRecords };
+    return { status: "query_failed", missingConfig: [], error: firstError.message, runs: [], forecastDocuments: [], dailyRecords, receivables: [] };
   }
 
   const emailsByRun = groupByRunId(emailsResult.data ?? []);
@@ -233,41 +243,50 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
   const exceptionsByRun = groupByRunId(exceptionsResult.data ?? []);
 
   const hydratedRuns: ReconciliationRun[] = runs.map((run) => {
-      const daily = dailyRecords.find((record) => record.source_workflow_run_id === run.id)
-        ?? dailyRecords.find((record) => record.business_date === run.business_date);
-      const linkedDocs = documentsByRun.get(run.id) ?? [];
-      const dateDocs = run.business_date ? documentsByDate.get(run.business_date) ?? [] : [];
-      let rev = extractRevisionDocument({ ...run, business_date: run.business_date ?? "" });
-      if (!rev) {
-        const op = run.output_payload as Record<string, any> | undefined;
-        const rawRev = op?.revision_document as Record<string, any> | undefined;
-        if (rawRev) rev = rawRev as any;
-      }
-      const rawOp = run.output_payload as Record<string, any> | undefined;
-      const rawRevDoc = rawOp?.revision_document as Record<string, any> | undefined;
-      if (rawRevDoc?.falta_por_entrar && !rev?.falta_por_entrar && rev) {
-        (rev as any).falta_por_entrar = rawRevDoc.falta_por_entrar;
-      }
-      return {
-        ...run,
-        output_payload: daily ? {
-          ...run.output_payload,
-          daily_record: daily,
-          income_register: dailyIncomeRegister(daily),
-        } : run.output_payload,
-        revision: rev,
-        email: firstForRun(emailsByRun, run.id) as ReconciliationRun["email"],
-        documents: dedupeDocuments([...linkedDocs, ...dateDocs]) as ReconciliationRun["documents"],
-        reviews: (reviewsByRun.get(run.id) ?? []) as ReconciliationRun["reviews"],
-        exceptions: (exceptionsByRun.get(run.id) ?? []) as ReconciliationRun["exceptions"],
-      };
-    });
+    const daily = dailyRecords.find((record) => record.source_workflow_run_id === run.id)
+      ?? dailyRecords.find((record) => record.business_date === run.business_date);
+    const linkedDocs = documentsByRun.get(run.id) ?? [];
+    const dateDocs = run.business_date ? documentsByDate.get(run.business_date) ?? [] : [];
+    let rev = extractRevisionDocument({ ...run, business_date: run.business_date ?? "" });
+    if (!rev) {
+      const op = run.output_payload as Record<string, any> | undefined;
+      const rawRev = op?.revision_document as Record<string, any> | undefined;
+      if (rawRev) rev = rawRev as any;
+    }
+    const rawOp = run.output_payload as Record<string, any> | undefined;
+    const rawRevDoc = rawOp?.revision_document as Record<string, any> | undefined;
+    if (rawRevDoc?.falta_por_entrar && !rev?.falta_por_entrar && rev) {
+      (rev as any).falta_por_entrar = rawRevDoc.falta_por_entrar;
+    }
+    return {
+      ...run,
+      output_payload: daily ? {
+        ...run.output_payload,
+        daily_record: daily,
+        income_register: dailyIncomeRegister(daily),
+      } : run.output_payload,
+      revision: rev,
+      email: firstForRun(emailsByRun, run.id) as ReconciliationRun["email"],
+      documents: dedupeDocuments([...linkedDocs, ...dateDocs]) as ReconciliationRun["documents"],
+      reviews: (reviewsByRun.get(run.id) ?? []) as ReconciliationRun["reviews"],
+      exceptions: (exceptionsByRun.get(run.id) ?? []) as ReconciliationRun["exceptions"],
+    };
+  });
 
   const runDates = new Set(hydratedRuns.map((run) => run.business_date));
   for (const daily of dailyRecords) {
     if (runDates.has(daily.business_date)) continue;
     hydratedRuns.push(dailyRecordAsRun(daily));
   }
+
+  // Fetch corte_receivables for canonical outstanding balance
+  const receivablesResult = await supabase
+    .from("corte_receivables")
+    .select("receivable_key,opened_on,principal,settled_principal,status")
+    .eq("status", "open")
+    .order("opened_on", { ascending: false });
+
+  const receivables = (receivablesResult.data ?? []) as CorteReceivable[];
 
   return {
     status: "ready",
@@ -276,6 +295,7 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
     runs: hydratedRuns,
     forecastDocuments: (forecastResult.data ?? []) as ForecastDocument[],
     dailyRecords,
+    receivables,
   };
 }
 

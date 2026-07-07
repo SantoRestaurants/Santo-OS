@@ -11,7 +11,7 @@ import {
 import Link from "next/link";
 
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
+import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals, getOutstandingFromReceivables } from "@/lib/corte-dashboard-utils";
 import { CorteAiBox } from "./CorteAiBox";
 import { InlineEditTable } from "./InlineEditTable";
 
@@ -135,7 +135,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const unitAllRuns = allRuns.filter((run) => getUnit(run) === selectedUnit);
   const unitRuns = runs.filter((run) => getUnit(run) === selectedUnit);
   const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const outstanding = getOutstandingThroughDate(unitAllRuns, todayMexico);
+  const outstanding = getOutstandingFromReceivables(data.receivables, todayMexico);
   const years = Array.from(new Set(unitRuns.map((run) => yearKey(run.business_date)))).sort().reverse();
   const selectedYear = params.year && years.includes(params.year) ? params.year : years[0] ?? new Date().toISOString().slice(0, 4);
   const yearRuns = unitRuns.filter((run) => yearKey(run.business_date) === selectedYear);
@@ -420,10 +420,10 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                         return <>
                           <div className="mb-1 text-[10px]" style={{ color: MUTED }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
                           {outstanding.entries.map(({ channel, amount }) => (
-                          <div key={channel} className="flex justify-between text-xs py-0.5" style={{ color: INK }}>
-                            <span style={{ color: MUTED }}>{channel}</span>
-                            <span className="font-medium">{money(amount)}</span>
-                          </div>
+                            <div key={channel} className="flex justify-between text-xs py-0.5" style={{ color: INK }}>
+                              <span style={{ color: MUTED }}>{channel}</span>
+                              <span className="font-medium">{money(amount)}</span>
+                            </div>
                           ))}
                         </>;
                       })()}

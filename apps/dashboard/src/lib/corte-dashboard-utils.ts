@@ -213,6 +213,57 @@ export type OutstandingSnapshot = {
   total: number;
 };
 
+/**
+ * Get outstanding balance from corte_receivables table (canonical source)
+ * This is the source of truth for pending collections that updates as payments settle
+ */
+export function getOutstandingFromReceivables(
+  receivables: Array<{ receivable_key: string; opened_on: string; principal: number; settled_principal: number; status: string }>,
+  throughDate: string
+): OutstandingSnapshot | null {
+  // Group by channel and sum pending amounts
+  const byChannel = new Map<string, number>();
+  let latestDate = "";
+
+  for (const rec of receivables) {
+    if (rec.opened_on > throughDate) continue;
+    if (rec.status !== "open") continue;
+
+    const pending = rec.principal - rec.settled_principal;
+    if (pending <= 0) continue;
+
+    // Parse receivable_key format: "{business_date}:{channel}"
+    const parts = rec.receivable_key.split(":", 2);
+    const channel = parts[1] || "unknown";
+    const date = parts[0] || rec.opened_on;
+
+    if (date > latestDate) latestDate = date;
+
+    const current = byChannel.get(channel) || 0;
+    byChannel.set(channel, current + pending);
+  }
+
+  if (byChannel.size === 0) return null;
+
+  const entries = Array.from(byChannel.entries())
+    .map(([channel, amount]) => ({ channel, amount }))
+    .filter((entry) => entry.amount > 0)
+    .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
+
+  if (entries.length === 0) return null;
+
+  return {
+    asOfDate: latestDate || throughDate,
+    entries,
+    total: entries.reduce((sum, entry) => sum + entry.amount, 0),
+  };
+}
+
+/**
+ * @deprecated Use getOutstandingFromReceivables instead
+ * Get outstanding balance from workflow_runs (legacy fallback)
+ */
+
 export function getOutstandingThroughDate(runs: RunLike[], throughDate: string): OutstandingSnapshot | null {
   // Find the most recent bank reconciliation snapshot on or before throughDate
   // ONLY use runs that have been bank-matched (have bank_reconciliation.pending_collections)
