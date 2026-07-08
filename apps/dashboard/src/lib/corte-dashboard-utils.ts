@@ -260,7 +260,7 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
     const status = String(raw.status ?? "");
     if (channelRaw !== "amex" && status === "programado") continue;
 
-    const amount = amountOf(raw.expected_deposit ?? raw.amount);
+    const amount = amountOf(raw.amount ?? raw.expected_deposit);
     if (amount <= 0) continue;
     const channel = normalizeOutstandingChannel(channelRaw, raw);
     entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
@@ -271,7 +271,8 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
   if (pendingItems.length === 0 && isRecord(bank?.pending_collections)) {
     for (const [channel, value] of Object.entries(bank.pending_collections)) {
       const amount = amountOf(value);
-      if (amount > 0) entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
+      const normalizedChannel = normalizeOutstandingChannel(channel);
+      if (amount > 0) entriesMap.set(normalizedChannel, (entriesMap.get(normalizedChannel) ?? 0) + amount);
     }
   }
 
@@ -311,12 +312,13 @@ function normalizeOutstandingChannel(channel: string, item?: Record<string, unkn
   if (status === "fuera_de_rango") {
     return `${channel}_fuera_de_rango`;
   }
+  if (key === "amex_neto_pendiente" || key === "amex_bruto_sin_reporte") return "amex";
+  if (key === "banorte_terminal_pendiente") return "banorte";
   if (key === "amex") {
-    if (item?.expected_payment_date) return "amex_neto_pendiente";
-    return "amex_bruto_sin_reporte";
+    return "amex";
   }
   if (key === "banorte") {
-    return "banorte_terminal_pendiente";
+    return "banorte";
   }
 
   if (key === "uber_eats" || key === "ubereats") return "uber";

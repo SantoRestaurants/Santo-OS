@@ -389,11 +389,16 @@ def _to_money(value: Any) -> float:
 def _normalize_expected_collection(item: dict[str, Any], business_date: str) -> dict[str, Any]:
     amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
     source_date = str(item.get("source_date") or item.get("business_date") or business_date)
+    channel = str(item.get("channel") or "unclassified").lower()
+    if channel in ("terminal", "terminal_banorte"):
+        channel = "banorte"
+    if channel in ("plataforma", "plataformas", "uber_eats", "ubereats"):
+        channel = "uber"
     return {
         **item,
         "business_date": str(item.get("business_date") or source_date),
         "source_date": source_date,
-        "channel": str(item.get("channel") or "unclassified"),
+        "channel": channel,
         "amount": amount,
         "expected_deposit": amount,
     }
@@ -413,11 +418,14 @@ def _expected_collections_from_output(output: dict[str, Any], business_date: str
         if isinstance(nested, dict):
             raw_expected = nested.get("expected_collections")
 
-    expected = [
-        _normalize_expected_collection(item, business_date)
-        for item in (raw_expected or [])
-        if isinstance(item, dict)
-    ]
+    allowed_channels = {"amex", "banorte", "uber", "rappi"}
+    expected = []
+    for item in (raw_expected or []):
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_expected_collection(item, business_date)
+        if str(normalized.get("channel") or "") in allowed_channels:
+            expected.append(normalized)
     channels = {str(item.get("channel") or "") for item in expected}
 
     register = output.get("income_register") or {}
@@ -445,8 +453,6 @@ def _expected_collections_from_output(output: dict[str, Any], business_date: str
     add("banorte", round(_to_money(register.get("debito")) + _to_money(register.get("credito")), 2))
     add("uber", _to_money(register.get("uber") if register.get("uber") is not None else register.get("uber_eats")))
     add("rappi", _to_money(register.get("rappi")))
-    add("paypal", _to_money(register.get("paypal")))
-    add("transferencia", _to_money(register.get("transferencia")))
     return expected
 
 
@@ -463,13 +469,6 @@ def _summarize_pending(items: list[dict[str, Any]]) -> dict[str, float]:
         
         if status == "fuera_de_rango":
             label = f"{base_channel}_fuera_de_rango"
-        elif base_channel == "amex":
-            if item.get("expected_payment_date"):
-                label = "amex_neto_pendiente"
-            else:
-                label = "amex_bruto_sin_reporte"
-        elif base_channel == "banorte":
-            label = "banorte_terminal_pendiente"
             
         totals[label] = round(totals.get(label, 0) + amount, 2)
         

@@ -852,8 +852,9 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 "source_date": business_date,
             })
             
-        # Other channels from sistema
-        for channel in ["banorte", "terminal_banorte", "terminal", "transferencia", "uber", "rappi", "plataformas"]:
+        # Other bank-settled channels from sistema. Transfer/PayPal/cash are not
+        # part of the outstanding bank ledger; CxC is handled as itemized events.
+        for channel in ["banorte", "terminal_banorte", "terminal", "uber", "rappi"]:
             ch_data = cierre_sistema_data.get(channel, {})
             if isinstance(ch_data, dict):
                 ch_bruto = round(_to_float(ch_data.get("consumo", 0)) + _to_float(ch_data.get("propina", 0)), 2)

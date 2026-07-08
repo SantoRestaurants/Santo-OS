@@ -270,6 +270,7 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
         banorte,
         amex,
         tolerance=float(config.get("thresholds", {}).get("reconciliation_tolerance", 0)),
+        business_date=str(payload.get("business_date", "")),
     )
 
     paths = payload.get("workbook_paths", {})

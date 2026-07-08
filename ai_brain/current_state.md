@@ -1,5 +1,26 @@
 # Current State
 
+## 2026-07-08 - Corte outstanding ledger semantics corrected
+
+- Confirmed `Falta por entrar` source of truth: daily Corte sales by source
+  date, carried forward as item-level ledger rows and subtracted only when bank
+  deposits are detected. AMEX export rows enrich Corte-created ledger items
+  with net/payment-date details but no longer create duplicate pending items.
+- Bank watcher/reconciliation now keeps pending channels to AMEX, Banorte,
+  Uber, Rappi and itemized CxC. Cash, PayPal and transfers are no longer
+  reconstructed as bank-pending balances from `income_register`.
+- Banorte CSV parsing now supports the real accented headers, classifies the
+  observed Rappi SPEI that previously became unclassified, and returns
+  additional expenses as non-commission/non-IVA withdrawals for the relevant
+  bank business date.
+- Dashboard outstanding summaries now prefer ledger `amount` over AMEX net
+  `expected_deposit` and normalize old labels such as
+  `amex_neto_pendiente`/`banorte_terminal_pendiente` back to channel names.
+- Regression tests cover AMEX dedupe/canonical Corte source, Banorte group
+  clearing, separate Uber/Rappi pending ledgers and Banorte additional expenses.
+  Watch item: direct Corte AI answers that inspect `pending_collections` may
+  need wording updates if they expected the old synthetic labels.
+
 ## 2026-07-07 - Outstanding bank carry-forward and current-day forecast repaired
 
 - Bank watcher reconstruction now starts from the latest persisted
