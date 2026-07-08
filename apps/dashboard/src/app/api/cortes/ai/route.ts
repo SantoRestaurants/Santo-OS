@@ -1,16 +1,26 @@
 import { NextResponse } from "next/server";
 
 import { authorizeRequest } from "@/lib/authz";
-// Removed hardcoded SQL functions. The LLM will now use raw data to answer directly.
 
 type AiRequestBody = {
   runId?: string;
   question?: string;
   unit?: string;
   businessDate?: string;
-  weekContext?: { totalVendido: number; totalMeta: number; diasConCorte: number; cortes: Array<{ fecha: string; venta: number; meta: number | null; status: string }> };
+  weekContext?: {
+    totalVendido: number;
+    totalMeta: number;
+    diasConCorte: number;
+    cortes: Array<{ fecha: string; venta: number; meta: number | null; status: string }>;
+  };
   monthContext?: { totalVendido: number; totalMeta: number; progressPct: number };
   selectedMonth?: string;
+};
+
+type CorteAiProviderPayload = {
+  answer?: string;
+  error?: string;
+  mode?: string;
 };
 
 export async function POST(request: Request) {
@@ -18,7 +28,7 @@ export async function POST(request: Request) {
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: auth.status });
   const { supabase } = auth;
 
-  const body = await request.json().catch(() => null) as AiRequestBody | null;
+  const body = (await request.json().catch(() => null)) as AiRequestBody | null;
   const runId = body?.runId;
   const question = body?.question?.trim();
   if (!question) {
@@ -29,7 +39,6 @@ export async function POST(request: Request) {
   let effectiveDate: string | null = null;
   let selectedMonth = body?.selectedMonth;
 
-  // Fetch run if runId provided and not a stub
   if (runId && runId !== "stub-today") {
     const { data, error } = await supabase
       .from("workflow_runs")
@@ -43,49 +52,12 @@ export async function POST(request: Request) {
     }
   }
 
-  // If stub or no run, use businessDate from body or today
   if (!effectiveDate) {
     effectiveDate = body?.businessDate || new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
     selectedMonth = selectedMonth || effectiveDate.slice(0, 7);
   }
 
-  // ========================================
-  // FETCH RAW DATA FOR LLM AS REQUESTED BY USER
-  // ========================================
-  let rawMonthlyData: any = {};
-  if (selectedMonth) {
-    try {
-      const { data: dailyRecords } = await supabase
-        .from("corte_daily_records")
-        .select("*")
-        .gte("business_date", `${selectedMonth}-01`)
-        .lte("business_date", `${selectedMonth}-31`)
-        .order("business_date", { ascending: true });
-
-      const { data: receivables } = await supabase
-        .from("corte_receivables")
-        .select("receivable_key, opened_on, principal, settled_on, settled_principal, status, created_at, updated_at")
-        .or(`opened_on.gte.${selectedMonth}-01,settled_on.gte.${selectedMonth}-01`)
-        .lte("opened_on", `${selectedMonth}-31`)
-        .order("opened_on", { ascending: true });
-
-      rawMonthlyData = {
-        mes: selectedMonth,
-        ventas_diarias_totales: dailyRecords,
-        cuentas_por_cobrar: receivables
-      };
-    } catch (e) {
-      console.error("Error fetching raw month data:", e);
-    }
-  }
-
-  // ========================================
-  // USE LLM (Claude/Gemini) WITH FULL CONTEXT
-  // All questions go through LLM for narrative analysis
-  // ========================================
   let contextRun = run;
-
-  // If no run or stub, find the latest run with data
   if (!run || !run.output_payload || Object.keys(run.output_payload).length === 0 || run?.status === "requires_review") {
     const { data: latestRun } = await supabase
       .from("workflow_runs")
@@ -102,87 +74,179 @@ export async function POST(request: Request) {
       contextRun = latestRun;
       if (!effectiveDate || effectiveDate === new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" })) {
         effectiveDate = latestRun.business_date;
-        console.log(`[AI] Using latest available data from ${effectiveDate}`);
+        selectedMonth = selectedMonth || latestRun.business_date?.slice(0, 7);
       }
     }
   }
 
-  // ========================================
-  // USE LLM (Claude/Gemini) with compact context
-  // Only for questions that require narrative analysis
-  // ========================================
-  const parts: string[] = [
-    "Sos SantoBot, el experto analista de datos y financiero de Santo Restaurants. Le hablás a los socios.",
-    "Reglas estrictas:",
-    "1. Respondé EXCLUSIVAMENTE a la pregunta del usuario. No des reportes de ventas, faltantes o pronósticos a menos que te lo hayan preguntado explícitamente.",
-    "2. Sé conciso y directo, sin rodeos. Da cifras exactas con el formato $0.00.",
-    "3. Para calcular conciliaciones o faltantes, confía ÚNICAMENTE en la tabla 'cuentas_por_cobrar' inyectada abajo. Esta tabla tiene la verdad absoluta sobre qué está pagado (status: settled) y qué falta (status: pending).",
-    "4. Si un registro en cuentas_por_cobrar tiene status 'settled', YA FUE DEPOSITADO Y CONCILIADO en la fecha 'settled_on'. No digas que faltan datos de conciliación si puedes ver los datos aquí.",
-    "5. Nunca inventes cifras. Si en toda la tabla inyectada no hay información, di 'No hay información registrada para ese cálculo'.",
-    "6. IMPORTANTE: Si te preguntan por una terminal específica (ej. Banorte, Clip, MercadoPago) y no ves ese nombre explícito en los datos (los canales comunes son amex, debito, credito, efectivo, uber_eats, rappi), asume que las ventas de tarjetas ('credito' y 'debito') procesan por esa terminal, a menos que el nombre no encaje en absoluto. Aún así, si no estás seguro de la equivalencia, di 'No tengo el dato desglosado por esa terminal específica'. No respondas con la Venta Bruta general si te preguntan por una terminal o canal.",
-    ""
-  ];
+  const rawMonthlyData = selectedMonth
+    ? await buildMonthlyAiContext(supabase, selectedMonth, effectiveDate, body)
+    : {};
 
-  if (effectiveDate !== (run?.business_date || body?.businessDate)) {
-    parts.push(`NOTA INTERNA: El día exacto pedido no tiene run, pero tienes los datos crudos abajo.`);
-  }
-  if (body?.unit) parts.push("", `Unidad: ${body.unit}`);
+  const prompt = buildPrompt({
+    question,
+    unit: body?.unit,
+    effectiveDate,
+    requestedDate: run?.business_date || body?.businessDate,
+    contextRun,
+    rawMonthlyData,
+  });
 
-  if (rawMonthlyData && Object.keys(rawMonthlyData).length > 0) {
-    parts.push(
-      "",
-      "━━━ DATOS CRUDOS DEL MES PARA ANÁLISIS ━━━",
-      "Aquí tienes TODOS los datos crudos de ventas y cuentas por cobrar del mes solicitado.",
-      "Para preguntas de conciliación, depósitos o pendientes: usa 'cuentas_por_cobrar'. Si un registro tiene status 'settled', significa que el depósito ya entró al banco (conciliado) en la fecha 'settled_on'. Si dice 'pending', falta por entrar. Esto te permite calcular fechas cruzadas (ej. ventas de mayo pagadas en junio) y responder a la conciliación implícita.",
-      "Si te piden sumar depósitos o ventas, suma directamente de esta data estructurada.",
-      JSON.stringify(rawMonthlyData)
-    );
-  }
-
-  parts.push("", `PREGUNTA: ${question}`, "", "Respondé solo lo que te preguntaron con los datos provistos. Sé preciso con cifras y porcentajes.");
-
-  const prompt = parts.join("\n");
-
-  // Try Claude first (primary provider)
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({
-          model: process.env.CLAUDE_MODEL || "claude-3-5-sonnet-latest", max_tokens: 600, temperature: 0.2,
-          system: "Sos SantoBot, asistente financiero de Santo Restaurants.",
-          messages: [{ role: "user", content: prompt }]
-        }),
-        signal: AbortSignal.timeout(10000),
-      });
-      if (response.ok) {
-        const payload = await response.json();
-        const answer = payload?.content?.map((block: { text?: string }) => block.text ?? "").join("").trim();
-        if (answer) return NextResponse.json({ answer, mode: "llm" });
-      }
-    } catch (e) {
-      console.error("Claude API error:", e);
-    }
+    const payload = await askClaude(prompt, anthropicKey);
+    if (payload.answer) return NextResponse.json({ answer: payload.answer, mode: payload.mode });
   }
 
-  // Gemini fallback
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) return NextResponse.json({ error: "No hay un proveedor de IA aprobado y configurado." }, { status: 503 });
+
+  const payload = await askGemini(prompt, geminiKey);
+  if (payload.answer) return NextResponse.json({ answer: payload.answer, mode: payload.mode });
+
+  return NextResponse.json({ error: payload.error || "El asistente no pudo responder." }, { status: 502 });
+}
+
+async function buildMonthlyAiContext(supabase: any, selectedMonth: string, effectiveDate: string | null, body: AiRequestBody | null) {
   try {
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-    const gResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 600 } }),
+    const [dailyResult, receivablesResult, latestBankResult] = await Promise.all([
+      supabase
+        .from("corte_daily_records")
+        .select("business_date,amex,debito,credito,efectivo,transferencia,total,paypal,uber_eats,rappi,propinas,venta_bruta,total_bruto,forecast_target")
+        .gte("business_date", `${selectedMonth}-01`)
+        .lte("business_date", `${selectedMonth}-31`)
+        .order("business_date", { ascending: true }),
+      supabase
+        .from("corte_receivables")
+        .select("receivable_key,opened_on,principal,settled_on,settled_principal,status,evidence,created_at,updated_at")
+        .or(`opened_on.gte.${selectedMonth}-01,settled_on.gte.${selectedMonth}-01`)
+        .lte("opened_on", `${selectedMonth}-31`)
+        .order("opened_on", { ascending: true }),
+      supabase
+        .from("workflow_runs")
+        .select("id,business_date,status,output_payload")
+        .eq("workflow_key", "corte_santo_daily_sales_reconciliation")
+        .eq("source_channel", "agent_mail")
+        .gte("business_date", `${selectedMonth}-01`)
+        .lte("business_date", effectiveDate || `${selectedMonth}-31`)
+        .order("business_date", { ascending: false })
+        .limit(10),
+    ]);
+
+    const latestBankRun = (latestBankResult.data ?? []).find((candidate: any) => candidate?.output_payload?.bank_reconciliation) ?? null;
+    const bankReconciliation = latestBankRun?.output_payload?.bank_reconciliation ?? null;
+
+    return {
+      mes: selectedMonth,
+      ventas_diarias_totales: dailyResult.data ?? [],
+      cuentas_por_cobrar: receivablesResult.data ?? [],
+      contexto_semana_ui: body?.weekContext ?? null,
+      contexto_mes_ui: body?.monthContext ?? null,
+      ultimo_snapshot_bancario: bankReconciliation
+        ? {
+            business_date: latestBankRun.business_date,
+            status: latestBankRun.output_payload?.bank_validation_status ?? bankReconciliation.status,
+            pending_collections: bankReconciliation.pending_collections ?? {},
+            pending_items: bankReconciliation.pending_items ?? [],
+          }
+        : null,
+    };
+  } catch (error) {
+    console.error("Error fetching AI monthly context:", error);
+    return { mes: selectedMonth, error: "monthly_context_unavailable" };
+  }
+}
+
+function buildPrompt(input: {
+  question: string;
+  unit?: string;
+  effectiveDate: string | null;
+  requestedDate?: string | null;
+  contextRun: any;
+  rawMonthlyData: any;
+}) {
+  const parts: string[] = [
+    "Sos SantoBot, el analista financiero de Santo Restaurants. Le hablás a socios y supervisores.",
+    "Reglas estrictas:",
+    "1. Respondé exclusivamente a la pregunta. No des reportes generales si no te los pidieron.",
+    "2. Sé conciso y directo. Mostrá cifras exactas con formato $0.00.",
+    "3. Para 'falta entrar', pendientes bancarios o conciliación contra bancos, usá primero 'ultimo_snapshot_bancario.pending_collections' y 'pending_items'. Ese snapshot ya descuenta lo que entró al banco.",
+    "4. Para CxC, usá 'cuentas_por_cobrar'. Si un registro está settled, ya fue depositado/conciliado en settled_on. Si está open o pending, falta por entrar.",
+    "5. Nunca inventes cifras. Si no hay datos suficientes, decí: 'No hay información registrada para ese cálculo'.",
+    "6. Si preguntan por Banorte como terminal y no hay un campo explícito, asumí que débito + crédito son tarjeta Banorte solo si la pregunta encaja con ese contexto. Si no, aclaralo.",
+    "",
+    `Fecha efectiva de análisis: ${input.effectiveDate ?? "no disponible"}`,
+  ];
+
+  if (input.requestedDate && input.effectiveDate !== input.requestedDate) {
+    parts.push(`Nota: la fecha pedida (${input.requestedDate}) no tenía datos completos; se usa el contexto disponible.`);
+  }
+  if (input.unit) parts.push(`Unidad: ${input.unit}`);
+
+  parts.push(
+    "",
+    "━━━ DATOS ESTRUCTURADOS DISPONIBLES ━━━",
+    JSON.stringify(input.rawMonthlyData),
+    "",
+    "━━━ RUN DE CONTEXTO ━━━",
+    JSON.stringify({
+      id: input.contextRun?.id,
+      business_date: input.contextRun?.business_date,
+      status: input.contextRun?.status,
+      reconciliation_totals: input.contextRun?.output_payload?.reconciliation_totals,
+      daily_financial_record: input.contextRun?.output_payload?.daily_financial_record,
+    }),
+    "",
+    `PREGUNTA: ${input.question}`,
+    "",
+    "Respondé solo lo preguntado usando los datos provistos."
+  );
+
+  return parts.join("\n");
+}
+
+async function askClaude(prompt: string, anthropicKey: string): Promise<CorteAiProviderPayload> {
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: process.env.CLAUDE_MODEL || "claude-3-5-sonnet-latest",
+        max_tokens: 600,
+        temperature: 0.2,
+        system: "Sos SantoBot, asistente financiero de Santo Restaurants.",
+        messages: [{ role: "user", content: prompt }],
+      }),
       signal: AbortSignal.timeout(10000),
     });
-    if (!gResp.ok) return NextResponse.json({ error: "El asistente no pudo responder." }, { status: 502 });
-    const gPayload = await gResp.json();
-    const answer = gPayload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("").trim();
-    return NextResponse.json({ answer: answer || "No pude generar una respuesta.", mode: "llm" });
-  } catch (e) {
-    console.error("Gemini API error:", e);
-    return NextResponse.json({ error: "Timeout al contactar el asistente." }, { status: 504 });
+    if (!response.ok) return { error: `claude_failed:${response.status}` };
+    const payload = await response.json();
+    const answer = payload?.content?.map((block: { text?: string }) => block.text ?? "").join("").trim();
+    return { answer, mode: "llm:claude" };
+  } catch (error) {
+    console.error("Claude API error:", error);
+    return { error: "claude_timeout_or_error" };
+  }
+}
+
+async function askGemini(prompt: string, geminiKey: string): Promise<CorteAiProviderPayload> {
+  try {
+    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 600 },
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) return { error: `gemini_failed:${response.status}` };
+    const payload = await response.json();
+    const answer = payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("").trim();
+    return { answer: answer || "No pude generar una respuesta.", mode: "llm:gemini" };
+  } catch (error) {
+    console.error("Gemini API error:", error);
+    return { error: "gemini_timeout_or_error" };
   }
 }
