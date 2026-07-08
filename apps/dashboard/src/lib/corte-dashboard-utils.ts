@@ -256,9 +256,13 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
   const pendingItems = Array.isArray(bank?.pending_items) ? bank.pending_items : [];
   for (const raw of pendingItems) {
     if (!isRecord(raw)) continue;
+    const channelRaw = String(raw.channel ?? "unclassified");
+    const status = String(raw.status ?? "");
+    if (channelRaw !== "amex" && status === "programado") continue;
+
     const amount = amountOf(raw.expected_deposit ?? raw.amount);
     if (amount <= 0) continue;
-    const channel = normalizeOutstandingChannel(String(raw.channel ?? "unclassified"), raw);
+    const channel = normalizeOutstandingChannel(channelRaw, raw);
     entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
     if (typeof raw.receivable_id === "string") representedReceivables.add(raw.receivable_id);
     if (typeof raw.receivable_key === "string") representedReceivables.add(raw.receivable_key);
@@ -302,6 +306,19 @@ function amountOf(value: unknown) {
 
 function normalizeOutstandingChannel(channel: string, item?: Record<string, unknown>) {
   const key = channel.toLowerCase();
+  const status = typeof item?.status === "string" ? item.status : "";
+
+  if (status === "fuera_de_rango") {
+    return `${channel}_fuera_de_rango`;
+  }
+  if (key === "amex") {
+    if (item?.expected_payment_date) return "amex_neto_pendiente";
+    return "amex_bruto_sin_reporte";
+  }
+  if (key === "banorte") {
+    return "banorte_terminal_pendiente";
+  }
+
   if (key === "uber_eats" || key === "ubereats") return "uber";
   if (key === "cxc") return "CXC";
   if (["amex", "banorte", "uber", "rappi", "paypal", "transferencia", "debito", "credito"].includes(key)) return key;
