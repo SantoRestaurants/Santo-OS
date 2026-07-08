@@ -92,6 +92,8 @@ export type CorteReceivable = {
   principal: number;
   settled_principal: number;
   status: string;
+  evidence?: Record<string, unknown> | null;
+  restaurants?: { restaurant_key?: string; display_name?: string } | Array<{ restaurant_key?: string; display_name?: string }> | null;
 };
 
 export type ReconciliationData = {

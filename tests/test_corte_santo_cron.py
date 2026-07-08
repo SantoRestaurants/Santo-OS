@@ -84,7 +84,7 @@ def test_expected_collections_carry_only_latest_unmatched_items():
     expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-05")
 
     assert {(item["channel"], item["amount"]) for item in expected} == {
-        ("debito", 20000),
+        ("banorte", 20000),
         ("uber", 8000),
     }
     assert not any(item["channel"] == "amex" for item in expected)
@@ -112,6 +112,50 @@ def test_empty_latest_snapshot_does_not_revive_settled_items():
     expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-05")
 
     assert expected == []
+
+
+def test_expected_collections_include_new_corte_channels_after_latest_snapshot():
+    runs = [
+        {
+            "id": "snapshot",
+            "business_date": "2026-07-05",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-04", "channel": "amex", "amount": 1200}
+                    ],
+                    "pending_collections": {"amex": 1200},
+                }
+            },
+        },
+        {
+            "id": "new",
+            "business_date": "2026-07-06",
+            "output_payload": {
+                "income_register": {
+                    "amex": 3000,
+                    "debito": 4000,
+                    "credito": 5000,
+                    "uber": 600,
+                    "rappi": 700,
+                    "efectivo": 800,
+                    "propinas": 900,
+                },
+            },
+        },
+    ]
+
+    expected, pending_runs, _, _ = cron._build_expected_collections(runs, "2026-07-06")
+
+    by_channel = {item["channel"]: item["expected_deposit"] for item in expected}
+    assert by_channel["amex"] == 3000
+    assert by_channel["banorte"] == 9000
+    assert by_channel["uber"] == 600
+    assert by_channel["rappi"] == 700
+    assert "efectivo" not in by_channel
+    assert "propinas" not in by_channel
+    assert any(item["business_date"] == "2026-07-04" for item in expected)
+    assert {item["business_date"] for item in pending_runs} == {"2026-07-05", "2026-07-06"}
 
 
 def test_pending_summary_uses_only_positive_unmatched_balances():

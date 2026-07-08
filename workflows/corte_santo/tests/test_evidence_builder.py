@@ -147,6 +147,36 @@ def test_cxc_cash_adjustment_writes_explanatory_paypal_note() -> None:
     assert "CXC MOV 89972 $245" in note["comment"]
 
 
+def test_cxc_ocr_document_creates_canonical_receivable_event() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 1000.0, "propina": 0.0}, "efectivo": {"consumo": 0.0, "propina": 0.0}},
+        {"bancos": {"consumo": 0.0, "propina": 0.0}, "efectivo": {"consumo": 0.0, "propina": 0.0}},
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "canal": "cxc",
+                    "cxc_note_amount": 535.0,
+                    "comment_lines": ["CXC error mesero $535"],
+                },
+            }
+        ],
+        income_channels={"paypal": 0.0},
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["cxc_events"] == [
+        {
+            "kind": "opening",
+            "movement_id": None,
+            "principal": 535.0,
+            "description": "CXC error mesero $535",
+            "source": "vision_extractor",
+        }
+    ]
+
+
 def test_ocr_total_candidates_can_match_excel_total() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"amex": {"consumo": 17262.0, "propina": 0.0}},

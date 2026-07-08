@@ -1,5 +1,33 @@
 # Current State
 
+## 2026-07-08 - Corte July 7 recovered and bank/CxC ledger corrected
+
+- Manual Agent Mail workflow run `28946093136` recovered the forwarded
+  `SANTO CORTE MARTES 07 JULIO 2026` email from
+  `developer@santorestaurants.com`, created workflow run
+  `d2192c29-9e12-4133-a36b-ba703cf8f3db`, and wrote the canonical daily record:
+  Venta Bruta 55,448.90, Total Bruto 61,807.09, Forecast 57,686.09.
+- The scheduled Agent Mail workflow now uses a 36-hour lookback instead of
+  5 hours. Message-id and fingerprint idempotency remain the duplicate guard,
+  so delayed/forwarded Corte mail can be picked up without reprocessing older
+  packages.
+- Bank watcher expected collections now preserve the workflow's initial AMEX
+  ledger, add only true future bank deposits from new Corte days, folds
+  debit+credit into one Banorte expectation, includes Uber/Rappi/PayPal/
+  transferencia when present, and excludes efectivo/propinas from "falta por
+  entrar".
+- Legacy bank snapshots are normalized before carry-forward: debit/credit are
+  folded into Banorte and cash/tips are discarded, so previous contaminated
+  snapshots cannot keep inflating the live outstanding balance.
+- Open `corte_receivables` rows are appended to bank-stage expected
+  collections, and dashboard outstanding now renders unmatched bank
+  `pending_items` plus open CxC rows without double-counting CxC already
+  represented in a bank snapshot.
+- Agent Mail no longer overwrites workflow `expected_collections` with `[]`
+  when persisting stage-1 output for the bank watcher. CxC events extracted
+  from OCR/vision evidence are now propagated into canonical evidence and
+  persisted to `corte_receivables` when the email body is empty.
+
 ## 2026-07-07 - Outstanding bank carry-forward and current-day forecast repaired
 
 - Bank watcher reconstruction now starts from the latest persisted

@@ -561,6 +561,63 @@ def build_canonical_evidence(
             )
         )
 
+    merged_cxc_events = list(cxc_events) if isinstance(cxc_events, list) else []
+    seen_cxc_events = {
+        (
+            str(event.get("kind") or ""),
+            str(event.get("movement_id") or ""),
+            round(_amount(event.get("principal")) or 0.0, 2),
+        )
+        for event in merged_cxc_events
+        if isinstance(event, dict)
+    }
+    for doc in _vision_documents_of_type(vision_documents, "cxc") + _vision_documents_of_type(vision_documents, "tira"):
+        values = doc.get("values") if isinstance(doc.get("values"), dict) else {}
+        raw_events = values.get("cxc_events")
+        if isinstance(raw_events, list):
+            for event in raw_events:
+                if not isinstance(event, dict) or event.get("kind") not in ("opening", "settlement"):
+                    continue
+                principal = _amount(event.get("principal")) or 0.0
+                identity = (str(event.get("kind") or ""), str(event.get("movement_id") or ""), round(principal, 2))
+                if principal <= 0 or identity in seen_cxc_events:
+                    continue
+                seen_cxc_events.add(identity)
+                merged_cxc_events.append({
+                    "kind": event["kind"],
+                    "movement_id": str(event.get("movement_id") or "").strip() or None,
+                    "principal": principal,
+                    "description": str(event.get("description") or "").strip(),
+                    "source": "vision_extractor",
+                })
+            continue
+
+        candidate_channel = _channel_from_raw(values.get("canal"))
+        if opening_events and candidate_channel == "cxc":
+            continue
+        amount = _amount(values.get("cxc_note_amount"))
+        if amount is None or amount <= 0:
+            amount = _amount(values.get("paypal_amount"))
+        if (amount is None or amount <= 0) and candidate_channel == "cxc":
+            amount = _cxc_total(values)
+        if amount is None or amount <= 0:
+            continue
+        kind = "opening" if candidate_channel in (None, "cxc") else "settlement"
+        description = "; ".join(str(line).strip() for line in values.get("comment_lines") or [] if str(line).strip())
+        if not description:
+            description = f"CXC {candidate_channel or ''} ${amount:g}".strip()
+        identity = (kind, "", round(amount, 2))
+        if identity in seen_cxc_events:
+            continue
+        seen_cxc_events.add(identity)
+        merged_cxc_events.append({
+            "kind": kind,
+            "movement_id": None,
+            "principal": amount,
+            "description": description,
+            "source": "vision_extractor",
+        })
+
     return {
         "status": "requires_review" if exceptions else "ready",
         "reconciliation_inputs": {
@@ -574,5 +631,6 @@ def build_canonical_evidence(
         "selected_tips": selected_tips,
         "checks": checks,
         "bank_statement": bank_statement,
+        "cxc_events": merged_cxc_events,
         "exceptions": exceptions,
     }

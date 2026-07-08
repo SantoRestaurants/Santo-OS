@@ -2,7 +2,8 @@ name: Corte Santo — Agent Mail
 
 on:
   schedule:
-    # Every 4 hours. Idempotency prevents re-processing same daily Corte.
+    # Every 4 hours with a long lookback. Idempotency prevents re-processing
+    # and the long window protects delayed/forwarded Corte mail.
     - cron: "0 */4 * * *"
   workflow_dispatch:
     inputs:
@@ -70,14 +71,14 @@ jobs:
           GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
           GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
           SANTO_CRON_WRITE: "true"
-          CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES: "300"
+          CORTE_SANTO_AGENTMAIL_LOOKBACK_MINUTES: "2160"
           PYTHONUNBUFFERED: "1"
         run: |
           AFTER="${{ github.event.inputs.after }}"
           SUBJECT_CONTAINS="${{ github.event.inputs.subject_contains }}"
           MESSAGE_LIMIT="${{ github.event.inputs.message_limit }}"
           if [ -z "$AFTER" ]; then
-            AFTER=$(date -u -d '300 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+            AFTER=$(date -u -d '2160 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
           fi
           if [ -z "$MESSAGE_LIMIT" ]; then
             MESSAGE_LIMIT="50"

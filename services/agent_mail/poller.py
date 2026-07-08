@@ -843,11 +843,11 @@ def poll_and_classify(
                             "waiting_for_input", "completed", "requires_review"
                         ):
                             wr = corte_stage.get("workflow_result", {}).get("workflow_run", {})
-                            cxc_events = parse_cxc_events(body)
+                            canonical = wr.get("canonical_evidence", {}) or {}
+                            cxc_events = canonical.get("cxc_events") or parse_cxc_events(body)
                             inp = wr.get("input_payload", {}) or {}
                             register = (
-                                (wr.get("canonical_evidence", {}) or {})
-                                .get("income_register", {})
+                                canonical.get("income_register", {})
                             )
                             # Prefer income_register (cortesia already in efectivo)
                             # over raw input_payload income_channels.
@@ -873,7 +873,7 @@ def poll_and_classify(
                                 "drive_file_ids": inp.get("drive_file_ids"),
                                 "workbook_paths": inp.get("workbook_paths"),
                                 "workbook_outputs": inp.get("workbook_outputs"),
-                                "expected_collections": [],
+                                "expected_collections": wr.get("expected_collections", []),
                                 "revision_document": wr.get("revision_document"),
                             }
                             supabase.update_workflow_run_output(
