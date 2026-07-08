@@ -273,6 +273,32 @@ def _match_amex_to_corte(
     return matched_days, pending_corte, unused_amex
 
 
+def _pending_item_identity(item: dict[str, Any]) -> tuple[str, str, float, str, str]:
+    source_date = str(item.get("source_date") or item.get("business_date") or "")
+    business_date = str(item.get("business_date") or source_date)
+    channel = str(item.get("channel") or "").lower()
+    amount = round(float(item.get("expected_deposit", item.get("amount", 0)) or 0), 2)
+    expected_payment_date = str(item.get("expected_payment_date") or "")
+    receivable_key = str(item.get("receivable_key") or item.get("receivable_id") or "")
+    if receivable_key:
+        return ("receivable", receivable_key, amount, "", "")
+    return (business_date, channel, amount, source_date, expected_payment_date)
+
+
+def _dedupe_pending_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, float, str, str]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = _pending_item_identity(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
 def reconcile_bank_stage(
     expected_collections: list[dict[str, Any]],
     banorte_statement: dict[str, Any],
@@ -461,13 +487,12 @@ def reconcile_bank_stage(
         else:
             pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
 
+    combined_pending_items = _dedupe_pending_items(pending_corte_amex + pending_items)
+
     pending: dict[str, float] = {}
-    for item in pending_corte_amex:
+    for item in combined_pending_items:
         channel = str(item.get("channel", "amex"))
         pending[channel] = round(pending.get(channel, 0.0) + float(item.get("amount", 0)), 2)
-    for item in pending_items:
-        channel = str(item.get("channel", "unclassified"))
-        pending[channel] = round(pending.get(channel, 0.0) + float(item.get("expected_deposit", item.get("amount", 0))), 2)
 
     # Status: bank_validated if no exceptions (even if some AMEX pending)
     has_exceptions = bool(exceptions)
@@ -477,7 +502,7 @@ def reconcile_bank_stage(
         "matches": matches,
         "amex_matches": amex_matches,
         "batch_validation": batch_validation,
-        "pending_items": pending_corte_amex + pending_items,
+        "pending_items": combined_pending_items,
         "unused_amex": [{"cargos": p.get("cargos"), "neto": p.get("neto"), "fecha_envio": p.get("fecha_envio")} for p in unused_amex],
         "missing_funds": {
             "corte_to_amex": round(sum(float(item.get("amount", 0)) for item in pending_corte_amex), 2),

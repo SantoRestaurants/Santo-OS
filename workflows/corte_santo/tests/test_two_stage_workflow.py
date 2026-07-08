@@ -303,6 +303,41 @@ def test_bank_matching_allows_legitimate_pending_collections() -> None:
     assert result["pending_collections"]["amex"] == 50.0
 
 
+def test_bank_matching_dedupes_equivalent_pending_amex_representations() -> None:
+    result = bank.reconcile_bank_stage(
+        [
+            {
+                "business_date": "2026-06-25",
+                "source_date": "2026-06-25",
+                "channel": "amex",
+                "amount": 16277.36,
+                "expected_deposit": 16277.36,
+                "expected_payment_date": "2026-06-30",
+            }
+        ],
+        {
+            "status": "ok",
+            "deposits": [],
+            "domiciled_expenses": [],
+        },
+        {
+            "status": "ok",
+            "payments": [
+                {
+                    "amount": 16277.36,
+                    "gross_amount": 16277.36,
+                    "source_date": "2026-06-25",
+                    "payment_date": "2026-06-30",
+                }
+            ],
+        },
+    )
+
+    assert result["status"] == "bank_validated"
+    assert result["pending_collections"]["amex"] == 16277.36
+    assert len(result["pending_items"]) == 1
+
+
 def test_bank_matching_groups_amex_payments_by_expected_payment_date() -> None:
     result = bank.reconcile_bank_stage(
         [
