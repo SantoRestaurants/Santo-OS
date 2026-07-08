@@ -148,6 +148,8 @@ async function buildMonthlyAiContext(supabase: any, selectedMonth: string, effec
             status: latestBankRun.output_payload?.bank_validation_status ?? bankReconciliation.status,
             pending_collections: bankReconciliation.pending_collections ?? {},
             pending_items: bankReconciliation.pending_items ?? [],
+            amex_matches: bankReconciliation.amex_matches ?? [],
+            batch_validation: bankReconciliation.batch_validation ?? [],
           }
         : null,
     };
@@ -171,9 +173,11 @@ function buildPrompt(input: {
     "1. Respondé exclusivamente a la pregunta. No des reportes generales si no te los pidieron.",
     "2. Sé conciso y directo. Mostrá cifras exactas con formato $0.00.",
     "3. Para 'falta entrar', pendientes bancarios o conciliación contra bancos, usá primero 'ultimo_snapshot_bancario.pending_collections' y 'pending_items'. Ese snapshot ya descuenta lo que entró al banco.",
-    "4. Para CxC, usá 'cuentas_por_cobrar'. Si un registro está settled, ya fue depositado/conciliado en settled_on. Si está open o pending, falta por entrar.",
-    "5. Nunca inventes cifras. Si no hay datos suficientes, decí: 'No hay información registrada para ese cálculo'.",
-    "6. Si preguntan por Banorte como terminal y no hay un campo explícito, asumí que débito + crédito son tarjeta Banorte solo si la pregunta encaja con ese contexto. Si no, aclaralo.",
+    "4. Para calcular depósitos ingresados al banco HOY revisa 'ultimo_snapshot_bancario':",
+    "   - Si preguntan por depósitos de BANORTE: Suma los montos de 'banorte_deposit' dentro de 'batch_validation' que tengan status 'ok'.",
+    "   - Si preguntan por depósitos de AMERICAN EXPRESS: Suma los montos de 'deposit_amount' dentro de 'amex_matches'.",
+    "5. Para CxC, usá 'cuentas_por_cobrar'. Si un registro está settled, ya fue depositado/conciliado en settled_on.",
+    "6. Nunca inventes cifras. Si tras calcular sigues sin datos suficientes, decí: 'No hay información registrada para ese cálculo'.",
     "",
     `Fecha efectiva de análisis: ${input.effectiveDate ?? "no disponible"}`,
   ];
@@ -213,7 +217,7 @@ async function askClaude(prompt: string, anthropicKey: string): Promise<CorteAiP
       body: JSON.stringify({
         model: process.env.CLAUDE_MODEL || "claude-3-5-sonnet-latest",
         max_tokens: 600,
-        temperature: 0.2,
+        temperature: 0.0,
         system: "Sos SantoBot, asistente financiero de Santo Restaurants.",
         messages: [{ role: "user", content: prompt }],
       }),
@@ -237,7 +241,7 @@ async function askGemini(prompt: string, geminiKey: string): Promise<CorteAiProv
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 600 },
+        generationConfig: { temperature: 0.0, maxOutputTokens: 600 },
       }),
       signal: AbortSignal.timeout(10000),
     });
