@@ -62,7 +62,6 @@ export async function POST(request: Request) {
     const { data: latestRun } = await supabase
       .from("workflow_runs")
       .select("id,business_date,status,source_channel,requires_review_reason,created_at,output_payload")
-      .eq("workflow_key", "corte_santo_daily_sales_reconciliation")
       .eq("source_channel", "agent_mail")
       .neq("status", "requires_review")
       .not("output_payload", "is", null)
@@ -125,7 +124,6 @@ async function buildMonthlyAiContext(supabase: any, selectedMonth: string, effec
       supabase
         .from("workflow_runs")
         .select("id,business_date,status,output_payload")
-        .eq("workflow_key", "corte_santo_daily_sales_reconciliation")
         .eq("source_channel", "agent_mail")
         .gte("business_date", `${selectedMonth}-01`)
         .lte("business_date", effectiveDate || `${selectedMonth}-31`)
