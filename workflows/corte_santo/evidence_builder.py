@@ -562,21 +562,6 @@ def build_canonical_evidence(
         )
 
     merged_cxc_events = list(cxc_events) if isinstance(cxc_events, list) else []
-    for doc in _vision_documents_of_type(vision_documents, "cxc") + _vision_documents_of_type(vision_documents, "tira"):
-        values = doc.get("values")
-        if isinstance(values, dict) and isinstance(values.get("cxc_events"), list):
-            for event in values["cxc_events"]:
-                if isinstance(event, dict) and event.get("kind") in ("opening", "settlement"):
-                    principal = _amount(event.get("principal")) or 0.0
-                    if principal > 0:
-                        merged_cxc_events.append({
-                            "kind": event["kind"],
-                            "movement_id": str(event.get("movement_id") or "").strip(),
-                            "principal": principal,
-                            "description": str(event.get("description") or "").strip(),
-                            "source": "vision_extractor",
-                        })
-
     return {
         "status": "requires_review" if exceptions else "ready",
         "reconciliation_inputs": {

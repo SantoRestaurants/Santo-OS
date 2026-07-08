@@ -1,0 +1,1163 @@
+{
+  "stage": "corte_loaded",
+  "business_date": "2026-07-06",
+  "drive_file_ids": {
+    "forecast": "1DyJZ-FYq6WELW8xkqedmWaPCqw4Wdbzg",
+    "ingresos": "11kx03BKrNluX5CsxckGK_eA-bkS57UWr"
+  },
+  "workbook_paths": {
+    "forecast": "/tmp/santoos-agentmail-corte/abbf14b53d38d83d/drive_workbooks/forecast.xlsx",
+    "ingresos": "/tmp/santoos-agentmail-corte/abbf14b53d38d83d/drive_workbooks/ingresos.xlsx"
+  },
+  "income_channels": {
+    "amex": 12924.07,
+    "uber": 6270,
+    "rappi": 0,
+    "debito": 13863.86,
+    "paypal": 0,
+    "credito": 79263.12,
+    "efectivo": 8802.5,
+    "propinas": 12287.29
+  },
+  "income_register": {
+    "amex": 12924.07,
+    "uber": 6270,
+    "rappi": 0,
+    "bancos": 92692.72,
+    "debito": 13863.86,
+    "paypal": 0,
+    "credito": 79263.12,
+    "efectivo": 8802.5,
+    "propinas": 12287.29,
+    "plataformas": 6270,
+    "transferencia": 0,
+    "cortesia_direccion": 5520
+  },
+  "workbook_outputs": {
+    "forecast": "/tmp/santoos-agentmail-corte/abbf14b53d38d83d/outputs/forecast-corte-loaded.xlsx",
+    "ingresos": "/tmp/santoos-agentmail-corte/abbf14b53d38d83d/outputs/ingresos-corte-loaded.xlsx"
+  },
+  "bank_validated_at": "2026-07-07T22:23:48.936326+00:00",
+  "revision_document": {
+    "saldos": {
+      "total": 0,
+      "saldo_banorte": 0,
+      "prov_aguinaldos": 0,
+      "prov_utilidades": 0
+    },
+    "unidad": "SANTO",
+    "vta_al_dia": {
+      "meta_vta": 2937274.27,
+      "diferencia": -2429280.27,
+      "venta_real": 507994,
+      "pct_diferencia": -82.71
+    },
+    "vta_por_dia": [
+      {
+        "dia": "Miércoles",
+        "fecha": "2026-07-01",
+        "meta_vta": 98962.6,
+        "diferencia": -98962.6,
+        "venta_real": 0
+      },
+      {
+        "dia": "Jueves",
+        "fecha": "2026-07-02",
+        "meta_vta": 105539.02,
+        "diferencia": -105539.02,
+        "venta_real": 0
+      },
+      {
+        "dia": "Viernes",
+        "fecha": "2026-07-03",
+        "meta_vta": 157403.93,
+        "diferencia": 39580.07,
+        "venta_real": 196984
+      },
+      {
+        "dia": "Sábado",
+        "fecha": "2026-07-04",
+        "meta_vta": 216276.3,
+        "diferencia": 20155.7,
+        "venta_real": 236432
+      },
+      {
+        "dia": "Domingo",
+        "fecha": "2026-07-05",
+        "meta_vta": 69865.43,
+        "diferencia": 4712.57,
+        "venta_real": 74578
+      },
+      {
+        "dia": "Lunes",
+        "fecha": "2026-07-06",
+        "meta_vta": 35511.06,
+        "diferencia": -35511.06,
+        "venta_real": 0
+      },
+      {
+        "dia": "Martes",
+        "fecha": "2026-07-07",
+        "meta_vta": 57686.09,
+        "diferencia": -57686.09,
+        "venta_real": 0
+      },
+      {
+        "dia": "Miércoles",
+        "fecha": "2026-07-08",
+        "meta_vta": 85330.16,
+        "diferencia": -85330.16,
+        "venta_real": 0
+      },
+      {
+        "dia": "Jueves",
+        "fecha": "2026-07-09",
+        "meta_vta": 78758.21,
+        "diferencia": -78758.21,
+        "venta_real": 0
+      },
+      {
+        "dia": "Viernes",
+        "fecha": "2026-07-10",
+        "meta_vta": 143372.41,
+        "diferencia": -143372.41,
+        "venta_real": 0
+      },
+      {
+        "dia": "Sábado",
+        "fecha": "2026-07-11",
+        "meta_vta": 163934.03,
+        "diferencia": -163934.03,
+        "venta_real": 0
+      },
+      {
+        "dia": "Domingo",
+        "fecha": "2026-07-12",
+        "meta_vta": 77883.9,
+        "diferencia": -77883.9,
+        "venta_real": 0
+      },
+      {
+        "dia": "Lunes",
+        "fecha": "2026-07-13",
+        "meta_vta": 54230.88,
+        "diferencia": -54230.88,
+        "venta_real": 0
+      },
+      {
+        "dia": "Martes",
+        "fecha": "2026-07-14",
+        "meta_vta": 50623.5,
+        "diferencia": -50623.5,
+        "venta_real": 0
+      },
+      {
+        "dia": "Miércoles",
+        "fecha": "2026-07-15",
+        "meta_vta": 83873.25,
+        "diferencia": -83873.25,
+        "venta_real": 0
+      },
+      {
+        "dia": "Jueves",
+        "fecha": "2026-07-16",
+        "meta_vta": 78032.74,
+        "diferencia": -78032.74,
+        "venta_real": 0
+      },
+      {
+        "dia": "Viernes",
+        "fecha": "2026-07-17",
+        "meta_vta": 182725.02,
+        "diferencia": -182725.02,
+        "venta_real": 0
+      },
+      {
+        "dia": "Sábado",
+        "fecha": "2026-07-18",
+        "meta_vta": 174450.78,
+        "diferencia": -174450.78,
+        "venta_real": 0
+      },
+      {
+        "dia": "Domingo",
+        "fecha": "2026-07-19",
+        "meta_vta": 70163.07,
+        "diferencia": -70163.07,
+        "venta_real": 0
+      },
+      {
+        "dia": "Lunes",
+        "fecha": "2026-07-20",
+        "meta_vta": 36686.99,
+        "diferencia": -36686.99,
+        "venta_real": 0
+      },
+      {
+        "dia": "Martes",
+        "fecha": "2026-07-21",
+        "meta_vta": 48646.5,
+        "diferencia": -48646.5,
+        "venta_real": 0
+      },
+      {
+        "dia": "Miércoles",
+        "fecha": "2026-07-22",
+        "meta_vta": 86689.03,
+        "diferencia": -86689.03,
+        "venta_real": 0
+      },
+      {
+        "dia": "Jueves",
+        "fecha": "2026-07-23",
+        "meta_vta": 63754.43,
+        "diferencia": -63754.43,
+        "venta_real": 0
+      },
+      {
+        "dia": "Viernes",
+        "fecha": "2026-07-24",
+        "meta_vta": 131458.93,
+        "diferencia": -131458.93,
+        "venta_real": 0
+      },
+      {
+        "dia": "Sábado",
+        "fecha": "2026-07-25",
+        "meta_vta": 174853.34,
+        "diferencia": -174853.34,
+        "venta_real": 0
+      },
+      {
+        "dia": "Domingo",
+        "fecha": "2026-07-26",
+        "meta_vta": 67692.44,
+        "diferencia": -67692.44,
+        "venta_real": 0
+      },
+      {
+        "dia": "Lunes",
+        "fecha": "2026-07-27",
+        "meta_vta": 15885.47,
+        "diferencia": -15885.47,
+        "venta_real": 0
+      },
+      {
+        "dia": "Martes",
+        "fecha": "2026-07-28",
+        "meta_vta": 56946.74,
+        "diferencia": -56946.74,
+        "venta_real": 0
+      },
+      {
+        "dia": "Miércoles",
+        "fecha": "2026-07-29",
+        "meta_vta": 72418.52,
+        "diferencia": -72418.52,
+        "venta_real": 0
+      },
+      {
+        "dia": "Jueves",
+        "fecha": "2026-07-30",
+        "meta_vta": 77736.79,
+        "diferencia": -77736.79,
+        "venta_real": 0
+      },
+      {
+        "dia": "Viernes",
+        "fecha": "2026-07-31",
+        "meta_vta": 119882.71,
+        "diferencia": -119882.71,
+        "venta_real": 0
+      }
+    ],
+    "vta_meta_mes": {
+      "meta_vta": 0,
+      "diferencia": 507994,
+      "venta_real": 507994
+    },
+    "business_date": "2026-07-06",
+    "formato_corte": "REVISAR",
+    "restaurant_key": "santo",
+    "ajustes_del_dia": [],
+    "falta_por_entrar": {
+      "amex": 409717.49,
+      "uber": 22210,
+      "rappi": 4865,
+      "debito": 39894.96,
+      "paypal": 1305,
+      "credito": 240235.26,
+      "efectivo": 39890
+    },
+    "gastos_adicionales": [],
+    "ingresos_adicionales": [],
+    "reconciliation_totals": {
+      "tolerance": 0,
+      "difference": 535,
+      "total_real": 121224.29,
+      "total_sistema": 120689.29
+    },
+    "bank_validation_status": "bank_requires_review",
+    "daily_financial_record": {
+      "total_bruto": 121123.55,
+      "venta_bruta": 108836.26,
+      "parser_version": "corte_daily_record_v1"
+    }
+  },
+  "bank_reconciliation": {
+    "status": "requires_review",
+    "matches": [
+      {
+        "deposit": {
+          "amount": 109017.9,
+          "detail": "SPEI RECIBIDO, BCO:0014 SANTANDER           HR LIQ: 07:25:33, DEL CLIENTE AMERICAN EXPRESS COMPANY MEXICO SA DE CV, DE LA CLABE 014180655080739445   CON RFC AEC810901298, CONCEPTO: AMEXCO SE 8480251875, REFERENCIA: 0260629 CVE RAST: 20260701400140HDH0000477301660",
+          "source": "amex",
+          "matched": true,
+          "description": "20260701400140HDH0000477301660",
+          "operation_date": "01/07/2026"
+        },
+        "expected_group": [
+          {
+            "amount": 22169.65,
+            "channel": "amex",
+            "source_date": "2026-06-26",
+            "_original_amex": {
+              "neto": 22169.65,
+              "amount": 22169.65,
+              "cargos": 22941.4,
+              "pago_num": "41808553",
+              "descuento": -665.3,
+              "fecha_envio": "2026-06-26",
+              "source_date": "2026-06-26",
+              "gross_amount": 22941.4,
+              "payment_date": "2026-07-01"
+            },
+            "expected_deposit": 22169.65,
+            "expected_payment_date": "2026-07-01"
+          },
+          {
+            "amount": 27932.58,
+            "channel": "amex",
+            "source_date": "2026-06-27",
+            "_original_amex": {
+              "neto": 27932.58,
+              "amount": 27932.58,
+              "cargos": 28904.94,
+              "pago_num": "41808553",
+              "descuento": -838.24,
+              "fecha_envio": "2026-06-27",
+              "source_date": "2026-06-27",
+              "gross_amount": 28904.94,
+              "payment_date": "2026-07-01"
+            },
+            "expected_deposit": 27932.58,
+            "expected_payment_date": "2026-07-01"
+          },
+          {
+            "amount": 33711.94,
+            "channel": "amex",
+            "source_date": "2026-06-28",
+            "_original_amex": {
+              "neto": 33711.94,
+              "amount": 33711.94,
+              "cargos": 34885.49,
+              "pago_num": "41808553",
+              "descuento": -1011.68,
+              "fecha_envio": "2026-06-28",
+              "source_date": "2026-06-28",
+              "gross_amount": 34885.49,
+              "payment_date": "2026-07-01"
+            },
+            "expected_deposit": 33711.94,
+            "expected_payment_date": "2026-07-01"
+          },
+          {
+            "amount": 23173.36,
+            "channel": "amex",
+            "source_date": "2026-06-28",
+            "_original_amex": {
+              "neto": 23173.36,
+              "amount": 23173.36,
+              "cargos": 23980.05,
+              "pago_num": "41808553",
+              "descuento": -695.42,
+              "fecha_envio": "2026-06-28",
+              "source_date": "2026-06-28",
+              "gross_amount": 23980.05,
+              "payment_date": "2026-07-01"
+            },
+            "expected_deposit": 23173.36,
+            "expected_payment_date": "2026-07-01"
+          },
+          {
+            "amount": 750.14,
+            "channel": "amex",
+            "source_date": "2026-06-26",
+            "_original_amex": {
+              "neto": 750.14,
+              "amount": 750.14,
+              "cargos": 776.25,
+              "pago_num": "41808553",
+              "descuento": -22.51,
+              "fecha_envio": "2026-06-26",
+              "source_date": "2026-06-26",
+              "gross_amount": 776.25,
+              "payment_date": "2026-07-01"
+            },
+            "expected_deposit": 750.14,
+            "expected_payment_date": "2026-07-01"
+          },
+          {
+            "amount": 1280.23,
+            "channel": "amex",
+            "source_date": "2026-06-27",
+            "_original_amex": {
+              "neto": 1280.23,
+              "amount": 1280.23,
+              "cargos": 1324.8,
+              "pago_num": "41808553",
+              "descuento": -38.42,
+              "fecha_envio": "2026-06-27",
+              "source_date": "2026-06-27",
+              "gross_amount": 1324.8,
+              "payment_date": "2026-07-01"
+            },
+            "expected_deposit": 1280.23,
+            "expected_payment_date": "2026-07-01"
+          }
+        ]
+      },
+      {
+        "deposit": {
+          "amount": 10040.62,
+          "detail": "SPEI RECIBIDO, BCO:0014 SANTANDER           HR LIQ: 06:55:13, DEL CLIENTE AMERICAN EXPRESS COMPANY MEXICO SA DE CV, DE LA CLABE 014180655080739445   CON RFC AEC810901298, CONCEPTO: AMEXCO SE 8480251875, REFERENCIA: 0260702 CVE RAST: 20260706400140HDH0000493717590",
+          "source": "amex",
+          "matched": true,
+          "description": "20260706400140HDH0000493717590",
+          "operation_date": "06/07/2026"
+        },
+        "expected_group": [
+          {
+            "amount": 9112.68,
+            "channel": "amex",
+            "source_date": "2026-06-30",
+            "_original_amex": {
+              "neto": 9112.68,
+              "amount": 9112.68,
+              "cargos": 9429.9,
+              "pago_num": "41837589",
+              "descuento": -273.47,
+              "fecha_envio": "2026-06-30",
+              "source_date": "2026-06-30",
+              "gross_amount": 9429.9,
+              "payment_date": "2026-07-06"
+            },
+            "expected_deposit": 9112.68,
+            "expected_payment_date": "2026-07-06"
+          },
+          {
+            "amount": 927.94,
+            "channel": "amex",
+            "source_date": "2026-06-30",
+            "_original_amex": {
+              "neto": 927.94,
+              "amount": 927.94,
+              "cargos": 960.25,
+              "pago_num": "41837589",
+              "descuento": -27.85,
+              "fecha_envio": "2026-06-30",
+              "source_date": "2026-06-30",
+              "gross_amount": 960.25,
+              "payment_date": "2026-07-06"
+            },
+            "expected_deposit": 927.94,
+            "expected_payment_date": "2026-07-06"
+          }
+        ]
+      },
+      {
+        "deposit": {
+          "amount": 10523.85,
+          "detail": "SPEI RECIBIDO, BCO:0014 SANTANDER           HR LIQ: 07:18:13, DEL CLIENTE AMERICAN EXPRESS COMPANY MEXICO SA DE CV, DE LA CLABE 014180655080739445   CON RFC AEC810901298, CONCEPTO: AMEXCO SE 8480251875, REFERENCIA: 0260701 CVE RAST: 20260703400140HDH0000485174720",
+          "source": "amex",
+          "matched": true,
+          "description": "20260703400140HDH0000485174720",
+          "operation_date": "03/07/2026"
+        },
+        "expected": {
+          "amount": 10523.85,
+          "channel": "amex",
+          "source_date": "2026-06-29",
+          "_original_amex": {
+            "neto": 10523.85,
+            "amount": 10523.85,
+            "cargos": 10890.2,
+            "pago_num": "41824967",
+            "descuento": -315.82,
+            "fecha_envio": "2026-06-29",
+            "source_date": "2026-06-29",
+            "gross_amount": 10890.2,
+            "payment_date": "2026-07-03"
+          },
+          "expected_deposit": 10523.85,
+          "expected_payment_date": "2026-07-03"
+        }
+      }
+    ],
+    "exceptions": [
+      {
+        "details": {
+          "status": "requires_review",
+          "deposits": [
+            {
+              "amount": 31355.81,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "01/07/2026"
+            },
+            {
+              "amount": 28129.3,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "01/07/2026"
+            },
+            {
+              "amount": 109017.9,
+              "detail": "SPEI RECIBIDO, BCO:0014 SANTANDER           HR LIQ: 07:25:33, DEL CLIENTE AMERICAN EXPRESS COMPANY MEXICO SA DE CV, DE LA CLABE 014180655080739445   CON RFC AEC810901298, CONCEPTO: AMEXCO SE 8480251875, REFERENCIA: 0260629 CVE RAST: 20260701400140HDH0000477301660",
+              "source": "amex",
+              "matched": true,
+              "description": "20260701400140HDH0000477301660",
+              "operation_date": "01/07/2026"
+            },
+            {
+              "amount": 1128,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "01/07/2026"
+            },
+            {
+              "amount": 56672.95,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "02/07/2026"
+            },
+            {
+              "amount": 18784.5,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "02/07/2026"
+            },
+            {
+              "amount": 3629,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "02/07/2026"
+            },
+            {
+              "amount": 2731.25,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "02/07/2026"
+            },
+            {
+              "amount": 49001.7,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "03/07/2026"
+            },
+            {
+              "amount": 25114.45,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "03/07/2026"
+            },
+            {
+              "amount": 10523.85,
+              "detail": "SPEI RECIBIDO, BCO:0014 SANTANDER           HR LIQ: 07:18:13, DEL CLIENTE AMERICAN EXPRESS COMPANY MEXICO SA DE CV, DE LA CLABE 014180655080739445   CON RFC AEC810901298, CONCEPTO: AMEXCO SE 8480251875, REFERENCIA: 0260701 CVE RAST: 20260703400140HDH0000485174720",
+              "source": "amex",
+              "matched": true,
+              "description": "20260703400140HDH0000485174720",
+              "operation_date": "03/07/2026"
+            },
+            {
+              "amount": 16174.49,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "03/07/2026"
+            },
+            {
+              "amount": 11432.25,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "03/07/2026"
+            },
+            {
+              "amount": 8535.16,
+              "detail": "SPEI RECIBIDO, BCO:0124 CITI MEXICO         HR LIQ: 13:40:14, DEL CLIENTE TECNOLOGIAS RAPPI SAPI DE CV, DE LA CLABE 124180701509141222   CON RFC TRA150604TW1, CONCEPTO: RAPPIPAYMENT58484529X, REFERENCIA: 3432370 CVE RAST: EABD4C0E001D81D4",
+              "source": "rappi",
+              "description": "EABD4C0E001D81D4",
+              "operation_date": "03/07/2026"
+            },
+            {
+              "amount": 170942.5,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 63279.17,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 40799.55,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 12959.95,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 17435.46,
+              "detail": "SPEI RECIBIDO, BCO:0124 CITI MEXICO         HR LIQ: 06:17:03, DEL CLIENTE UBR PAGOS MEXICO SA DE CV IFPE, DE LA CLABE 124180701410625206   CON RFC UPM200220LK5, CONCEPTO: UBRPAGOSMEXICO, REFERENCIA: 0176410 CVE RAST: 9D8F2D84D36EC6B8",
+              "source": "uber",
+              "description": "9D8F2D84D36EC6B8",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 10040.62,
+              "detail": "SPEI RECIBIDO, BCO:0014 SANTANDER           HR LIQ: 06:55:13, DEL CLIENTE AMERICAN EXPRESS COMPANY MEXICO SA DE CV, DE LA CLABE 014180655080739445   CON RFC AEC810901298, CONCEPTO: AMEXCO SE 8480251875, REFERENCIA: 0260702 CVE RAST: 20260706400140HDH0000493717590",
+              "source": "amex",
+              "matched": true,
+              "description": "20260706400140HDH0000493717590",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 30670.62,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 13004.87,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 16990.75,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "06/07/2026"
+            },
+            {
+              "amount": 61104.27,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734C",
+              "operation_date": "07/07/2026"
+            },
+            {
+              "amount": 31588.45,
+              "detail": "-",
+              "source": "banorte",
+              "description": "REST SANTO HAND ROLL 08890734D",
+              "operation_date": "07/07/2026"
+            },
+            {
+              "amount": 18101.6,
+              "detail": "SPEI RECIBIDO, BCO:0014 SANTANDER           HR LIQ: 07:01:01, DEL CLIENTE AMERICAN EXPRESS COMPANY MEXICO SA DE CV, DE LA CLABE 014180655080739445   CON RFC AEC810901298, CONCEPTO: AMEXCO SE 8480251875, REFERENCIA: 0260703 CVE RAST: 20260707400140HDH0000497708750",
+              "source": "amex",
+              "description": "20260707400140HDH0000497708750",
+              "operation_date": "07/07/2026"
+            }
+          ],
+          "row_count": 70,
+          "final_balance": 1751663.14,
+          "ignored_deposits": [],
+          "deposits_by_source": {
+            "amex": 147683.97,
+            "uber": 17435.46,
+            "rappi": 8535.16,
+            "banorte": 685493.83
+          },
+          "domiciled_expenses": [],
+          "unclassified_deposits": [
+            {
+              "amount": 1360,
+              "description": "2026070240014TRAPP000450573660"
+            }
+          ]
+        },
+        "exception_key": "banorte_statement_requires_review"
+      }
+    ],
+    "unused_amex": [
+      {
+        "neto": 31268.18,
+        "cargos": 32356.65,
+        "fecha_envio": "2026-07-03"
+      },
+      {
+        "neto": 33787.09,
+        "cargos": 34963.25,
+        "fecha_envio": "2026-07-04"
+      },
+      {
+        "neto": 75732.09,
+        "cargos": 78368.4,
+        "fecha_envio": "2026-07-05"
+      },
+      {
+        "neto": 360.06,
+        "cargos": 372.6,
+        "fecha_envio": "2026-07-03"
+      },
+      {
+        "neto": 12216.48,
+        "cargos": 12641.75,
+        "fecha_envio": "2026-07-04"
+      },
+      {
+        "neto": 17442.36,
+        "cargos": 18049.55,
+        "fecha_envio": "2026-07-02"
+      },
+      {
+        "neto": 1156.88,
+        "cargos": 1197.15,
+        "fecha_envio": "2026-07-02"
+      },
+      {
+        "neto": 9112.68,
+        "cargos": 9429.9,
+        "fecha_envio": "2026-06-30"
+      },
+      {
+        "neto": 927.94,
+        "cargos": 960.25,
+        "fecha_envio": "2026-06-30"
+      },
+      {
+        "neto": 10523.85,
+        "cargos": 10890.2,
+        "fecha_envio": "2026-06-29"
+      },
+      {
+        "neto": 22169.65,
+        "cargos": 22941.4,
+        "fecha_envio": "2026-06-26"
+      },
+      {
+        "neto": 27932.58,
+        "cargos": 28904.94,
+        "fecha_envio": "2026-06-27"
+      },
+      {
+        "neto": 33711.94,
+        "cargos": 34885.49,
+        "fecha_envio": "2026-06-28"
+      },
+      {
+        "neto": 23173.36,
+        "cargos": 23980.05,
+        "fecha_envio": "2026-06-28"
+      },
+      {
+        "neto": 750.14,
+        "cargos": 776.25,
+        "fecha_envio": "2026-06-26"
+      },
+      {
+        "neto": 1280.23,
+        "cargos": 1324.8,
+        "fecha_envio": "2026-06-27"
+      },
+      {
+        "neto": 16277.36,
+        "cargos": 16844,
+        "fecha_envio": "2026-06-25"
+      }
+    ],
+    "amex_matches": [
+      {
+        "amount": 21019.52,
+        "channel": "amex",
+        "amex_envio": "2026-07-05",
+        "source_date": "2026-07-05",
+        "amex_cargo_a": 9380.37,
+        "amex_cargo_b": 11639.15,
+        "validated_by": "amex_pair",
+        "business_date": "2026-07-05",
+        "expected_deposit": 21019.52
+      }
+    ],
+    "missing_funds": {
+      "corte_to_amex": 201164.57
+    },
+    "pending_items": [
+      {
+        "amount": 31268.18,
+        "channel": "amex",
+        "source_date": "2026-07-03",
+        "expected_deposit": 31268.18,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 33787.09,
+        "channel": "amex",
+        "source_date": "2026-07-04",
+        "expected_deposit": 33787.09,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 75732.09,
+        "channel": "amex",
+        "source_date": "2026-07-05",
+        "expected_deposit": 75732.09,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 360.06,
+        "channel": "amex",
+        "source_date": "2026-07-03",
+        "expected_deposit": 360.06,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 12216.48,
+        "channel": "amex",
+        "source_date": "2026-07-04",
+        "expected_deposit": 12216.48,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 17442.36,
+        "channel": "amex",
+        "source_date": "2026-07-02",
+        "expected_deposit": 17442.36,
+        "expected_payment_date": "2026-07-07"
+      },
+      {
+        "amount": 1156.88,
+        "channel": "amex",
+        "source_date": "2026-07-02",
+        "expected_deposit": 1156.88,
+        "expected_payment_date": "2026-07-07"
+      },
+      {
+        "amount": 16277.36,
+        "channel": "amex",
+        "source_date": "2026-06-25",
+        "expected_deposit": 16277.36,
+        "expected_payment_date": "2026-06-30"
+      },
+      {
+        "amount": 12924.07,
+        "channel": "amex",
+        "source_date": "2026-07-06",
+        "business_date": "2026-07-06",
+        "expected_deposit": 12924.07
+      },
+      {
+        "amount": 9064.82,
+        "channel": "amex",
+        "source_date": "2026-07-05",
+        "expected_deposit": 9064.82,
+        "expected_payment_date": "2026-07-09"
+      },
+      {
+        "amount": 11247.6,
+        "channel": "amex",
+        "source_date": "2026-07-05",
+        "expected_deposit": 11247.6,
+        "expected_payment_date": "2026-07-09"
+      },
+      {
+        "amount": 31268.18,
+        "channel": "amex",
+        "source_date": "2026-07-03",
+        "expected_deposit": 31268.18,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 33787.09,
+        "channel": "amex",
+        "source_date": "2026-07-04",
+        "expected_deposit": 33787.09,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 75732.09,
+        "channel": "amex",
+        "source_date": "2026-07-05",
+        "expected_deposit": 75732.09,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 360.06,
+        "channel": "amex",
+        "source_date": "2026-07-03",
+        "expected_deposit": 360.06,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 12216.48,
+        "channel": "amex",
+        "source_date": "2026-07-04",
+        "expected_deposit": 12216.48,
+        "expected_payment_date": "2026-07-08"
+      },
+      {
+        "amount": 17442.36,
+        "channel": "amex",
+        "source_date": "2026-07-02",
+        "expected_deposit": 17442.36,
+        "expected_payment_date": "2026-07-07"
+      },
+      {
+        "amount": 1156.88,
+        "channel": "amex",
+        "source_date": "2026-07-02",
+        "expected_deposit": 1156.88,
+        "expected_payment_date": "2026-07-07"
+      },
+      {
+        "amount": 16277.36,
+        "channel": "amex",
+        "source_date": "2026-06-25",
+        "expected_deposit": 16277.36,
+        "expected_payment_date": "2026-06-30"
+      },
+      {
+        "amount": 5005,
+        "channel": "uber",
+        "source_date": "2026-06-29",
+        "expected_deposit": 5005,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 2315,
+        "channel": "rappi",
+        "source_date": "2026-06-29",
+        "expected_deposit": 2315,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 1305,
+        "channel": "paypal",
+        "source_date": "2026-06-29",
+        "expected_deposit": 1305,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 7552,
+        "channel": "debito",
+        "source_date": "2026-06-29",
+        "expected_deposit": 7552,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 45053.04,
+        "channel": "credito",
+        "source_date": "2026-06-29",
+        "expected_deposit": 45053.04,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 6875,
+        "channel": "efectivo",
+        "source_date": "2026-06-29",
+        "expected_deposit": 6875,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 7490,
+        "channel": "uber",
+        "source_date": "2026-07-01",
+        "expected_deposit": 7490,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 1930,
+        "channel": "rappi",
+        "source_date": "2026-07-01",
+        "expected_deposit": 1930,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 9227.9,
+        "channel": "debito",
+        "source_date": "2026-07-01",
+        "expected_deposit": 9227.9,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 72589.8,
+        "channel": "credito",
+        "source_date": "2026-07-01",
+        "expected_deposit": 72589.8,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 18970,
+        "channel": "efectivo",
+        "source_date": "2026-07-01",
+        "expected_deposit": 18970,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 3445,
+        "channel": "uber",
+        "source_date": "2026-07-05",
+        "expected_deposit": 3445,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 620,
+        "channel": "rappi",
+        "source_date": "2026-07-05",
+        "expected_deposit": 620,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 9251.2,
+        "channel": "debito",
+        "source_date": "2026-07-05",
+        "expected_deposit": 9251.2,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 43329.3,
+        "channel": "credito",
+        "source_date": "2026-07-05",
+        "expected_deposit": 43329.3,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 5242.5,
+        "channel": "efectivo",
+        "source_date": "2026-07-05",
+        "expected_deposit": 5242.5,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 6270,
+        "channel": "uber",
+        "source_date": "2026-07-06",
+        "expected_deposit": 6270,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 13863.86,
+        "channel": "debito",
+        "source_date": "2026-07-06",
+        "expected_deposit": 13863.86,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 79263.12,
+        "channel": "credito",
+        "source_date": "2026-07-06",
+        "expected_deposit": 79263.12,
+        "expected_payment_date": null
+      },
+      {
+        "amount": 8802.5,
+        "channel": "efectivo",
+        "source_date": "2026-07-06",
+        "expected_deposit": 8802.5,
+        "expected_payment_date": null
+      }
+    ],
+    "batch_validation": [
+      {
+        "status": "pending",
+        "batch_id": "41889556",
+        "total_neto": 20312.42,
+        "banorte_deposit": null
+      },
+      {
+        "status": "pending",
+        "batch_id": "51870100",
+        "total_neto": 153363.9,
+        "banorte_deposit": null
+      },
+      {
+        "status": "pending",
+        "batch_id": "51841845",
+        "total_neto": 18599.24,
+        "banorte_deposit": null
+      },
+      {
+        "status": "ok",
+        "batch_id": "41837589",
+        "total_neto": 10040.62,
+        "banorte_deposit": 10040.62
+      },
+      {
+        "status": "ok",
+        "batch_id": "41824967",
+        "total_neto": 10523.85,
+        "banorte_deposit": 10523.85
+      },
+      {
+        "status": "ok",
+        "batch_id": "41808553",
+        "total_neto": 109017.9,
+        "banorte_deposit": 109017.9
+      },
+      {
+        "status": "pending",
+        "batch_id": "41775267",
+        "total_neto": 16277.36,
+        "banorte_deposit": null
+      }
+    ],
+    "additional_expenses": [],
+    "pending_collections": {
+      "amex": 409717.49,
+      "uber": 22210,
+      "rappi": 4865,
+      "debito": 39894.96,
+      "paypal": 1305,
+      "credito": 240235.26,
+      "efectivo": 39890
+    }
+  },
+  "expected_collections": [],
+  "bank_validation_status": "bank_requires_review",
+  "falta_por_entrar_por_dia": {
+    "2026-06-25": 32554.72,
+    "2026-06-29": 68105.04,
+    "2026-07-01": 110207.7,
+    "2026-07-02": 37198.48,
+    "2026-07-03": 63256.48,
+    "2026-07-04": 92007.14,
+    "2026-07-05": 233664.6,
+    "2026-07-06": 121123.55
+  }
+}

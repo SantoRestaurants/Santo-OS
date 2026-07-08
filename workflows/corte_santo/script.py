@@ -743,6 +743,20 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 if bank_module is not None:
                     bank_statement = bank_module.parse_banorte_csv(bank_doc["source_path"], config)
 
+        # Intercept CXC events with AI if applicable
+        body_text = str(payload.get("body_text") or "")
+        cxc_docs_ocr = []
+        for doc in vision_documents:
+            if isinstance(doc, dict) and doc.get("document_type") == "cxc" and doc.get("raw_ocr"):
+                cxc_docs_ocr.append(doc["raw_ocr"])
+                
+        if cxc_docs_ocr or "cxc" in body_text.lower() or "ajuste" in body_text.lower():
+            cxc_module = _load_sibling_module("cxc")
+            if cxc_module is not None and hasattr(cxc_module, "extract_cxc_events_with_ai"):
+                ai_cxc_events = cxc_module.extract_cxc_events_with_ai(body_text, cxc_docs_ocr)
+                if ai_cxc_events:
+                    payload["cxc_events"] = ai_cxc_events
+
         evidence_module = _load_sibling_module("evidence_builder")
         if evidence_module is not None:
             canonical_evidence = evidence_module.build_canonical_evidence(

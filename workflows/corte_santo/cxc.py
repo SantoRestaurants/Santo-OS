@@ -59,3 +59,80 @@ def receivable_key(restaurant_id: str, business_date: str, event: dict[str, Any]
     digest = hashlib.sha256(description.encode("utf-8")).hexdigest()[:12]
     principal = float(event.get("principal") or 0)
     return f"{restaurant_id}:{business_date}:{principal:.2f}:{digest}"
+
+
+def extract_cxc_events_with_ai(body: str | None, cxc_docs_ocr: list[str]) -> list[dict[str, Any]]:
+    """Extract CXC events using Claude by analyzing both email body and OCR text from CXC photos."""
+    import os
+    import json
+    import httpx
+
+    text = " ".join(str(body or "").split())
+    ocr_texts = "\n\n---\n\n".join(cxc_docs_ocr)
+    
+    prompt = f"""Eres un asistente financiero de SANTO Restaurantes. Tu tarea es extraer eventos de Cuentas por Cobrar (CXC) de la información proporcionada.
+
+INFORMACIÓN:
+Cuerpo del correo:
+{text}
+
+Texto extraído de tickets CXC (OCR):
+{ocr_texts}
+
+INSTRUCCIONES:
+Extrae todos los eventos de CXC detectados (tanto ajustes/aperturas como pagos/liquidaciones).
+Responde ÚNICAMENTE con un arreglo JSON con el siguiente formato exacto:
+[
+  {{
+    "kind": "opening" | "settlement",
+    "movement_id": "90484",
+    "principal": 535.0,
+    "description": "Breve motivo o descripción"
+  }}
+]
+
+REGLAS:
+1. Usa "settlement" si se trata de un pago o liquidación de una deuda anterior.
+2. Usa "opening" si es un ajuste por error de mesero, faltante o deuda nueva.
+3. El 'principal' debe ser numérico.
+4. 'movement_id' puede ser null si no se menciona un número de movimiento.
+5. Si no hay eventos de CXC, devuelve [].
+6. NO devuelvas nada fuera del arreglo JSON (sin markdown, sin explicaciones).
+"""
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CORTE_VISION_API_KEY")
+    if not api_key:
+        return []
+        
+    try:
+        response = httpx.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        res_text = "".join(p.get("text", "") for p in response.json().get("content", []) if p.get("type") == "text").strip()
+        
+        start = res_text.find("[")
+        end = res_text.rfind("]")
+        if start == -1 or end == -1 or end <= start:
+            return []
+            
+        parsed = json.loads(res_text[start:end+1])
+        if isinstance(parsed, list):
+            for event in parsed:
+                event["source"] = "claude_ocr"
+            return parsed
+        return []
+    except Exception:
+        return []
+

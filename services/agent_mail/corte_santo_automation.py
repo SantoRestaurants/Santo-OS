@@ -403,6 +403,7 @@ def run_corte_initial_from_message(
             "workbook_paths": paths,
             "workbook_outputs": outputs,
             "drive_file_ids": drive_file_ids,
+            "body_text": body,
             "cxc_events": parse_cxc_events(body),
         },
     }

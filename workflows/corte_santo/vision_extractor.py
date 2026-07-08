@@ -68,7 +68,7 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "cxc": {
         "description": "Foto de un ajuste de Cuenta por Cobrar (CXC). El monto incluye consumo y propina. El canal es la forma de pago (tarjeta de debito, tarjeta de credito, efectivo, etc).",
-        "fields": ["consumo", "propina", "monto_total", "canal", "cxc_events"],
+        "fields": ["consumo", "propina", "monto_total", "canal"],
     },
 }
 
@@ -153,16 +153,12 @@ def _build_prompt(document_type: str) -> str:
             "- 'canal' es la forma de pago: 'debito', 'credito', 'efectivo', 'amex', etc. "
             "Mapea el texto de la foto al canal mas cercano.\n"
             "- Si no ves propina, pon propina en 0 y monto_total igual a consumo.\n"
-            "- IDENTIFICA SI EL CXC ES UNA APERTURA DE DEUDA O UN PAGO. Agrega la clave 'cxc_events' "
-            "dentro de 'values'. Debe ser una lista de objetos: [{'kind': 'opening' | 'settlement', "
-            "'movement_id': '12345', 'principal': 100.00, 'description': 'motivo...'}].\n"
-            "Usa 'settlement' si el texto indica que se pagó o liquidó la cuenta, o 'opening' si es un ajuste por error o faltante.\n"
         )
     return (
         "Eres un extractor de datos financieros para el corte diario de un "
         "restaurante (SANTO). Lee la imagen y devuelve EXCLUSIVAMENTE un objeto "
         "JSON, sin texto adicional, con esta forma exacta:\n"
-        '{"values": {<campo>: <numero|null|array|objeto>, ...}, "confidence": <0..1>, '
+        '{"values": {<campo>: <numero|null>, ...}, "confidence": <0..1>, '
         '"notes": "<dudas o ilegibilidad>"}\n'
         f"Descripcion del documento: {description}\n"
         f"Campos requeridos para el documento '{document_type}': {fields}.\n"
@@ -602,13 +598,17 @@ def _local_ocr_extract(document_type: str, path: Path, cfg: dict[str, Any]) -> d
     text = _run_tesseract(path, cfg)
     if not text:
         return None
+    res = None
     if document_type in ("amex", "bancarias"):
-        return _extract_payment_ticket_totals(text, document_type)
-    if document_type == "cxc":
-        return _extract_cxc_totals(text)
-    if document_type == "detalle_efectivo":
-        return _extract_detalle_efectivo_totals(text)
-    return None
+        res = _extract_payment_ticket_totals(text, document_type)
+    elif document_type == "cxc":
+        res = _extract_cxc_totals(text)
+    elif document_type == "detalle_efectivo":
+        res = _extract_detalle_efectivo_totals(text)
+        
+    if res is not None:
+        res["raw_ocr"] = text
+    return res
 
 
 def _call_anthropic(cfg: dict[str, Any], prompt: str, media_type: str, b64: str) -> dict[str, Any]:
@@ -720,13 +720,14 @@ def extract_document(
           "confidence": float | None,
           "review_reason": str | None,
           "notes": str | None,
+          "raw_ocr": str | None,
         }
     """
     config = config or {}
     cfg = _vision_config(config)
 
-    def review(reason: str, values: dict[str, Any] | None = None, confidence: float | None = None, notes: str | None = None):
-        return {
+    def review(reason: str, values: dict[str, Any] | None = None, confidence: float | None = None, notes: str | None = None, raw_ocr: str | None = None):
+        res = {
             "document_type": document_type,
             "status": "requires_review",
             "values": values or {},
@@ -734,6 +735,9 @@ def extract_document(
             "review_reason": reason,
             "notes": notes,
         }
+        if raw_ocr:
+            res["raw_ocr"] = raw_ocr
+        return res
 
     if document_type not in DOCUMENT_SCHEMAS:
         return review(f"unknown_document_type:{document_type}")
@@ -822,23 +826,29 @@ def extract_document(
     if confidence_f < cfg["confidence_threshold"]:
         return review("vision_confidence_below_threshold", values=values, confidence=confidence_f, notes=notes)
 
-    extracted = {
-        "document_type": document_type,
-        "status": "extracted",
-        "values": values,
-        "confidence": confidence_f,
-        "review_reason": None,
-        "notes": notes,
-        "cache": "miss",
-    }
-    _write_cache(cfg, cache_key, extracted, effective_source_hash)
+    result["document_type"] = document_type
+    result["status"] = "extracted"
+    result["extractor"] = "vision"
+    
+    # Run Tesseract separately to ensure we have raw_ocr for Claude even if vision model was used
+    if cfg.get("local_ocr_enabled"):
+        raw_ocr = _run_tesseract(path, cfg)
+        if raw_ocr:
+            result["raw_ocr"] = raw_ocr
+
+    if _has_unconfirmed_value(values):
+        result["status"] = "requires_review"
+        result["review_reason"] = "El modelo indico [CONFIRM] en uno o mas campos"
+
+    result["cache"] = "miss"
+    _write_cache(cfg, cache_key, result, effective_source_hash)
     logger.info(
         "Vision extraction completed document_type=%s image=%s confidence=%.3f cache=miss",
         document_type,
         path.name,
         confidence_f,
     )
-    return extracted
+    return result
 
 
 def extract_documents(images: list[dict[str, Any]], config: dict[str, Any] | None = None) -> dict[str, Any]:
