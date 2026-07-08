@@ -274,8 +274,9 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
 
     paths = payload.get("workbook_paths", {})
     outputs = payload.get("workbook_outputs", {})
-    if bank_result.get("status") == "bank_validated":
-        ingresos_blue = writer.write_ingresos(
+    pending_collections = bank_result.get("pending_collections") or {}
+    if bank_result.get("status") == "bank_validated" and not pending_collections:
+        ingresos_result = writer.write_ingresos(
             str(paths.get("ingresos", "")),
             str(outputs.get("ingresos", "")),
             str(payload.get("business_date", "")),
@@ -286,17 +287,31 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
             cell_notes=payload.get("income_cell_notes") if isinstance(payload.get("income_cell_notes"), dict) else None,
         )
     else:
-        ingresos_blue = {
-            "status": "requires_review",
-            "review_reason": "bank_reconciliation_not_ready",
-        }
+        # A bank file upload means "we checked banks", not "this sale day was
+        # deposited". If money is still pending, repaint the row as loaded
+        # instead of leaving a stale blue fill from a previous watcher run.
+        ingresos_result = writer.write_ingresos(
+            str(paths.get("ingresos", "")),
+            str(outputs.get("ingresos", "")),
+            str(payload.get("business_date", "")),
+            income_channels,
+            stage="corte_loaded",
+            dry_run=bool(request.get("dry_run", True)),
+            layout=config.get("ingresos_layout"),
+            cell_notes=payload.get("income_cell_notes") if isinstance(payload.get("income_cell_notes"), dict) else None,
+        )
+        if ingresos_result.get("status") not in ("planned", "written"):
+            ingresos_result = {
+                "status": "requires_review",
+                "review_reason": ingresos_result.get("review_reason") or "bank_reconciliation_not_ready",
+            }
     revision = dict(payload.get("revision_document", {}))
     revision["falta_por_entrar"] = bank_result.get("pending_collections", {})
     revision["gastos_adicionales"] = bank_result.get("additional_expenses", [])
     revision["bank_validation_status"] = bank_result.get("status")
     result = pipeline.bank_stage_result(
         bank_result,
-        ingresos_blue,
+        ingresos_result,
         revision,
         config.get("supervisor_email"),
     )

@@ -158,7 +158,7 @@ function RunCard({ run, defaultOpen = false }: { run: ReconciliationRun; default
               className="mt-3 w-full rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-[1px] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: GOLD, color: "#ffffff" }}
             >
-              {approved ? "Ya aprobado" : "Aprobar Agent Mail"}
+              {approved ? "Ya aprobado" : "Aprobar"}
             </button>
           </form>
 

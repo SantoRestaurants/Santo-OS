@@ -50,24 +50,31 @@ def initial_stage_result(
 
 def bank_stage_result(
     bank_reconciliation: dict[str, Any],
-    ingresos_blue_result: dict[str, Any],
+    ingresos_result: dict[str, Any],
     revision_document: dict[str, Any],
     supervisor_email: str | None,
 ) -> dict[str, Any]:
+    pending_collections = bank_reconciliation.get("pending_collections") or {}
     ready = (
         bank_reconciliation.get("status") == "bank_validated"
-        and ingresos_blue_result.get("status") in ("planned", "written")
+        and not pending_collections
+        and ingresos_result.get("status") in ("planned", "written")
+    )
+    notification_text = (
+        "Los estados AMEX y Banorte fueron cruzados. Hay importes pendientes de entrar, así que el Excel queda como corte cargado/pendiente y no se marca en azul."
+        if pending_collections
+        else "Los estados AMEX y Banorte fueron cruzados. El Excel quedó marcado en azul y REVISION fue actualizado."
     )
     return {
         "status": "completed" if ready else "requires_review",
         "stage": "bank_validated" if ready else "bank_requires_review",
         "bank_reconciliation": bank_reconciliation,
-        "ingresos_write": ingresos_blue_result,
+        "ingresos_write": ingresos_result,
         "revision_document": revision_document,
         "notification": notification(
             supervisor_email,
-            "[CORTE VALIDADO CONTRA BANCO] SANTO",
-            "Los estados AMEX y Banorte fueron cruzados. El Excel quedó marcado en azul y REVISION fue actualizado.",
-            kind="bank_validated",
+            "[CORTE CRUZADO CONTRA BANCO] SANTO",
+            notification_text,
+            kind="bank_validated" if ready else "bank_requires_review",
         ),
     }

@@ -582,3 +582,23 @@ Activate and validate the Corte two-stage runtime in production:
   matches the key exposed in Git history, and the GitHub repository remains
   public. Rotate the key in Supabase/local/Vercel/GitHub and make the repository
   private before operational acceptance.
+
+## 2026-07-08 - Bank spreadsheet state and July 6 display corrections
+
+- Bank validation no longer paints the Ingresos row blue just because AMEX and
+  Banorte files were uploaded/crossed. Blue now means the sale day has no
+  pending bank collections. If pending collections remain, the watcher rewrites
+  the row as `corte_loaded` so stale blue fills are removed.
+- Bank stage notification copy now says the Corte was crossed against banks and
+  left pending when money has not entered, instead of saying the Excel was marked
+  blue.
+- Dashboard reconciliation hydration now prefers the canonical
+  `corte_daily_records` row over stale `revision_document` totals, so the July 6
+  CxC adjustment does not continue to show a `$535` reconciliation difference
+  after the daily record has been corrected.
+- CxC spreadsheet comments are clearer: they state the detected amount, detected
+  payment medium, and whether the item should be expected as a separate bank
+  deposit or inside a terminal/platform liquidation.
+- Conciliación UI copy changed the supervisor button from “Aprobar Agent Mail”
+  to “Aprobar”, and global cursor styles now show the pointer cursor for normal
+  clickable controls.

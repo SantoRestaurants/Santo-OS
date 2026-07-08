@@ -790,10 +790,16 @@ def run_bank_watcher_once(
             if pr["business_date"] == bd:
                 try:
                     # Only update status and bank fields, don't replace output_payload
+                    day_pending_items = _pending_items_for_date(
+                        bank_result.get("pending_items") or [],
+                        bd,
+                    )
+                    day_pending = _summarize_pending(day_pending_items)
+                    day_bank_status = "bank_requires_review" if day_pending else "bank_validated"
                     r_upd = httpx.patch(
                         f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
                         json={
-                            "status": "completed",
+                            "status": "waiting_for_input" if day_pending else "completed",
                         },
                         headers={"apikey": service_key, "Authorization": f"Bearer {service_key}",
                                  "Content-Type": "application/json", "Prefer": "return=representation"},
@@ -813,23 +819,16 @@ def run_bank_watcher_once(
                             if isinstance(current_op, str):
                                 try: current_op = json.loads(current_op)
                                 except: current_op = {}
-                            current_op["bank_validation_status"] = "bank_validated"
-                            current_op["stage"] = "bank_validated"
+                            current_op["bank_validation_status"] = day_bank_status
+                            current_op["stage"] = day_bank_status
                             current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
-                            day_pending_items = _pending_items_for_date(
-                                bank_result.get("pending_items") or [],
-                                bd,
-                            )
-                            day_pending = _summarize_pending(day_pending_items)
                             revision = current_op.get("revision_document") or {}
                             if isinstance(revision, dict):
                                 revision["falta_por_entrar"] = day_pending
-                                revision["bank_validation_status"] = (
-                                    "bank_requires_review" if day_pending else "bank_validated"
-                                )
+                                revision["bank_validation_status"] = day_bank_status
                                 current_op["revision_document"] = revision
                             current_op["bank_reconciliation"] = {
-                                "status": "bank_requires_review" if day_pending else "bank_validated",
+                                "status": day_bank_status,
                                 "pending_items": day_pending_items,
                                 "pending_collections": day_pending,
                                 "matched_on_later_statement": True,

@@ -192,18 +192,26 @@ def _formula_from_terms(terms: Any, fallback_total: float) -> str:
 
 
 def _cxc_paypal_note(values: dict[str, Any], total: float, channel: str | None) -> dict[str, Any]:
-    lines = ["CXC"]
-    if channel in (None, "efectivo", "cxc") and total > 0:
+    normalized_channel = channel or "sin medio confirmado"
+    lines = ["Ajuste CXC detectado por SantoOS"]
+    if total > 0:
+        lines.append(f"Importe CxC identificado: ${total:,.2f}")
+    lines.append(f"Medio de cobro detectado: {normalized_channel}")
+    if channel in (None, "cxc"):
+        lines.append("No se confirmó un medio de pago específico; queda como CxC/pendiente operativo.")
+    elif channel == "efectivo":
         lines.append(f"Pago en efectivo de CXC: ${total:,.2f}")
+        lines.append("Se interpreta como cobrado en efectivo; no debe esperarse como depósito bancario separado.")
+    elif channel in ("debito", "credito"):
+        lines.append("Se interpreta como cobrado con tarjeta; debe entrar dentro de la liquidación Banorte terminal.")
+    elif channel == "amex":
+        lines.append("Se interpreta como cobrado con AMEX; debe entrar dentro de la liquidación AMEX.")
+    else:
+        lines.append("Revisar contra el medio correspondiente antes de marcarlo como pendiente bancario.")
     for line in values.get("comment_lines") or []:
         text = str(line).strip()
         if text and text not in lines:
             lines.append(text)
-    if total > 0 and not any("total" in line.lower() for line in lines):
-        lines.append(f"TOTAL ${total:,.2f}")
-    if channel:
-        lines.append(f"Canal: {channel}")
-    lines.append("======")
     return {
         "kind": "cxc",
         "amount": total,

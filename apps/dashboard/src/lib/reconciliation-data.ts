@@ -261,6 +261,9 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
     if (rawRevDoc?.falta_por_entrar && !rev?.falta_por_entrar && rev) {
       (rev as any).falta_por_entrar = rawRevDoc.falta_por_entrar;
     }
+    if (daily && rev) {
+      rev = hydrateRevisionFromDailyRecord(rev, daily);
+    }
     return {
       ...run,
       output_payload: daily ? {
@@ -300,6 +303,45 @@ export async function getReconciliationData(allowedRoles: readonly string[] = ["
     dailyRecords,
     receivables,
   };
+}
+
+function hydrateRevisionFromDailyRecord(revision: RevisionDocument, daily: CorteDailyRecord): RevisionDocument {
+  const ventaBruta = Number(daily.venta_bruta ?? 0);
+  const totalBruto = Number(daily.total_bruto ?? 0);
+  const forecast = Number(daily.forecast_target ?? 0);
+  const next = {
+    ...revision,
+    daily_financial_record: {
+      ...(revision.daily_financial_record ?? {}),
+      venta_bruta: ventaBruta,
+      total_bruto: totalBruto,
+      parser_version: daily.parser_version,
+    },
+    reconciliation_totals: {
+      total_real: totalBruto,
+      total_sistema: totalBruto,
+      difference: 0,
+      tolerance: revision.reconciliation_totals?.tolerance ?? 0,
+    },
+  };
+
+  if (Array.isArray(next.vta_por_dia)) {
+    next.vta_por_dia = next.vta_por_dia.map((row) => {
+      if (row.fecha !== daily.business_date) return row;
+      return {
+        ...row,
+        meta_vta: forecast || row.meta_vta,
+        venta_real: ventaBruta,
+        diferencia: forecast ? roundMoney(ventaBruta - forecast) : row.diferencia,
+      };
+    });
+  }
+
+  return next;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 function dailyIncomeRegister(record: CorteDailyRecord) {
