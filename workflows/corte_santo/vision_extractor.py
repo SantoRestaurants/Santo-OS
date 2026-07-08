@@ -58,6 +58,7 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "fields": ["consumo", "propina", "total"],
     },
     "amex": {
+    "amex": {
         "description": "Foto o export del cierre de lote AMEX.",
         "fields": ["consumo", "propina", "total"],
     },
@@ -67,7 +68,7 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "cxc": {
         "description": "Foto de un ajuste de Cuenta por Cobrar (CXC). El monto incluye consumo y propina. El canal es la forma de pago (tarjeta de debito, tarjeta de credito, efectivo, etc).",
-        "fields": ["consumo", "propina", "monto_total", "canal"],
+        "fields": ["consumo", "propina", "monto_total", "canal", "cxc_events"],
     },
 }
 
@@ -103,7 +104,7 @@ def _vision_config(config: dict[str, Any]) -> dict[str, Any]:
         "retry_backoff_seconds": float(vision.get("retry_backoff_seconds", 10)),
         "request_delay_seconds": float(vision.get("request_delay_seconds", 0)),
         "cache_enabled": bool(vision.get("cache_enabled", True)),
-        "cache_version": str(vision.get("cache_version", "local-ocr-v3")),
+        "cache_version": str(vision.get("cache_version", "local-ocr-v4")),
         "cache_dir": os.environ.get("CORTE_VISION_CACHE_DIR", "")
         or vision.get("cache_dir", ".cache/corte_santo_vision"),
         "local_ocr_enabled": bool(vision.get("local_ocr_enabled", True)),
@@ -152,12 +153,16 @@ def _build_prompt(document_type: str) -> str:
             "- 'canal' es la forma de pago: 'debito', 'credito', 'efectivo', 'amex', etc. "
             "Mapea el texto de la foto al canal mas cercano.\n"
             "- Si no ves propina, pon propina en 0 y monto_total igual a consumo.\n"
+            "- IDENTIFICA SI EL CXC ES UNA APERTURA DE DEUDA O UN PAGO. Agrega la clave 'cxc_events' "
+            "dentro de 'values'. Debe ser una lista de objetos: [{'kind': 'opening' | 'settlement', "
+            "'movement_id': '12345', 'principal': 100.00, 'description': 'motivo...'}].\n"
+            "Usa 'settlement' si el texto indica que se pagó o liquidó la cuenta, o 'opening' si es un ajuste por error o faltante.\n"
         )
     return (
         "Eres un extractor de datos financieros para el corte diario de un "
         "restaurante (SANTO). Lee la imagen y devuelve EXCLUSIVAMENTE un objeto "
         "JSON, sin texto adicional, con esta forma exacta:\n"
-        '{"values": {<campo>: <numero|null>, ...}, "confidence": <0..1>, '
+        '{"values": {<campo>: <numero|null|array|objeto>, ...}, "confidence": <0..1>, '
         '"notes": "<dudas o ilegibilidad>"}\n'
         f"Descripcion del documento: {description}\n"
         f"Campos requeridos para el documento '{document_type}': {fields}.\n"

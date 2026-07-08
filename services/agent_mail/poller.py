@@ -843,7 +843,12 @@ def poll_and_classify(
                             "waiting_for_input", "completed", "requires_review"
                         ):
                             wr = corte_stage.get("workflow_result", {}).get("workflow_run", {})
-                            cxc_events = parse_cxc_events(body)
+                            canonical = wr.get("canonical_evidence", {}) or {}
+                            canonical_cxc = canonical.get("cxc_events")
+                            if canonical_cxc is not None:
+                                cxc_events = canonical_cxc
+                            else:
+                                cxc_events = parse_cxc_events(body)
                             inp = wr.get("input_payload", {}) or {}
                             register = (
                                 (wr.get("canonical_evidence", {}) or {})
@@ -899,6 +904,24 @@ def poll_and_classify(
                                     "source_provider_message_id": message_id,
                                     "source_workflow_run_id": run_id,
                                     "evidence": event,
+                                })
+
+                            for channel_name, amount in channels.items():
+                                if channel_name in ("propinas",) or amount <= 0:
+                                    continue
+                                stable_receivable_key = f"{restaurant_id}:{corte_business_date}:{channel_name}"
+                                supabase.upsert_corte_receivable({
+                                    "receivable_key": stable_receivable_key,
+                                    "restaurant_id": restaurant_id,
+                                    "movement_id": None,
+                                    "opened_on": corte_business_date,
+                                    "principal": amount,
+                                    "settled_on": None,
+                                    "settled_principal": 0,
+                                    "status": "open",
+                                    "source_provider_message_id": message_id,
+                                    "source_workflow_run_id": run_id,
+                                    "evidence": {"kind": "channel_sales", "channel": channel_name},
                                 })
                             if restaurant_id and register:
                                 from workflows.corte_santo.daily_record import (

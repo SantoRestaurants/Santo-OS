@@ -293,10 +293,9 @@ def _build_expected_collections(
             latest_snapshot_items = [dict(item) for item in pending_items if isinstance(item, dict)]
             latest_stage = output
 
-    expected: list[dict[str, Any]] = list(latest_snapshot_items or [])
+    expected: list[dict[str, Any]] = []
     pending_runs: list[dict[str, Any]] = []
     seen_dates: set[str] = set()
-    channels = ("amex", "uber", "rappi", "paypal", "debito", "credito", "efectivo")
 
     for business_date, run, output in normalized:
         # The latest snapshot already represents all prior open items.
@@ -327,21 +326,7 @@ def _build_expected_collections(
         if not isinstance(register, dict) or business_date in seen_dates:
             continue
 
-        day_items = []
-        for channel in channels:
-            amount = float(register.get(channel, 0) or 0)
-            if amount > 0:
-                day_items.append({
-                    "business_date": business_date,
-                    "channel": channel,
-                    "amount": amount,
-                    "expected_deposit": amount,
-                    "source_date": business_date,
-                })
-        if not day_items:
-            continue
         seen_dates.add(business_date)
-        expected.extend(day_items)
         pending_runs.append({
             "id": run["id"],
             "business_date": business_date,
@@ -461,12 +446,36 @@ def run_bank_watcher_once(
             "watcher_result": watcher,
         }
 
-    expected_cols, pending_runs, latest_stage1, seen_dates = _build_expected_collections(
+    _, pending_runs, latest_stage1, seen_dates = _build_expected_collections(
         all_runs,
         effective_date,
     )
 
-    if not expected_cols:
+    # ── Fetch active receivables from DB ──
+    expected_cols: list[dict[str, Any]] = []
+    resp_rx = httpx.get(
+        f"{supabase_url}/rest/v1/corte_receivables",
+        params={
+            "select": "*",
+            "status": "eq.open",
+        },
+        headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+        timeout=30.0,
+    )
+    if resp_rx.status_code < 400:
+        for rx in resp_rx.json():
+            ev = rx.get("evidence") or {}
+            expected_cols.append({
+                "business_date": rx.get("opened_on"),
+                "channel": ev.get("channel", "cxc"),
+                "amount": float(rx.get("principal", 0)),
+                "expected_deposit": float(rx.get("principal", 0)),
+                "source_date": rx.get("opened_on"),
+                "receivable_id": rx.get("id"),
+                "receivable_key": rx.get("receivable_key"),
+            })
+
+    if not expected_cols and not pending_runs:
         return {
             "status": "requires_review",
             "requires_review_reason": "no_pending_amex_collections_found",
@@ -595,6 +604,36 @@ def run_bank_watcher_once(
     bank_result = result.get("bank_reconciliation") or {}
     amex_matches = bank_result.get("amex_matches", [])
     validated_dates: set[str] = set()
+
+    # Mark matched receivables as settled
+    general_matches = bank_result.get("matches", [])
+    matched_receivable_ids = set()
+    
+    for match in amex_matches:
+        if match.get("receivable_id"):
+            matched_receivable_ids.add(match["receivable_id"])
+    
+    for match in general_matches:
+        expected = match.get("expected")
+        if isinstance(expected, dict) and expected.get("receivable_id"):
+            matched_receivable_ids.add(expected["receivable_id"])
+        group = match.get("expected_group")
+        if isinstance(group, list):
+            for item in group:
+                if isinstance(item, dict) and item.get("receivable_id"):
+                    matched_receivable_ids.add(item["receivable_id"])
+
+    if matched_receivable_ids:
+        for rid in matched_receivable_ids:
+            try:
+                httpx.patch(
+                    f"{supabase_url}/rest/v1/corte_receivables?id=eq.{rid}",
+                    json={"status": "settled", "settled_on": effective_date},
+                    headers={"apikey": service_key, "Authorization": f"Bearer {service_key}", "Content-Type": "application/json"},
+                    timeout=10.0,
+                )
+            except Exception as exc:
+                logging.exception("Failed to mark receivable %s as settled: %s", rid, exc)
 
     for match in amex_matches:
         bd = match.get("business_date") or match.get("source_date")
