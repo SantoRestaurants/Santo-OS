@@ -108,7 +108,7 @@ export async function POST(request: Request) {
 
 async function buildMonthlyAiContext(supabase: any, selectedMonth: string, effectiveDate: string | null, body: AiRequestBody | null) {
   try {
-    const [dailyResult, receivablesResult, latestBankResult] = await Promise.all([
+    const [dailyResult, receivablesResult, latestBankResult, absoluteLatestResult] = await Promise.all([
       supabase
         .from("corte_daily_records")
         .select("business_date,amex,debito,credito,efectivo,transferencia,total,paypal,uber_eats,rappi,propinas,venta_bruta,total_bruto,forecast_target")
@@ -129,19 +129,28 @@ async function buildMonthlyAiContext(supabase: any, selectedMonth: string, effec
         .lte("business_date", effectiveDate || `${selectedMonth}-31`)
         .order("business_date", { ascending: false })
         .limit(10),
+      supabase
+        .from("workflow_runs")
+        .select("id,business_date,status,output_payload")
+        .eq("source_channel", "agent_mail")
+        .order("business_date", { ascending: false })
+        .limit(1),
     ]);
 
     const latestBankRun = (latestBankResult.data ?? []).find((candidate: any) => candidate?.output_payload?.bank_reconciliation) ?? null;
     const bankReconciliation = latestBankRun?.output_payload?.bank_reconciliation ?? null;
+
+    const absoluteLatestRun = (absoluteLatestResult.data ?? []).find((candidate: any) => candidate?.output_payload?.bank_reconciliation) ?? null;
+    const absoluteBankReconciliation = absoluteLatestRun?.output_payload?.bank_reconciliation ?? null;
 
     return {
       mes: selectedMonth,
       ventas_diarias_totales: dailyResult.data ?? [],
       cuentas_por_cobrar: receivablesResult.data ?? [],
       contexto_semana_ui: body?.weekContext ?? null,
-      contexto_mes_ui: body?.monthContext ?? null,
-      ultimo_snapshot_bancario: bankReconciliation
-        ? {
+      estado_actual: {
+        mes: selectedMonth,
+        snapshot_bancario_del_dia_seleccionado: bankReconciliation ? {
             business_date: latestBankRun.business_date,
             status: latestBankRun.output_payload?.bank_validation_status ?? bankReconciliation.status,
             pending_collections: bankReconciliation.pending_collections ?? {},
@@ -150,8 +159,14 @@ async function buildMonthlyAiContext(supabase: any, selectedMonth: string, effec
             deposits_by_source: bankReconciliation.deposits_by_source ?? {},
             amex_matches: bankReconciliation.amex_matches ?? [],
             batch_validation: bankReconciliation.batch_validation ?? [],
-          }
-        : null,
+          } : null,
+        snapshot_bancario_actual_hoy: absoluteBankReconciliation ? {
+            business_date: absoluteLatestRun.business_date,
+            status: absoluteLatestRun.output_payload?.bank_validation_status ?? absoluteBankReconciliation.status,
+            pending_collections: absoluteBankReconciliation.pending_collections ?? {},
+            pending_items: absoluteBankReconciliation.pending_items ?? [],
+          } : null,
+      },
     };
   } catch (error) {
     console.error("Error fetching AI monthly context:", error);
@@ -172,11 +187,12 @@ function buildPrompt(input: {
     "Reglas estrictas:",
     "1. Respondé exclusivamente a la pregunta. No des reportes generales si no te los pidieron.",
     "2. Sé conciso y directo. Mostrá cifras exactas con formato $0.00.",
-    "3. Para 'falta entrar', pendientes bancarios o conciliación contra bancos, usá primero 'ultimo_snapshot_bancario.pending_collections' y 'pending_items'. Ese snapshot ya descuenta lo que entró al banco.",
-    "4. Para calcular depósitos ingresados al banco HOY revisa 'ultimo_snapshot_bancario':",
-    "   - Si preguntan por depósitos de BANORTE o depósitos de las terminales Banorte: Mira 'ultimo_snapshot_bancario.deposits_by_source.banorte' para ver el total físico que entró al banco. NO sumes 'batch_validation' (ya que eso es AMEX cayendo en Banorte).",
-    "   - Si preguntan por depósitos de AMERICAN EXPRESS: Suma los montos de 'deposit_amount' o 'amount' dentro de 'amex_matches'.",
-    "   - Si preguntan 'cuánto falta entrar' (pendiente) de BANORTE: Suma SOLO los valores de 'credito' y 'debito' dentro de 'ultimo_snapshot_bancario.pending_collections'. EXCLUYE estrictamente 'amex', son bolsas separadas.",
+    "3. Para responder sobre 'falta entrar', dinero pendiente, o qué falta por depositarse AL DÍA DE HOY (en presente), usa SIEMPRE 'snapshot_bancario_actual_hoy.pending_collections' y 'snapshot_bancario_actual_hoy.pending_items'. Ese snapshot tiene la verdad absoluta de lo que sigue debiéndose HOY en el mundo real.",
+    "   - Si preguntan cuánto de las ventas del día X sigue pendiente hoy, busca la fecha X en 'snapshot_bancario_actual_hoy.pending_items'. Si no está, es que ya se depositó.",
+    "4. Para calcular depósitos ingresados al banco ESE DÍA, revisa 'snapshot_bancario_del_dia_seleccionado':",
+    "   - Si preguntan por depósitos de BANORTE o depósitos de las terminales Banorte: Mira 'snapshot_bancario_del_dia_seleccionado.deposits_by_source.banorte' para ver el total físico que entró al banco ese día. NO sumes 'batch_validation'.",
+    "   - Si preguntan por depósitos de AMERICAN EXPRESS: Suma los montos de 'deposit_amount' o 'amount' dentro de 'snapshot_bancario_del_dia_seleccionado.amex_matches'.",
+    "   - Si preguntan 'cuánto falta entrar' (pendiente) de BANORTE hoy: Suma SOLO los valores de 'credito' y 'debito' dentro de 'snapshot_bancario_actual_hoy.pending_collections'. EXCLUYE estrictamente 'amex'.",
     "5. Para CxC, usá 'cuentas_por_cobrar'. Si un registro está settled, ya fue depositado/conciliado en settled_on.",
     "6. Nunca inventes cifras. Si tras calcular sigues sin datos suficientes, decí: 'No hay información registrada para ese cálculo'.",
     "",
