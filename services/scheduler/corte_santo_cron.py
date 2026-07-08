@@ -436,7 +436,44 @@ def _normalize_pending_snapshot(items: list[dict[str, Any]]) -> list[dict[str, A
 
     for business_date, amount in sorted(banorte_by_date.items()):
         normalized.append(_collection_item("banorte", amount, business_date, **banorte_extra_by_date.get(business_date, {})))
-    return normalized
+    return _dedupe_expected_collections(normalized)
+
+
+def _expected_collection_identity(item: dict[str, Any]) -> tuple[str, str, float, str, str]:
+    source_date = str(item.get("source_date") or item.get("business_date") or "")
+    business_date = str(item.get("business_date") or source_date)
+    channel = str(item.get("channel") or "").lower()
+    amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
+    receivable_key = str(item.get("receivable_key") or item.get("receivable_id") or "")
+    expected_payment_date = str(item.get("expected_payment_date") or "")
+    if receivable_key:
+        return ("receivable", receivable_key, amount, "", "")
+    return (business_date, channel, amount, source_date, expected_payment_date)
+
+
+def _expected_collection_loose_identity(item: dict[str, Any]) -> tuple[str, str, float, str, str]:
+    source_date = str(item.get("source_date") or item.get("business_date") or "")
+    business_date = str(item.get("business_date") or source_date)
+    channel = str(item.get("channel") or "").lower()
+    amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
+    expected_payment_date = str(item.get("expected_payment_date") or "")
+    return (business_date, channel, amount, source_date, expected_payment_date)
+
+
+def _dedupe_expected_collections(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, float, str, str]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = _expected_collection_identity(item)
+        loose_key = _expected_collection_loose_identity(item)
+        if key in seen or loose_key in seen:
+            continue
+        seen.add(key)
+        seen.add(loose_key)
+        deduped.append(item)
+    return deduped
 
 
 def _is_canonical_cxc_receivable(receivable: dict[str, Any]) -> bool:
@@ -581,6 +618,8 @@ def run_bank_watcher_once(
                 "receivable_id": rx.get("id"),
                 "receivable_key": rx.get("receivable_key"),
             })
+
+    expected_cols = _dedupe_expected_collections(expected_cols)
 
     if not expected_cols:
         return {

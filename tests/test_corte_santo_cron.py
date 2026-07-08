@@ -158,6 +158,75 @@ def test_expected_collections_include_new_corte_channels_after_latest_snapshot()
     assert {item["business_date"] for item in pending_runs} == {"2026-07-05", "2026-07-06"}
 
 
+def test_pending_snapshot_normalization_dedupes_rerun_items():
+    items = [
+        {
+            "business_date": "2026-07-05",
+            "source_date": "2026-07-05",
+            "channel": "amex",
+            "amount": 75732.09,
+            "expected_deposit": 75732.09,
+            "expected_payment_date": "2026-07-08",
+        },
+        {
+            "source_date": "2026-07-05",
+            "channel": "amex",
+            "amount": 75732.09,
+            "expected_deposit": 75732.09,
+            "expected_payment_date": "2026-07-08",
+        },
+        {
+            "source_date": "2026-07-05",
+            "channel": "amex",
+            "amount": 75732.09,
+            "expected_deposit": 75732.09,
+            "expected_payment_date": "2026-07-08",
+        },
+        {
+            "source_date": "2026-07-05",
+            "channel": "amex",
+            "amount": 9064.82,
+            "expected_deposit": 9064.82,
+            "expected_payment_date": "2026-07-09",
+        },
+    ]
+
+    normalized = cron._normalize_pending_snapshot(items)
+
+    assert [
+        (item["business_date"], item["channel"], item["expected_deposit"], item.get("expected_payment_date"))
+        for item in normalized
+    ] == [
+        ("2026-07-05", "amex", 75732.09, "2026-07-08"),
+        ("2026-07-05", "amex", 9064.82, "2026-07-09"),
+    ]
+
+
+def test_expected_collection_dedupe_prevents_duplicate_cxc_snapshot_append():
+    items = [
+        {
+            "business_date": "2026-06-29",
+            "source_date": "2026-06-29",
+            "channel": "cxc",
+            "amount": 535.0,
+            "expected_deposit": 535.0,
+        },
+        {
+            "business_date": "2026-06-29",
+            "source_date": "2026-06-29",
+            "channel": "cxc",
+            "amount": 535.0,
+            "expected_deposit": 535.0,
+            "receivable_key": "santo:2026-06-29:cxc:535",
+        },
+    ]
+
+    deduped = cron._dedupe_expected_collections(items)
+
+    assert len(deduped) == 1
+    assert deduped[0]["expected_deposit"] == 535.0
+
+
 def test_pending_summary_uses_only_positive_unmatched_balances():
     items = [
         {"channel": "amex", "amount": 30000},
