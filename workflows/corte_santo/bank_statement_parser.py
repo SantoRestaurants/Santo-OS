@@ -29,7 +29,7 @@ DEFAULT_BANK_KEYWORDS: dict[str, list[str]] = {
     "banorte_settlement": ["REST SANTO"],
     "amex_spei": ["AMERICAN EXPRESS"],
     "uber_spei": ["UBR PAGOS", "UBER"],
-    "rappi_spei": ["RAPPI"],
+    "rappi_spei": ["RAPPI", "TRAPP"],
     "domiciliacion": ["DOMICILIACION", "SPOTIFY", "DOMICILIADO"],
     "ignore_deposit": ["ABONO DCTO. CARTERA"],
     "ignore_fee": ["COMISION", "IVA COMISION"],

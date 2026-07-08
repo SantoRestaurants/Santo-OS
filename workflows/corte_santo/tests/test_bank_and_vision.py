@@ -44,6 +44,23 @@ def test_banorte_unclassified_deposit_requires_review() -> None:
     assert res["unclassified_deposits"][0]["amount"] == 5000.0
 
 
+def test_banorte_classifies_trapp_as_rappi() -> None:
+    rows = [
+        {
+            bank.COL_DESC: "2026070240014TRAPP000450573660",
+            bank.COL_DESC_DETAIL: "-",
+            bank.COL_DEPOSIT: "$1,360.00",
+            bank.COL_WITHDRAWAL: "-",
+        },
+    ]
+
+    res = bank.parse_banorte_rows(rows, {})
+
+    assert res["status"] == "ok"
+    assert res["deposits_by_source"]["rappi"] == 1360.0
+    assert res["unclassified_deposits"] == []
+
+
 def test_banorte_ignores_configured_non_operating_deposit() -> None:
     rows = [
         {
