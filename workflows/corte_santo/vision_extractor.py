@@ -58,7 +58,6 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "fields": ["consumo", "propina", "total"],
     },
     "amex": {
-    "amex": {
         "description": "Foto o export del cierre de lote AMEX.",
         "fields": ["consumo", "propina", "total"],
     },

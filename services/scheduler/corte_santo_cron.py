@@ -293,7 +293,14 @@ def _build_expected_collections(
             latest_snapshot_items = [dict(item) for item in pending_items if isinstance(item, dict)]
             latest_stage = output
 
-    expected: list[dict[str, Any]] = []
+    expected: list[dict[str, Any]] = [
+        _normalize_expected_collection(
+            item,
+            str(item.get("business_date") or item.get("source_date") or latest_snapshot_date),
+        )
+        for item in (latest_snapshot_items or [])
+        if isinstance(item, dict)
+    ]
     pending_runs: list[dict[str, Any]] = []
     seen_dates: set[str] = set()
 
@@ -327,6 +334,7 @@ def _build_expected_collections(
             continue
 
         seen_dates.add(business_date)
+        expected.extend(_expected_collections_from_output(output, business_date))
         pending_runs.append({
             "id": run["id"],
             "business_date": business_date,
@@ -346,14 +354,107 @@ def _build_expected_collections(
             "revision_document": output.get("revision_document"),
         })
 
-    return expected, list(by_date.values()), latest_stage, seen_dates
+    # Deduplicate expected collections
+    unique_expected = []
+    seen_expected = set()
+    for item in expected:
+        sd = str(item.get("source_date") or item.get("business_date"))
+        # We also want to prefer items that have a 'status' if there are duplicates with and without status
+        key = (sd, str(item.get("channel", "")), round(float(item.get("expected_deposit", item.get("amount", 0))), 2))
+        if key not in seen_expected:
+            seen_expected.add(key)
+            unique_expected.append(item)
+        else:
+            # If the new item has a status and the old one didn't, replace it
+            if item.get("status") and not next((x for x in unique_expected if x.get("source_date") == sd and x.get("channel") == item.get("channel") and round(float(x.get("expected_deposit", x.get("amount", 0))), 2) == key[2]), {}).get("status"):
+                for idx, x in enumerate(unique_expected):
+                    if x.get("source_date") == sd and x.get("channel") == item.get("channel") and round(float(x.get("expected_deposit", x.get("amount", 0))), 2) == key[2]:
+                        unique_expected[idx] = item
+                        break
+
+    return unique_expected, list(by_date.values()), latest_stage, seen_dates
+
+
+def _to_money(value: Any) -> float:
+    if value in (None, "", "-"):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return round(float(value), 2)
+    try:
+        return round(float(str(value).replace("$", "").replace(",", "").strip()), 2)
+    except ValueError:
+        return 0.0
+
+
+def _normalize_expected_collection(item: dict[str, Any], business_date: str) -> dict[str, Any]:
+    amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
+    source_date = str(item.get("source_date") or item.get("business_date") or business_date)
+    return {
+        **item,
+        "business_date": str(item.get("business_date") or source_date),
+        "source_date": source_date,
+        "channel": str(item.get("channel") or "unclassified"),
+        "amount": amount,
+        "expected_deposit": amount,
+    }
+
+
+def _expected_collections_from_output(output: dict[str, Any], business_date: str) -> list[dict[str, Any]]:
+    """Build the bank-stage ledger for one Corte day.
+
+    The initial Corte run persists AMEX in ``expected_collections``.  The bank
+    watcher carries those rows forward and adds day-level Banorte/platform
+    expectations from the canonical income register.  Cash and tips are not
+    future bank deposits, so they are intentionally excluded.
+    """
+    raw_expected = output.get("expected_collections")
+    if not isinstance(raw_expected, list):
+        nested = output.get("corte_santo_initial_stage") or {}
+        if isinstance(nested, dict):
+            raw_expected = nested.get("expected_collections")
+
+    expected = [
+        _normalize_expected_collection(item, business_date)
+        for item in (raw_expected or [])
+        if isinstance(item, dict)
+    ]
+    channels = {str(item.get("channel") or "") for item in expected}
+
+    register = output.get("income_register") or {}
+    if not register:
+        workflow_run = (output.get("workflow_result") or {}).get("workflow_run") or {}
+        candidate = (workflow_run.get("canonical_evidence") or {}).get("income_register") or {}
+        if isinstance(candidate, dict):
+            register = candidate
+    if not isinstance(register, dict):
+        register = {}
+
+    def add(channel: str, amount: float) -> None:
+        if amount <= 0 or channel in channels:
+            return
+        channels.add(channel)
+        expected.append({
+            "business_date": business_date,
+            "source_date": business_date,
+            "channel": channel,
+            "amount": amount,
+            "expected_deposit": amount,
+        })
+
+    add("amex", _to_money(register.get("amex")))
+    add("banorte", round(_to_money(register.get("debito")) + _to_money(register.get("credito")), 2))
+    add("uber", _to_money(register.get("uber") if register.get("uber") is not None else register.get("uber_eats")))
+    add("rappi", _to_money(register.get("rappi")))
+    add("paypal", _to_money(register.get("paypal")))
+    add("transferencia", _to_money(register.get("transferencia")))
+    return expected
 
 
 def _summarize_pending(items: list[dict[str, Any]]) -> dict[str, float]:
     totals: dict[str, float] = {}
     for item in items:
         channel = str(item.get("channel") or "unclassified")
-        amount = float(item.get("expected_deposit", item.get("amount", 0)) or 0)
+        amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
         if amount > 0:
             totals[channel] = round(totals.get(channel, 0) + amount, 2)
     return totals
@@ -446,13 +547,19 @@ def run_bank_watcher_once(
             "watcher_result": watcher,
         }
 
-    _, pending_runs, latest_stage1, seen_dates = _build_expected_collections(
+    expected_cols, pending_runs, latest_stage1, seen_dates = _build_expected_collections(
         all_runs,
         effective_date,
     )
 
+    # Remove any existing cxc items from the snapshot since we fetch fresh from DB
+    expected_cols = [
+        item for item in expected_cols 
+        if not str(item.get("channel", "")).lower().startswith("cxc") 
+        and "cxc" not in str(item.get("channel", "")).lower()
+    ]
+
     # ── Fetch active receivables from DB ──
-    expected_cols: list[dict[str, Any]] = []
     resp_rx = httpx.get(
         f"{supabase_url}/rest/v1/corte_receivables",
         params={
@@ -484,7 +591,7 @@ def run_bank_watcher_once(
         }
 
     logging.info(
-        "Bank watcher: %d pending days, %d expected AMEX collections",
+        "Bank watcher: %d pending days, %d expected bank collections",
         len(pending_runs), len(expected_cols),
     )
 

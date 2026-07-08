@@ -7,6 +7,7 @@ def test_parses_june_24_opening_without_movement_id() -> None:
         "kind": "opening",
         "movement_id": None,
         "principal": 785.0,
+        "payment_medium": "unclassified",
         "source": "email_body",
         "description": "CXC $785 La Valisse, quedando pendiente",
     }]

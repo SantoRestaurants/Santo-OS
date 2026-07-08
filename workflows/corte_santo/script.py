@@ -746,7 +746,8 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
         # Intercept CXC events with AI if applicable
         body_text = str(payload.get("body_text") or "")
         cxc_docs_ocr = []
-        for doc in vision_documents:
+        vision_docs_list = vision_documents if isinstance(vision_documents, list) else []
+        for doc in vision_docs_list:
             if isinstance(doc, dict) and doc.get("document_type") == "cxc" and doc.get("raw_ocr"):
                 cxc_docs_ocr.append(doc["raw_ocr"])
                 
@@ -850,6 +851,41 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 "expected_deposit": amex_bruto,
                 "source_date": business_date,
             })
+            
+        # Other channels from sistema
+        for channel in ["banorte", "terminal_banorte", "terminal", "transferencia", "uber", "rappi", "plataformas"]:
+            ch_data = cierre_sistema_data.get(channel, {})
+            if isinstance(ch_data, dict):
+                ch_bruto = round(_to_float(ch_data.get("consumo", 0)) + _to_float(ch_data.get("propina", 0)), 2)
+            else:
+                ch_bruto = _to_float(ch_data)
+                
+            if ch_bruto > 0:
+                expected_collections.append({
+                    "business_date": business_date,
+                    "channel": channel,
+                    "amount": ch_bruto,
+                    "expected_deposit": ch_bruto,
+                    "source_date": business_date,
+                })
+                
+        # CXC events filtering (ignore cash)
+        cxc_events = payload.get("cxc_events", [])
+        for event in cxc_events:
+            medium = event.get("payment_medium", "unclassified")
+            if medium == "efectivo":
+                continue
+            
+            principal = float(event.get("principal", 0))
+            if principal > 0:
+                expected_collections.append({
+                    "business_date": business_date,
+                    "channel": f"cxc_{medium}" if medium != "unclassified" else "cxc",
+                    "amount": principal,
+                    "expected_deposit": principal,
+                    "source_date": business_date,
+                    "cxc_event": event,
+                })
 
     result = {
         "status": status,

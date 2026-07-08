@@ -395,6 +395,15 @@ def reconcile_bank_stage(
     matches: list[dict[str, Any]] = []
     pending_items: list[dict[str, Any]] = []
 
+    max_banorte_date_str = max(
+        (_date_key(d.get("operation_date")) for d in banorte_statement.get("deposits", []) if _date_key(d.get("operation_date"))),
+        default=None
+    )
+    min_banorte_date_str = min(
+        (_date_key(d.get("operation_date")) for d in banorte_statement.get("deposits", []) if _date_key(d.get("operation_date"))),
+        default=None
+    )
+
     # Group AMEX by expected_payment_date for consolidated SPEI matching
     expected_remaining = [dict(item, _matched=False) for item in banorte_expected if item.get("channel") == "amex"]
     for deposit in available:
@@ -412,20 +421,38 @@ def reconcile_bank_stage(
         if len(candidates) < 2:
             continue
         total = round(sum(float(item.get("expected_deposit", item.get("amount", 0))) for item in candidates), 2)
-        if abs(float(deposit.get("amount", 0)) - total) <= tolerance:
+        dep_amount = round(float(deposit.get("amount", 0)), 2)
+        diff = round(dep_amount - total, 2)
+        
+        # Exact match or fuzzy match for AMEX (up to 5% difference)
+        max_diff = max(100.0, total * 0.05)
+        if abs(diff) <= max_diff:
             deposit["matched"] = True
             for item in candidates:
                 item["_matched"] = True
-            matches.append({
-                "expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in candidates],
-                "deposit": deposit,
-            })
+            
+            # If difference is larger than normal tolerance, mark it as liquidacion diff
+            if abs(diff) > tolerance:
+                matches.append({
+                    "expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in candidates],
+                    "deposit": deposit,
+                    "status": "diferencia_liquidacion_amex",
+                    "diferencia": diff
+                })
+            else:
+                matches.append({
+                    "expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in candidates],
+                    "deposit": deposit,
+                })
 
     # One-to-one matching for remaining
     for item in expected_remaining:
         if item["_matched"]:
             continue
         amount = round(float(item.get("expected_deposit", item.get("amount", 0))), 2)
+        expected_date = _date_key(item.get("expected_payment_date"))
+        
+        # Exact match by amount
         matched = next(
             (deposit for deposit in available
              if not deposit.get("matched")
@@ -433,41 +460,132 @@ def reconcile_bank_stage(
              and abs(float(deposit.get("amount", 0)) - amount) <= tolerance),
             None,
         )
+        
+        # Or match by exact date if it's the only one
+        if not matched and expected_date:
+            date_matches = [d for d in available if not d.get("matched") and d.get("source") == "amex" and _date_key(d.get("operation_date")) == expected_date]
+            if len(date_matches) == 1:
+                matched = date_matches[0]
+
         if matched:
+            diff = round(float(matched.get("amount", 0)) - amount, 2)
             matched["matched"] = True
             item["_matched"] = True
-            matches.append({"expected": {k: v for k, v in item.items() if k != "_matched"}, "deposit": matched})
+            if abs(diff) <= tolerance:
+                matches.append({"expected": {k: v for k, v in item.items() if k != "_matched"}, "deposit": matched})
+            else:
+                matched_item = {k: v for k, v in item.items() if k != "_matched"}
+                matched_item["status"] = "diferencia_liquidacion_amex"
+                matched_item["diferencia"] = diff
+                matches.append({"expected": matched_item, "deposit": matched})
         else:
-            pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
+            unmatched_item = {k: v for k, v in item.items() if not k.startswith("_")}
+            if max_banorte_date_str and expected_date and expected_date > max_banorte_date_str:
+                unmatched_item["status"] = "programado"
+            elif min_banorte_date_str and expected_date and expected_date < min_banorte_date_str:
+                unmatched_item["status"] = "fuera_de_rango"
+            else:
+                unmatched_item["status"] = "pendiente"
+            pending_items.append(unmatched_item)
 
     # Non-AMEX channels
     others_remaining = [dict(item, _matched=False) for item in banorte_expected if item.get("channel") != "amex"]
-    for item in others_remaining:
-        if item["_matched"]:
+    for channel in set(item.get("channel") for item in others_remaining):
+        channel_items = [item for item in others_remaining if item.get("channel") == channel and not item["_matched"]]
+        if not channel_items:
             continue
-        channel = item.get("channel")
-        amount = round(float(item.get("expected_deposit", item.get("amount", 0))), 2)
-        matched = next(
-            (deposit for deposit in available
-             if not deposit.get("matched")
-             and deposit.get("source") == channel
-             and abs(float(deposit.get("amount", 0)) - amount) <= tolerance),
-            None,
-        )
-        if matched:
-            matched["matched"] = True
-            item["_matched"] = True
-            matches.append({"expected": {k: v for k, v in item.items() if k != "_matched"}, "deposit": matched})
-        else:
+        
+        # Try to match single deposit or deposit group against expected items
+        # First group available deposits by date
+        available_channel_deps = [d for d in available if not d.get("matched") and d.get("source") == channel]
+        deps_by_date: dict[str, list[dict[str, Any]]] = {}
+        for d in available_channel_deps:
+            d_date = _date_key(d.get("operation_date"))
+            if d_date:
+                deps_by_date.setdefault(d_date, []).append(d)
+
+        # 1. Try to match a single expected item against a group of deposits on the same day
+        for item in channel_items:
+            if item["_matched"]:
+                continue
+            item_amount = round(float(item.get("expected_deposit", item.get("amount", 0))), 2)
+            
+            for date_key, deps in deps_by_date.items():
+                unmatched_deps = [d for d in deps if not d.get("matched")]
+                if not unmatched_deps:
+                    continue
+                # If the sum of ALL unmatched deposits for this channel on this date matches the single item
+                total_deps = round(sum(float(d.get("amount", 0)) for d in unmatched_deps), 2)
+                if abs(total_deps - item_amount) <= tolerance:
+                    item["_matched"] = True
+                    for d in unmatched_deps:
+                        d["matched"] = True
+                    matches.append({
+                        "expected": {k: v for k, v in item.items() if k != "_matched"},
+                        "deposit_group": unmatched_deps
+                    })
+                    break
+
+        # 2. Try to find single deposits that match the sum of a contiguous window of channel_items
+        for deposit in available:
+            if deposit.get("matched") or deposit.get("source") != channel:
+                continue
+            dep_amount = round(float(deposit.get("amount", 0)), 2)
+            
+            # Try to match single item first
+            single_match = next((i for i in channel_items if not i["_matched"] and abs(float(i.get("expected_deposit", i.get("amount", 0))) - dep_amount) <= tolerance), None)
+            if single_match:
+                single_match["_matched"] = True
+                deposit["matched"] = True
+                matches.append({"expected": {k: v for k, v in single_match.items() if k != "_matched"}, "deposit": deposit})
+                continue
+            
+            # Try to match contiguous groups (up to 5 items) for terminal / agrupaciones
+            found_group = False
+            for i in range(len(channel_items)):
+                if found_group:
+                    break
+                if channel_items[i]["_matched"]:
+                    continue
+                group = []
+                group_sum = 0.0
+                for j in range(i, min(i + 5, len(channel_items))):
+                    if channel_items[j]["_matched"]:
+                        break
+                    group.append(channel_items[j])
+                    group_sum += float(channel_items[j].get("expected_deposit", channel_items[j].get("amount", 0)))
+                    if abs(group_sum - dep_amount) <= tolerance:
+                        found_group = True
+                        for item in group:
+                            item["_matched"] = True
+                        deposit["matched"] = True
+                        matches.append({
+                            "expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in group],
+                            "deposit": deposit
+                        })
+                        break
+                        
+    for item in others_remaining:
+        if not item["_matched"]:
             pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
 
     pending: dict[str, float] = {}
     for item in pending_corte_amex:
         channel = str(item.get("channel", "amex"))
         pending[channel] = round(pending.get(channel, 0.0) + float(item.get("amount", 0)), 2)
+        
+    platforms_pending = []
+    final_pending_items = []
     for item in pending_items:
         channel = str(item.get("channel", "unclassified"))
-        pending[channel] = round(pending.get(channel, 0.0) + float(item.get("expected_deposit", item.get("amount", 0))), 2)
+        if channel in ("uber", "rappi", "plataformas", "plataforma"):
+            item["status"] = "pendiente_reporte_plataforma"
+            platforms_pending.append(item)
+        else:
+            if item.get("status") != "programado":
+                pending[channel] = round(pending.get(channel, 0.0) + float(item.get("expected_deposit", item.get("amount", 0))), 2)
+            final_pending_items.append(item)
+    pending_items = final_pending_items
 
     # Status: bank_validated if no exceptions (even if some AMEX pending)
     has_exceptions = bool(exceptions)
@@ -477,7 +595,8 @@ def reconcile_bank_stage(
         "matches": matches,
         "amex_matches": amex_matches,
         "batch_validation": batch_validation,
-        "pending_items": pending_corte_amex + pending_items,
+        "pending_items": pending_items,
+        "platforms_pending": platforms_pending,
         "unused_amex": [{"cargos": p.get("cargos"), "neto": p.get("neto"), "fecha_envio": p.get("fecha_envio")} for p in unused_amex],
         "missing_funds": {
             "corte_to_amex": round(sum(float(item.get("amount", 0)) for item in pending_corte_amex), 2),

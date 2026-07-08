@@ -14,6 +14,22 @@ _SETTLEMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_MEDIUM_EFECTIVO_RE = re.compile(r"\bEFECTIVO\b", re.IGNORECASE)
+_MEDIUM_TARJETA_RE = re.compile(r"\b(?:TARJETA|TDD|TDC|VISA|MASTERCARD|BANORTE)\b", re.IGNORECASE)
+_MEDIUM_TRANSFERENCIA_RE = re.compile(r"\b(?:TRANSFERENCIA|SPEI)\b", re.IGNORECASE)
+_MEDIUM_AMEX_RE = re.compile(r"\bAMEX\b", re.IGNORECASE)
+
+def _extract_medium(text: str) -> str:
+    if _MEDIUM_EFECTIVO_RE.search(text):
+        return "efectivo"
+    if _MEDIUM_TARJETA_RE.search(text):
+        return "tarjeta"
+    if _MEDIUM_TRANSFERENCIA_RE.search(text):
+        return "transferencia"
+    if _MEDIUM_AMEX_RE.search(text):
+        return "amex"
+    return "unclassified"
+
 
 def parse_cxc_events(body: str | None) -> list[dict[str, Any]]:
     """Extract one stable event per CxC mention without interpreting images."""
@@ -39,11 +55,13 @@ def parse_cxc_events(body: str | None) -> list[dict[str, Any]]:
         if amount <= 0 or identity in seen:
             continue
         seen.add(identity)
+        medium = _extract_medium(classification_context)
         events.append(
             {
                 "kind": kind,
                 "movement_id": movement_id,
                 "principal": amount,
+                "payment_medium": medium,
                 "source": "email_body",
                 "description": segment[:180],
             }
@@ -87,6 +105,7 @@ Responde ÚNICAMENTE con un arreglo JSON con el siguiente formato exacto:
     "kind": "opening" | "settlement",
     "movement_id": "90484",
     "principal": 535.0,
+    "payment_medium": "efectivo" | "tarjeta" | "transferencia" | "amex" | "unclassified",
     "description": "Breve motivo o descripción"
   }}
 ]
@@ -96,8 +115,9 @@ REGLAS:
 2. Usa "opening" si es un ajuste por error de mesero, faltante o deuda nueva.
 3. El 'principal' debe ser numérico.
 4. 'movement_id' puede ser null si no se menciona un número de movimiento.
-5. Si no hay eventos de CXC, devuelve [].
-6. NO devuelvas nada fuera del arreglo JSON (sin markdown, sin explicaciones).
+5. Usa el texto y el contexto para determinar el 'payment_medium'. Si no hay evidencia clara, usa "unclassified".
+6. Si no hay eventos de CXC, devuelve [].
+7. NO devuelvas nada fuera del arreglo JSON (sin markdown, sin explicaciones).
 """
 
     api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CORTE_VISION_API_KEY")
