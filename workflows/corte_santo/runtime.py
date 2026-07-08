@@ -271,11 +271,17 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
         amex,
         tolerance=float(config.get("thresholds", {}).get("reconciliation_tolerance", 0)),
     )
+    pending_collections = bank_result.get("pending_collections") or {}
+    bank_stage_status = (
+        "bank_validated"
+        if bank_result.get("status") == "bank_validated" and not pending_collections
+        else "bank_requires_review"
+    )
+    bank_result = {**bank_result, "status": bank_stage_status}
 
     paths = payload.get("workbook_paths", {})
     outputs = payload.get("workbook_outputs", {})
-    pending_collections = bank_result.get("pending_collections") or {}
-    if bank_result.get("status") == "bank_validated" and not pending_collections:
+    if bank_stage_status == "bank_validated":
         ingresos_result = writer.write_ingresos(
             str(paths.get("ingresos", "")),
             str(outputs.get("ingresos", "")),

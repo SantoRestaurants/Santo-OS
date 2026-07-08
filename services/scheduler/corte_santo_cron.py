@@ -900,7 +900,10 @@ def run_bank_watcher_once(
                 revision["falta_por_entrar"] = pending_collections
                 revision["bank_validation_status"] = persisted_bank_status
                 current_op["revision_document"] = revision
-                current_op["bank_reconciliation"] = bank_result
+                current_op["bank_reconciliation"] = {
+                    **bank_result,
+                    "status": persisted_bank_status,
+                }
                 current_op["falta_por_entrar_por_dia"] = result["falta_por_entrar_por_dia"]
                 current_op["bank_validation_status"] = persisted_bank_status
                 current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
