@@ -499,6 +499,8 @@ def reconcile_bank_stage(
 
     return {
         "status": "requires_review" if has_exceptions else "bank_validated",
+        "deposits_by_source": banorte_statement.get("deposits_by_source", {}),
+        "deposits": banorte_statement.get("deposits", []),
         "matches": matches,
         "amex_matches": amex_matches,
         "batch_validation": batch_validation,
