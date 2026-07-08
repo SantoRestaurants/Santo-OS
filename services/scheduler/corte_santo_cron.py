@@ -439,6 +439,17 @@ def _normalize_pending_snapshot(items: list[dict[str, Any]]) -> list[dict[str, A
     return normalized
 
 
+def _is_canonical_cxc_receivable(receivable: dict[str, Any]) -> bool:
+    evidence = receivable.get("evidence")
+    if not isinstance(evidence, dict) or not evidence:
+        return False
+    if evidence.get("kind") in ("opening", "settlement"):
+        return True
+    if evidence.get("source") in ("email_body", "vision_extractor"):
+        return True
+    return bool(evidence.get("description") or evidence.get("movement_id"))
+
+
 def _summarize_pending(items: list[dict[str, Any]]) -> dict[str, float]:
     totals: dict[str, float] = {}
     for item in items:
@@ -555,6 +566,8 @@ def run_bank_watcher_once(
             if not isinstance(rx, dict):
                 continue
             ev = rx.get("evidence") or {}
+            if not _is_canonical_cxc_receivable(rx):
+                continue
             channel = ev.get("channel") if isinstance(ev, dict) else None
             amount = _to_money(rx.get("principal")) - _to_money(rx.get("settled_principal"))
             if amount <= 0:

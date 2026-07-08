@@ -167,3 +167,18 @@ def test_pending_summary_uses_only_positive_unmatched_balances():
     ]
 
     assert cron._summarize_pending(items) == {"amex": 35000, "uber": 8000}
+
+
+def test_legacy_channel_receivables_are_not_canonical_cxc():
+    assert not cron._is_canonical_cxc_receivable(
+        {
+            "receivable_key": "restaurant:2026-07-06:efectivo",
+            "evidence": {},
+        }
+    )
+    assert cron._is_canonical_cxc_receivable(
+        {
+            "receivable_key": "restaurant:2026-07-06:535.00:abc",
+            "evidence": {"kind": "opening", "principal": 535.0, "source": "vision_extractor"},
+        }
+    )

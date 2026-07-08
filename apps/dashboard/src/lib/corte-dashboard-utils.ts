@@ -274,6 +274,7 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
 
   for (const rec of receivables) {
     if (rec.status !== "open") continue;
+    if (!isCanonicalReceivable(rec)) continue;
     if (representedReceivables.has(rec.receivable_key)) continue;
     const amount = amountOf(rec.principal) - amountOf(rec.settled_principal);
     if (amount <= 0 || Number.isNaN(amount)) continue;
@@ -322,6 +323,14 @@ function normalizeReceivableChannel(rec: CorteReceivableLike) {
   if (!normalized.startsWith("Otros")) return normalized;
   const description = typeof ev?.description === "string" ? ev.description : null;
   return description ? `CXC (${description})` : "CXC";
+}
+
+function isCanonicalReceivable(rec: CorteReceivableLike) {
+  const ev = rec.evidence;
+  if (!ev || Object.keys(ev).length === 0) return false;
+  if (ev.kind === "opening" || ev.kind === "settlement") return true;
+  if (ev.source === "email_body" || ev.source === "vision_extractor") return true;
+  return Boolean(ev.description || ev.movement_id);
 }
 function compareRunQuality(a: RunLike, b: RunLike) {
   return scoreRun(b) - scoreRun(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();

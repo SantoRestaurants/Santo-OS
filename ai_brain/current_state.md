@@ -23,6 +23,10 @@
   collections, and dashboard outstanding now renders unmatched bank
   `pending_items` plus open CxC rows without double-counting CxC already
   represented in a bank snapshot.
+- Non-canonical legacy `corte_receivables` rows with empty evidence, created by
+  prior manual scripts for channels such as efectivo/debito/credito, are ignored
+  by both the bank watcher and dashboard so they do not duplicate or inflate the
+  live outstanding balance.
 - Agent Mail no longer overwrites workflow `expected_collections` with `[]`
   when persisting stage-1 output for the bank watcher. CxC events extracted
   from OCR/vision evidence are now propagated into canonical evidence and
