@@ -75,27 +75,45 @@ export async function POST(request: Request) {
     }
   }
 
+  // Fetch absolute latest run to have present-day awareness
+  let absoluteLatestReconciliationData: any = {};
+  const { data: absoluteLatestRun } = await supabase
+    .from("workflow_runs")
+    .select("output_payload")
+    .eq("workflow_key", "corte_santo_daily_sales_reconciliation")
+    .eq("source_channel", "agent_mail")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (absoluteLatestRun && absoluteLatestRun.length > 0) {
+    const payload = absoluteLatestRun[0].output_payload || {};
+    absoluteLatestReconciliationData = payload.bank_reconciliation || {};
+  }
+
   // 3. Build the prompt with ALL information
   const parts: string[] = [
     "Sos SantoBot, el experto analista de datos y financiero de Santo Restaurants. Le hablás a los socios.",
     "Reglas estrictas:",
     "1. Respondé EXCLUSIVAMENTE a la pregunta del usuario. No des reportes adicionales.",
     "2. Sé conciso y directo, sin rodeos. Da cifras exactas con el formato $0.00.",
-    "3. IMPORTANTE: Para calcular depósitos (lo que ya entró al banco hoy) y pendientes (lo que falta por depositar), REVISA CUIDADOSAMENTE la sección DATOS DE CONCILIACIÓN BANCARIA DEL DÍA.",
-    "   - Si preguntan por depósitos de BANORTE: Suma los montos de 'banorte_deposit' dentro del array 'batch_validation' que tengan status 'ok'. (Banorte procesa tarjetas de débito y crédito).",
+    "3. Para responder sobre 'falta entrar', dinero pendiente, o qué falta por depositarse, DEBES FILTRAR SIEMPRE POR EL DÍA SELECCIONADO en la UI (`DÍA DE CORTE`).",
+    "   - REGLA DE ORO: NO des el saldo global de toda la historia. Busca ÚNICAMENTE las ventas del día seleccionado dentro de la sección 'ESTADO BANCARIO ACTUAL (AL DÍA DE HOY)' en 'pending_items' filtrando por 'source_date'.",
+    "   - Si no encuentras ningún item en la foto actual de HOY que coincida con la fecha seleccionada y el canal solicitado, significa que esas ventas YA SE DEPOSITARON en los días siguientes. En ese caso responde: '$0.00 (Ya ingresó todo al banco)'.",
+    "4. Para calcular depósitos ingresados al banco ESE DÍA, revisa la sección 'DATOS DE CONCILIACIÓN BANCARIA DEL DÍA SELECCIONADO':",
+    "   - Si preguntan por depósitos de BANORTE: Suma los montos de 'banorte_deposit' dentro del array 'batch_validation' que tengan status 'ok'.",
     "   - Si preguntan por depósitos de AMERICAN EXPRESS: Suma los montos de 'deposit_amount' dentro del array 'amex_matches'.",
-    "   - Para montos faltantes/pendientes, revisa el objeto 'pending_collections' (tiene llaves como 'amex', 'debito', 'credito').",
-    "   - Si la información está en la data JSON, ¡haz el cálculo matemático internamente y responde con seguridad! NUNCA digas que no hay información si puedes calcularla sumando los campos mencionados.",
-    "4. Si un registro en cuentas_por_cobrar tiene status 'settled', YA FUE DEPOSITADO.",
     "5. Si tras revisar exhaustivamente los JSON no encuentras los datos, responde 'No hay información registrada para ese cálculo'.",
     `DÍA DE CORTE: ${effectiveDate}`,
     "",
     "━━━ DATOS CRUDOS DE VENTAS Y CXC DEL MES ━━━",
     JSON.stringify(rawMonthlyData),
     "",
-    "━━━ DATOS DE CONCILIACIÓN BANCARIA DEL DÍA ━━━",
-    "Aquí tienes los detalles de lo que realmente ingresó al banco y lo que quedó pendiente para este corte:",
+    "━━━ DATOS DE CONCILIACIÓN BANCARIA DEL DÍA SELECCIONADO ━━━",
+    "Aquí tienes los detalles de lo que realmente ingresó al banco ese día específico:",
     JSON.stringify(reconciliationData),
+    "",
+    "━━━ ESTADO BANCARIO ACTUAL (AL DÍA DE HOY) ━━━",
+    "Aquí tienes la foto del banco AL DÍA DE HOY. Usa ESTA SECCIÓN SIEMPRE para responder sobre qué dinero sigue pendiente filtrando por source_date:",
+    JSON.stringify(absoluteLatestReconciliationData),
     "",
     `PREGUNTA DEL USUARIO: ${question}`
   ];

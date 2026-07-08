@@ -453,10 +453,26 @@ def _expected_collections_from_output(output: dict[str, Any], business_date: str
 def _summarize_pending(items: list[dict[str, Any]]) -> dict[str, float]:
     totals: dict[str, float] = {}
     for item in items:
-        channel = str(item.get("channel") or "unclassified")
+        base_channel = str(item.get("channel") or "unclassified")
         amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
-        if amount > 0:
-            totals[channel] = round(totals.get(channel, 0) + amount, 2)
+        if amount <= 0:
+            continue
+            
+        status = str(item.get("status") or "")
+        label = base_channel
+        
+        if status == "fuera_de_rango":
+            label = f"{base_channel}_fuera_de_rango"
+        elif base_channel == "amex":
+            if item.get("expected_payment_date"):
+                label = "amex_neto_pendiente"
+            else:
+                label = "amex_bruto_sin_reporte"
+        elif base_channel == "banorte":
+            label = "banorte_terminal_pendiente"
+            
+        totals[label] = round(totals.get(label, 0) + amount, 2)
+        
     return totals
 
 

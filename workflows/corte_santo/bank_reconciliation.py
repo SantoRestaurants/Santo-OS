@@ -570,20 +570,36 @@ def reconcile_bank_stage(
             pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
 
     pending: dict[str, float] = {}
-    for item in pending_corte_amex:
-        channel = str(item.get("channel", "amex"))
-        pending[channel] = round(pending.get(channel, 0.0) + float(item.get("amount", 0)), 2)
-        
     platforms_pending = []
     final_pending_items = []
+    
+    # We use pending_items directly since it contains all unmatched items.
     for item in pending_items:
         channel = str(item.get("channel", "unclassified"))
         if channel in ("uber", "rappi", "plataformas", "plataforma"):
             item["status"] = "pendiente_reporte_plataforma"
             platforms_pending.append(item)
         else:
-            if item.get("status") != "programado":
-                pending[channel] = round(pending.get(channel, 0.0) + float(item.get("expected_deposit", item.get("amount", 0))), 2)
+            status = str(item.get("status") or "")
+            label = channel
+            
+            # Decide if we count it in pending collections
+            # We count all 'fuera_de_rango' and 'pendiente'
+            # For AMEX, we count EVERYTHING because AMEX is always 'pending' until deposited.
+            # For others, we skip 'programado' because they are future terminal settlements.
+            if channel == "amex" or status != "programado":
+                if status == "fuera_de_rango":
+                    label = f"{channel}_fuera_de_rango"
+                elif channel == "amex":
+                    if item.get("expected_payment_date"):
+                        label = "amex_neto_pendiente"
+                    else:
+                        label = "amex_bruto_sin_reporte"
+                elif channel == "banorte":
+                    label = "banorte_terminal_pendiente"
+                    
+                pending[label] = round(pending.get(label, 0.0) + float(item.get("expected_deposit", item.get("amount", 0))), 2)
+            
             final_pending_items.append(item)
     pending_items = final_pending_items
 
