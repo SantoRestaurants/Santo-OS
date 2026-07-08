@@ -62,6 +62,38 @@ function dateLabel(value: string | null | undefined, mode: "short" | "long" = "l
   }).format(parsed);
 }
 
+type AdditionalExpense = {
+  amount: number;
+  description: string;
+  detail?: string | null;
+};
+
+function additionalExpensesForRun(run: ReconciliationRun | null): AdditionalExpense[] {
+  if (!run) return [];
+  const day = run.business_date;
+  const payload = run.output_payload ?? {};
+  const bank = payload.bank_reconciliation as Record<string, unknown> | undefined;
+  const bankExpenses = Array.isArray(bank?.additional_expenses) ? bank.additional_expenses : [];
+  const revisionExpenses = Array.isArray(run.revision?.gastos_adicionales) ? run.revision.gastos_adicionales : [];
+  const source = bankExpenses.length > 0 ? bankExpenses : revisionExpenses;
+
+  return source
+    .filter((raw): raw is Record<string, unknown> => Boolean(raw && typeof raw === "object" && !Array.isArray(raw)))
+    .filter((raw) => {
+      const operationDate = typeof raw.operation_date === "string" ? raw.operation_date : null;
+      if (!day || !operationDate) return true;
+      const [dd, mm, yyyy] = operationDate.split("/");
+      const normalized = yyyy && mm && dd ? `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}` : operationDate;
+      return normalized === day;
+    })
+    .map((raw) => ({
+      amount: Number(raw.amount ?? raw.importe ?? 0),
+      description: String(raw.description ?? raw.concepto ?? "Gasto adicional"),
+      detail: typeof raw.detail === "string" ? raw.detail : typeof raw.observaciones === "string" ? raw.observaciones : null,
+    }))
+    .filter((item) => Number.isFinite(item.amount) && item.amount > 0);
+}
+
 function monthLabel(key: string) {
   const date = parseDate(`${key}-01`);
   if (!date) return key;
@@ -429,6 +461,34 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                             </div>
                           ))}
                         </>;
+                      })()}
+                    </div>
+                    <div className="rounded-md border px-2.5 py-2 md:col-span-2" style={{ borderColor: LINE }}>
+                      <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Gastos adicionales</div>
+                      {(() => {
+                        const expenses = additionalExpensesForRun(selectedRun);
+                        if (expenses.length === 0) {
+                          return <div className="text-xs" style={{ color: MUTED }}>Sin gastos adicionales para este dia</div>;
+                        }
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs py-0.5" style={{ color: INK }}>
+                              <span style={{ color: MUTED }}>Total del dia</span>
+                              <span className="font-semibold" style={{ color: RED }}>{money(expenses.reduce((sum, item) => sum + item.amount, 0))}</span>
+                            </div>
+                            {expenses.map((expense, index) => (
+                              <div key={`${expense.description}-${index}`} className="rounded border px-2 py-1 text-xs" style={{ borderColor: LINE }}>
+                                <div className="flex justify-between gap-3" style={{ color: INK }}>
+                                  <span className="min-w-0 truncate" style={{ color: MUTED }}>{expense.description}</span>
+                                  <span className="shrink-0 font-medium">{money(expense.amount)}</span>
+                                </div>
+                                {expense.detail && expense.detail !== "-" && (
+                                  <div className="mt-1 line-clamp-2" style={{ color: MUTED }}>{expense.detail}</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
                       })()}
                     </div>
                   </div>

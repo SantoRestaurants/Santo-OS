@@ -51,6 +51,38 @@ function dateLabel(value: string | null | undefined, mode: "short" | "long" = "l
   }).format(parsed);
 }
 
+type AdditionalExpense = {
+  amount: number;
+  description: string;
+  detail?: string | null;
+};
+
+function additionalExpensesForRun(run: ReconciliationRun | null): AdditionalExpense[] {
+  if (!run) return [];
+  const day = run.business_date;
+  const payload = run.output_payload ?? {};
+  const bank = payload.bank_reconciliation as Record<string, unknown> | undefined;
+  const bankExpenses = Array.isArray(bank?.additional_expenses) ? bank.additional_expenses : [];
+  const revisionExpenses = Array.isArray(run.revision?.gastos_adicionales) ? run.revision.gastos_adicionales : [];
+  const source = bankExpenses.length > 0 ? bankExpenses : revisionExpenses;
+
+  return source
+    .filter((raw): raw is Record<string, unknown> => Boolean(raw && typeof raw === "object" && !Array.isArray(raw)))
+    .filter((raw) => {
+      const operationDate = typeof raw.operation_date === "string" ? raw.operation_date : null;
+      if (!day || !operationDate) return true;
+      const [dd, mm, yyyy] = operationDate.split("/");
+      const normalized = yyyy && mm && dd ? `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}` : operationDate;
+      return normalized === day;
+    })
+    .map((raw) => ({
+      amount: Number(raw.amount ?? raw.importe ?? 0),
+      description: String(raw.description ?? raw.concepto ?? "Gasto adicional"),
+      detail: typeof raw.detail === "string" ? raw.detail : typeof raw.observaciones === "string" ? raw.observaciones : null,
+    }))
+    .filter((item) => Number.isFinite(item.amount) && item.amount > 0);
+}
+
 function isBankValidated(run: ReconciliationRun) {
   return run.status === "completed" || run.status === "bank_validated" || run.documents.some(d => d.document_type === "amex_statement" || d.document_type === "banorte_statement");
 }
@@ -617,6 +649,37 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                               <span style={{ color: C.red, fontWeight: 600, fontSize: "14px" }}>{moneyFull(amount)}</span>
                             </div>
                           ))}
+                        </div>
+                      );
+                    })()}
+
+                    {/* gastos adicionales */}
+                    {(() => {
+                      const expenses = additionalExpensesForRun(selectedRun);
+                      return (
+                        <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Gastos adicionales</div>
+                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>{dateLabel(selectedRun.business_date, "short")}</div>
+                          {expenses.length === 0 ? (
+                            <div style={{ color: C.dim, fontSize: "13px" }}>Sin gastos adicionales registrados</div>
+                          ) : (
+                            <>
+                              <div className="display-font" style={{ color: C.red, fontSize: "30px", fontWeight: 700, marginBottom: "12px" }}>
+                                {moneyFull(expenses.reduce((sum, item) => sum + item.amount, 0))}
+                              </div>
+                              {expenses.map((expense, index) => (
+                                <div key={`${expense.description}-${index}`} style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                                  <div className="flex justify-between gap-3">
+                                    <span style={{ color: C.dim, fontSize: "13px" }}>{expense.description}</span>
+                                    <span style={{ color: C.red, fontWeight: 600, fontSize: "14px", whiteSpace: "nowrap" }}>{moneyFull(expense.amount)}</span>
+                                  </div>
+                                  {expense.detail && expense.detail !== "-" && (
+                                    <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", lineHeight: 1.4 }}>{expense.detail}</div>
+                                  )}
+                                </div>
+                              ))}
+                            </>
+                          )}
                         </div>
                       );
                     })()}
