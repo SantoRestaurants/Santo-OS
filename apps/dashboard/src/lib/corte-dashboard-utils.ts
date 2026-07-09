@@ -245,6 +245,12 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
 
   const entriesMap = new Map<string, number>();
   const representedReceivables = new Set<string>();
+  // CxC is a lifecycle ledger. When its open items are available, they are
+  // more precise than the aggregate CxC amount retained in a bank snapshot.
+  const hasOpenReceivables = receivables.some((rec) => {
+    const outstanding = amountOf(rec.principal) - amountOf(rec.settled_principal);
+    return rec.status === "open" && outstanding > 0 && !Number.isNaN(outstanding);
+  });
   const payload = latestBankRun.output_payload ?? {};
   const bankReconciliation = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
   const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
@@ -259,6 +265,7 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
     const channelRaw = String(raw.channel ?? "unclassified");
     const status = String(raw.status ?? "");
     if (channelRaw !== "amex" && status === "programado") continue;
+    if (hasOpenReceivables && channelRaw.toLowerCase() === "cxc") continue;
 
     const amount = amountOf(raw.amount ?? raw.expected_deposit);
     if (amount <= 0) continue;
@@ -270,6 +277,7 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
 
   if (pendingItems.length === 0 && isRecord(bank?.pending_collections)) {
     for (const [channel, value] of Object.entries(bank.pending_collections)) {
+      if (hasOpenReceivables && channel.toLowerCase() === "cxc") continue;
       const amount = amountOf(value);
       const normalizedChannel = normalizeOutstandingChannel(channel);
       if (amount > 0) entriesMap.set(normalizedChannel, (entriesMap.get(normalizedChannel) ?? 0) + amount);
@@ -331,13 +339,17 @@ function normalizeOutstandingChannel(channel: string, item?: Record<string, unkn
 function normalizeReceivableChannel(rec: CorteReceivableLike) {
   const ev = rec.evidence;
   const evidenceChannel = typeof ev?.channel === "string" ? ev.channel : null;
-  if (evidenceChannel) return normalizeOutstandingChannel(evidenceChannel, ev ?? undefined);
+  const description = typeof ev?.description === "string" ? ev.description.trim() : null;
+  if (evidenceChannel) {
+    const normalized = normalizeOutstandingChannel(evidenceChannel, ev ?? undefined);
+    if (normalized === "CXC" && description) return `CXC — ${description}`;
+    return normalized;
+  }
   const parts = rec.receivable_key.split(":");
   const raw = parts.length >= 3 ? parts[2] : (parts.length === 2 ? parts[1] : "cxc");
   const normalized = normalizeOutstandingChannel(raw, ev ?? undefined);
   if (!normalized.startsWith("Otros")) return normalized;
-  const description = typeof ev?.description === "string" ? ev.description : null;
-  return description ? `CXC (${description})` : "CXC";
+  return description ? `CXC — ${description}` : "CXC";
 }
 function compareRunQuality(a: RunLike, b: RunLike) {
   return scoreRun(b) - scoreRun(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();

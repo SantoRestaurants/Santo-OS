@@ -1,5 +1,12 @@
 # Current State
 
+## 2026-07-09 - Manual CxC breakdown is ledger-backed
+
+- The outstanding balance now prefers open `corte_receivables` items over a
+  stale aggregate CxC figure in the bank snapshot, preventing double-counting.
+- Manual outstanding CxC may be recorded as named, auditable ledger items and
+  is rendered item-by-item in both `/socios` and `/cortes`.
+
 ## 2026-07-08 - Corte outstanding ledger semantics corrected
 
 - Confirmed `Falta por entrar` source of truth: daily Corte sales by source
