@@ -435,11 +435,18 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
           {/* ── UNIT SELECTOR ──────────────────────────── */}
           <div className="selector-bar">
             <span className="selector-label">Restaurante</span>
-            {units.map(u => (
-              <Link key={u} href={hpUnit(u)} className={`unit-pill ${u === selectedUnit ? "active" : ""}`}>
-                {u}
-              </Link>
-            ))}
+            {restaurantOptions.map(u => {
+              const hasData = units.includes(u);
+              return hasData ? (
+                <Link key={u} href={hpUnit(u)} className={`unit-pill ${u === selectedUnit ? "active" : ""}`}>
+                  {u}
+                </Link>
+              ) : (
+                <span key={u} className="unit-pill disabled" aria-disabled="true" title="Proximamente">
+                  {u}
+                </span>
+              );
+            })}
           </div>
 
           {/* ── YEAR SELECTOR ────────────────────────────── */}
