@@ -1,4 +1,5 @@
 import { getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
+import { RESTAURANT_OPTIONS } from "@/lib/restaurant-options";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
 import Link from "next/link";
 import Image from "next/image";
@@ -145,6 +146,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const allRuns = data.runs.filter(r => r.business_date);
   const runs = dedupeRunsByDay(allRuns);
   const units = Array.from(new Set(runs.map(getUnit))).sort();
+  const restaurantOptions = Array.from(new Set([...RESTAURANT_OPTIONS, ...units]));
 
   /* navigation state */
   const todayMonth = new Date().toISOString().slice(0, 7);
@@ -366,6 +368,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
           border: 1px solid ${C.border}; background: ${C.surface}; color: ${C.dim};
           transition: all 0.15s ease; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; }
         .year-pill:hover, .unit-pill:hover { background: ${C.surfaceHover}; color: ${C.ink}; }
+        .unit-pill.disabled { cursor: not-allowed; opacity: 0.45; }
+        .unit-pill.disabled:hover { background: ${C.surface}; color: ${C.dim}; }
         .year-pill.active, .unit-pill.active { background: ${C.santoGlow}; border-color: ${C.borderActive}; color: ${C.santo}; }
 
         .selector-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px;

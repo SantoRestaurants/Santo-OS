@@ -12,6 +12,7 @@ import Link from "next/link";
 
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
+import { RESTAURANT_OPTIONS } from "@/lib/restaurant-options";
 import { CorteAiBox } from "./CorteAiBox";
 import { InlineEditTable } from "./InlineEditTable";
 
@@ -163,6 +164,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const runs = dedupeRunsByDay(allRuns);
   const duplicateDates = duplicateRunsByDay(allRuns);
   const units = Array.from(new Set(runs.map(getUnit))).sort();
+  const restaurantOptions = Array.from(new Set([...RESTAURANT_OPTIONS, ...units]));
   const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
   const unitAllRuns = allRuns.filter((run) => getUnit(run) === selectedUnit);
   const unitRuns = runs.filter((run) => getUnit(run) === selectedUnit);
@@ -245,16 +247,25 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
         <section className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
           <div className="mb-3 flex items-center gap-2 font-semibold"><CalendarDays className="h-4 w-4" /> Unidad</div>
           <div className="flex flex-wrap gap-2">
-            {(units.length ? units : ["SANTO"]).map((unit) => (
-              <Link
-                key={unit}
-                href={`/cortes?unit=${unit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`}
-                className="rounded-md border px-4 py-2 text-sm font-semibold"
-                style={{ borderColor: unit === selectedUnit ? GOLD : LINE, background: unit === selectedUnit ? "#fdf2f2" : PANEL, color: unit === selectedUnit ? GOLD : INK }}
-              >
-                {unit}
-              </Link>
-            ))}
+            {restaurantOptions.map((unit) => {
+              const hasData = units.includes(unit);
+              const className = "rounded-md border px-4 py-2 text-sm font-semibold";
+              const style = { borderColor: unit === selectedUnit ? GOLD : LINE, background: unit === selectedUnit ? "#fdf2f2" : PANEL, color: unit === selectedUnit ? GOLD : INK };
+              return hasData ? (
+                <Link
+                  key={unit}
+                  href={`/cortes?unit=${unit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`}
+                  className={className}
+                  style={style}
+                >
+                  {unit}
+                </Link>
+              ) : (
+                <span key={unit} className={`${className} cursor-not-allowed opacity-45`} style={style} aria-disabled="true" title="Próximamente">
+                  {unit}
+                </span>
+              );
+            })}
           </div>
         </section>
 
