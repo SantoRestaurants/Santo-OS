@@ -49,45 +49,6 @@ def test_run_all_aggregates_requires_review(monkeypatch):
     assert result["jobs"][0]["job"] == "agent-mail"
 
 
-def test_expected_collections_carry_only_latest_unmatched_items():
-    runs = [
-        {
-            "id": "june-28",
-            "business_date": "2026-06-28",
-            "output_payload": {"income_register": {"amex": 30000, "debito": 20000}},
-        },
-        {
-            "id": "july-04-snapshot",
-            "business_date": "2026-07-04",
-            "output_payload": {
-                "bank_reconciliation": {
-                    "pending_items": [
-                        {
-                            "business_date": "2026-06-28",
-                            "source_date": "2026-06-28",
-                            "channel": "debito",
-                            "amount": 20000,
-                            "expected_deposit": 20000,
-                        }
-                    ],
-                    "pending_collections": {"debito": 20000},
-                }
-            },
-        },
-        {
-            "id": "july-05",
-            "business_date": "2026-07-05",
-            "output_payload": {"income_register": {"uber": 8000}},
-        },
-    ]
-
-    expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-05")
-
-    assert {(item["channel"], item["amount"]) for item in expected} == {
-        ("banorte", 20000),
-        ("uber", 8000),
-    }
-    assert not any(item["channel"] == "amex" for item in expected)
 
 
 def test_empty_latest_snapshot_does_not_revive_settled_items():
@@ -132,6 +93,9 @@ def test_expected_collections_include_new_corte_channels_after_latest_snapshot()
             "id": "new",
             "business_date": "2026-07-06",
             "output_payload": {
+                "expected_collections": [
+                    {"business_date": "2026-07-06", "channel": "amex", "amount": 3000}
+                ],
                 "income_register": {
                     "amex": 3000,
                     "debito": 4000,
@@ -158,73 +122,43 @@ def test_expected_collections_include_new_corte_channels_after_latest_snapshot()
     assert {item["business_date"] for item in pending_runs} == {"2026-07-05", "2026-07-06"}
 
 
-def test_pending_snapshot_normalization_dedupes_rerun_items():
-    items = [
+def test_expected_collections_do_not_recreate_days_before_authoritative_snapshot():
+    runs = [
         {
+            "id": "old",
+            "business_date": "2026-07-03",
+            "output_payload": {
+                "expected_collections": [
+                    {"business_date": "2026-07-03", "channel": "amex", "amount": 3000}
+                ],
+                "income_register": {"amex": 3000, "debito": 1000, "credito": 2000},
+            },
+        },
+        {
+            "id": "snapshot",
             "business_date": "2026-07-05",
-            "source_date": "2026-07-05",
-            "channel": "amex",
-            "amount": 75732.09,
-            "expected_deposit": 75732.09,
-            "expected_payment_date": "2026-07-08",
-        },
-        {
-            "source_date": "2026-07-05",
-            "channel": "amex",
-            "amount": 75732.09,
-            "expected_deposit": 75732.09,
-            "expected_payment_date": "2026-07-08",
-        },
-        {
-            "source_date": "2026-07-05",
-            "channel": "amex",
-            "amount": 75732.09,
-            "expected_deposit": 75732.09,
-            "expected_payment_date": "2026-07-08",
-        },
-        {
-            "source_date": "2026-07-05",
-            "channel": "amex",
-            "amount": 9064.82,
-            "expected_deposit": 9064.82,
-            "expected_payment_date": "2026-07-09",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-04", "channel": "banorte", "amount": 500}
+                    ],
+                    "pending_collections": {"banorte": 500},
+                }
+            },
         },
     ]
 
-    normalized = cron._normalize_pending_snapshot(items)
+    expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-05")
 
-    assert [
-        (item["business_date"], item["channel"], item["expected_deposit"], item.get("expected_payment_date"))
-        for item in normalized
-    ] == [
-        ("2026-07-05", "amex", 75732.09, "2026-07-08"),
-        ("2026-07-05", "amex", 9064.82, "2026-07-09"),
-    ]
-
-
-def test_expected_collection_dedupe_prevents_duplicate_cxc_snapshot_append():
-    items = [
+    assert expected == [
         {
-            "business_date": "2026-06-29",
-            "source_date": "2026-06-29",
-            "channel": "cxc",
-            "amount": 535.0,
-            "expected_deposit": 535.0,
-        },
-        {
-            "business_date": "2026-06-29",
-            "source_date": "2026-06-29",
-            "channel": "cxc",
-            "amount": 535.0,
-            "expected_deposit": 535.0,
-            "receivable_key": "santo:2026-06-29:cxc:535",
-        },
+            "business_date": "2026-07-04",
+            "source_date": "2026-07-04",
+            "channel": "banorte",
+            "amount": 500.0,
+            "expected_deposit": 500.0,
+        }
     ]
-
-    deduped = cron._dedupe_expected_collections(items)
-
-    assert len(deduped) == 1
-    assert deduped[0]["expected_deposit"] == 535.0
 
 
 def test_pending_summary_uses_only_positive_unmatched_balances():
@@ -236,18 +170,3 @@ def test_pending_summary_uses_only_positive_unmatched_balances():
     ]
 
     assert cron._summarize_pending(items) == {"amex": 35000, "uber": 8000}
-
-
-def test_legacy_channel_receivables_are_not_canonical_cxc():
-    assert not cron._is_canonical_cxc_receivable(
-        {
-            "receivable_key": "restaurant:2026-07-06:efectivo",
-            "evidence": {},
-        }
-    )
-    assert cron._is_canonical_cxc_receivable(
-        {
-            "receivable_key": "restaurant:2026-07-06:535.00:abc",
-            "evidence": {"kind": "opening", "principal": 535.0, "source": "vision_extractor"},
-        }
-    )

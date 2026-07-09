@@ -50,6 +50,29 @@ def _date_key(value: Any) -> str | None:
     return text
 
 
+def _pending_amount(item: dict[str, Any]) -> float:
+    """Operational outstanding balance uses the Corte/source amount.
+
+    AMEX statements can enrich an item with the net bank deposit expected after
+    commissions, but the user-facing "falta por entrar" ledger is keyed to the
+    original Corte sale amount by source date.
+    """
+    return round(float(item.get("amount", item.get("expected_deposit", 0)) or 0), 2)
+
+
+def _bank_match_amount(item: dict[str, Any]) -> float:
+    return round(float(item.get("expected_deposit", item.get("amount", 0)) or 0), 2)
+
+
+def _ledger_key(item: dict[str, Any]) -> tuple[str, str, float, str]:
+    return (
+        str(item.get("channel") or "unclassified"),
+        str(item.get("source_date") or item.get("business_date") or ""),
+        _pending_amount(item),
+        str(item.get("receivable_key") or item.get("receivable_id") or item.get("expected_payment_date") or ""),
+    )
+
+
 def _date_ge(a: str | None, b: str | None) -> bool:
     """True if date a >= date b (a is same day or after b)."""
     if not a or not b:
@@ -127,7 +150,7 @@ def parse_amex_rows(rows: list[list[Any]], book_datemode: int = 0) -> dict[str, 
         desc = _amount(row[desc_col]) if desc_col is not None and desc_col < len(row) else 0.0
 
         # Convert Excel date floats
-        if isinstance(envio_raw, float) and book_datemode:
+        if isinstance(envio_raw, float) and xlrd is not None:
             try:
                 envio_raw = xlrd.xldate_as_datetime(envio_raw, book_datemode).strftime("%Y-%m-%d")
             except Exception:
@@ -135,7 +158,7 @@ def parse_amex_rows(rows: list[list[Any]], book_datemode: int = 0) -> dict[str, 
         envio_date = _date_key(envio_raw)
 
         date_raw = row[date_col] if date_col is not None and date_col < len(row) else None
-        if isinstance(date_raw, float) and book_datemode:
+        if isinstance(date_raw, float) and xlrd is not None:
             try:
                 date_raw = xlrd.xldate_as_datetime(date_raw, book_datemode).strftime("%Y-%m-%d")
             except Exception:
@@ -229,6 +252,9 @@ def _match_amex_to_corte(
                     "validated_by": "amex_exact",
                     "amex_cargo": cargos,
                     "amex_envio": envio,
+                    "expected_deposit": p.get("neto", item.get("expected_deposit", item.get("amount", 0))),
+                    "expected_payment_date": p.get("payment_date") or p.get("fecha_envio"),
+                    "_original_amex": p,
                 })
                 break
 
@@ -261,6 +287,9 @@ def _match_amex_to_corte(
                                 "amex_cargo_a": a.get("cargos"),
                                 "amex_cargo_b": b.get("cargos"),
                                 "amex_envio": pair_envio,
+                                "expected_deposit": round(float(a.get("neto", 0)) + float(b.get("neto", 0)), 2),
+                                "expected_payment_date": a.get("payment_date") or b.get("payment_date") or pair_envio,
+                                "_original_amex": [a, b],
                             })
                             found_pair = True
                             break
@@ -273,38 +302,13 @@ def _match_amex_to_corte(
     return matched_days, pending_corte, unused_amex
 
 
-def _pending_item_identity(item: dict[str, Any]) -> tuple[str, str, float, str, str]:
-    source_date = str(item.get("source_date") or item.get("business_date") or "")
-    business_date = str(item.get("business_date") or source_date)
-    channel = str(item.get("channel") or "").lower()
-    amount = round(float(item.get("expected_deposit", item.get("amount", 0)) or 0), 2)
-    expected_payment_date = str(item.get("expected_payment_date") or "")
-    receivable_key = str(item.get("receivable_key") or item.get("receivable_id") or "")
-    if receivable_key:
-        return ("receivable", receivable_key, amount, "", "")
-    return (business_date, channel, amount, source_date, expected_payment_date)
-
-
-def _dedupe_pending_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    deduped: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, float, str, str]] = set()
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        key = _pending_item_identity(item)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(item)
-    return deduped
-
-
 def reconcile_bank_stage(
     expected_collections: list[dict[str, Any]],
     banorte_statement: dict[str, Any],
     amex_statement: dict[str, Any],
     *,
     tolerance: float = 0.0,
+    business_date: str | None = None,
 ) -> dict[str, Any]:
     """Reconcile bank stage: validate AMEX payments against Corte and Banorte.
 
@@ -323,15 +327,30 @@ def reconcile_bank_stage(
     if not isinstance(expected_collections, list):
         expected_collections = []
 
-    # Split expected by channel
-    corte_amex = [
-        dict(item) for item in expected_collections
-        if isinstance(item, dict) and item.get("channel") == "amex"
-    ]
-    corte_others = [
-        dict(item) for item in expected_collections
-        if isinstance(item, dict) and item.get("channel") != "amex"
-    ]
+    normalized_expected: list[dict[str, Any]] = []
+    seen_expected: set[tuple[str, str, float, str]] = set()
+    for raw in expected_collections:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        channel = str(item.get("channel") or "unclassified").lower()
+        if channel in ("terminal", "terminal_banorte"):
+            channel = "banorte"
+        if channel in ("plataforma", "plataformas", "uber_eats", "ubereats"):
+            channel = "uber" if "uber" in channel else channel
+        item["channel"] = channel
+        item["source_date"] = str(item.get("source_date") or item.get("business_date") or "")
+        item["business_date"] = str(item.get("business_date") or item.get("source_date") or "")
+        item["amount"] = _pending_amount(item)
+        item["expected_deposit"] = _bank_match_amount(item)
+        key = _ledger_key(item)
+        if key in seen_expected:
+            continue
+        seen_expected.add(key)
+        normalized_expected.append(item)
+
+    corte_amex = [dict(item) for item in normalized_expected if item.get("channel") == "amex"]
+    corte_others = [dict(item) for item in normalized_expected if item.get("channel") != "amex"]
 
     amex_payments = amex_statement.get("payments", [])
 
@@ -390,29 +409,31 @@ def reconcile_bank_stage(
         amex_payments, corte_amex
     )
 
-    # Build expected collections for Banorte matching (non-AMEX channels)
+    # Only Corte-created ledger rows are eligible for bank matching. AMEX export
+    # rows can enrich those rows with net deposit/payment date, but cannot create
+    # new outstanding items on their own.
     banorte_expected: list[dict[str, Any]] = []
-
-    # AMEX payments that matched Corte -> still need Banorte SPEI validation
-    for p in amex_payments:
-        neto = p.get("neto", 0)
-        if neto > 0:
-            banorte_expected.append({
-                "channel": "amex",
-                "amount": neto,
-                "expected_deposit": neto,
-                "expected_payment_date": p.get("payment_date") or p.get("fecha_envio"),
-                "source_date": p.get("fecha_envio"),
-                "_original_amex": p,
-            })
-
+    for item in amex_matches:
+        enriched = {k: v for k, v in item.items() if not str(k).startswith("_")}
+        enriched["channel"] = "amex"
+        enriched["amount"] = _pending_amount(item)
+        enriched["expected_deposit"] = _bank_match_amount(item)
+        banorte_expected.append(enriched)
+    for item in pending_corte_amex:
+        pending_items_date = str(item.get("source_date") or item.get("business_date") or "")
+        banorte_expected.append({
+            **item,
+            "channel": "amex",
+            "amount": _pending_amount(item),
+            "expected_deposit": _bank_match_amount(item),
+            "source_date": pending_items_date,
+            "status": "pendiente_reporte_amex",
+        })
     for item in corte_others:
         banorte_expected.append({
-            "channel": item.get("channel"),
-            "amount": item.get("expected_deposit", item.get("amount", 0)),
-            "expected_deposit": item.get("expected_deposit", item.get("amount", 0)),
-            "expected_payment_date": item.get("expected_payment_date"),
-            "source_date": item.get("source_date"),
+            **item,
+            "amount": _pending_amount(item),
+            "expected_deposit": _bank_match_amount(item),
             "_original_corte": item,
         })
 
@@ -421,8 +442,21 @@ def reconcile_bank_stage(
     matches: list[dict[str, Any]] = []
     pending_items: list[dict[str, Any]] = []
 
+    max_banorte_date_str = max(
+        (_date_key(d.get("operation_date")) for d in banorte_statement.get("deposits", []) if _date_key(d.get("operation_date"))),
+        default=None
+    )
+    min_banorte_date_str = min(
+        (_date_key(d.get("operation_date")) for d in banorte_statement.get("deposits", []) if _date_key(d.get("operation_date"))),
+        default=None
+    )
+
     # Group AMEX by expected_payment_date for consolidated SPEI matching
     expected_remaining = [dict(item, _matched=False) for item in banorte_expected if item.get("channel") == "amex"]
+    for item in expected_remaining:
+        if item.get("status") == "pendiente_reporte_amex":
+            item["_matched"] = True
+            pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
     for deposit in available:
         if deposit.get("matched"):
             continue
@@ -438,20 +472,38 @@ def reconcile_bank_stage(
         if len(candidates) < 2:
             continue
         total = round(sum(float(item.get("expected_deposit", item.get("amount", 0))) for item in candidates), 2)
-        if abs(float(deposit.get("amount", 0)) - total) <= tolerance:
+        dep_amount = round(float(deposit.get("amount", 0)), 2)
+        diff = round(dep_amount - total, 2)
+        
+        # Exact match or fuzzy match for AMEX (up to 5% difference)
+        max_diff = max(100.0, total * 0.05)
+        if abs(diff) <= max_diff:
             deposit["matched"] = True
             for item in candidates:
                 item["_matched"] = True
-            matches.append({
-                "expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in candidates],
-                "deposit": deposit,
-            })
+            
+            # If difference is larger than normal tolerance, mark it as liquidacion diff
+            if abs(diff) > tolerance:
+                matches.append({
+                    "expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in candidates],
+                    "deposit": deposit,
+                    "status": "diferencia_liquidacion_amex",
+                    "diferencia": diff
+                })
+            else:
+                matches.append({
+                    "expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in candidates],
+                    "deposit": deposit,
+                })
 
     # One-to-one matching for remaining
     for item in expected_remaining:
         if item["_matched"]:
             continue
         amount = round(float(item.get("expected_deposit", item.get("amount", 0))), 2)
+        expected_date = _date_key(item.get("expected_payment_date"))
+        
+        # Exact match by amount
         matched = next(
             (deposit for deposit in available
              if not deposit.get("matched")
@@ -459,57 +511,168 @@ def reconcile_bank_stage(
              and abs(float(deposit.get("amount", 0)) - amount) <= tolerance),
             None,
         )
+        
+        # Or match by exact date if it's the only one
+        if not matched and expected_date:
+            date_matches = [d for d in available if not d.get("matched") and d.get("source") == "amex" and _date_key(d.get("operation_date")) == expected_date]
+            if len(date_matches) == 1:
+                matched = date_matches[0]
+
         if matched:
+            diff = round(float(matched.get("amount", 0)) - amount, 2)
             matched["matched"] = True
             item["_matched"] = True
-            matches.append({"expected": {k: v for k, v in item.items() if k != "_matched"}, "deposit": matched})
+            if abs(diff) <= tolerance:
+                matches.append({"expected": {k: v for k, v in item.items() if k != "_matched"}, "deposit": matched})
+            else:
+                matched_item = {k: v for k, v in item.items() if k != "_matched"}
+                matched_item["status"] = "diferencia_liquidacion_amex"
+                matched_item["diferencia"] = diff
+                matches.append({"expected": matched_item, "deposit": matched})
         else:
-            pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
+            unmatched_item = {k: v for k, v in item.items() if not k.startswith("_")}
+            if max_banorte_date_str and expected_date and expected_date > max_banorte_date_str:
+                unmatched_item["status"] = "programado"
+            elif min_banorte_date_str and expected_date and expected_date < min_banorte_date_str:
+                unmatched_item["status"] = "fuera_de_rango"
+            else:
+                unmatched_item["status"] = "pendiente"
+            pending_items.append(unmatched_item)
 
     # Non-AMEX channels
     others_remaining = [dict(item, _matched=False) for item in banorte_expected if item.get("channel") != "amex"]
-    for item in others_remaining:
-        if item["_matched"]:
+    for channel in set(item.get("channel") for item in others_remaining):
+        channel_items = [item for item in others_remaining if item.get("channel") == channel and not item["_matched"]]
+        if not channel_items:
             continue
-        channel = item.get("channel")
-        amount = round(float(item.get("expected_deposit", item.get("amount", 0))), 2)
-        matched = next(
-            (deposit for deposit in available
-             if not deposit.get("matched")
-             and deposit.get("source") == channel
-             and abs(float(deposit.get("amount", 0)) - amount) <= tolerance),
-            None,
-        )
-        if matched:
-            matched["matched"] = True
-            item["_matched"] = True
-            matches.append({"expected": {k: v for k, v in item.items() if k != "_matched"}, "deposit": matched})
-        else:
+        
+        # Try to match single deposit or deposit group against expected items
+        # First group available deposits by date
+        available_channel_deps = [d for d in available if not d.get("matched") and d.get("source") == channel]
+        deps_by_date: dict[str, list[dict[str, Any]]] = {}
+        for d in available_channel_deps:
+            d_date = _date_key(d.get("operation_date"))
+            if d_date:
+                deps_by_date.setdefault(d_date, []).append(d)
+
+        # 1. Try to match a single expected item against a group of deposits on the same day
+        for item in channel_items:
+            if item["_matched"]:
+                continue
+            item_amount = round(float(item.get("expected_deposit", item.get("amount", 0))), 2)
+            
+            for date_key, deps in deps_by_date.items():
+                unmatched_deps = [d for d in deps if not d.get("matched")]
+                if not unmatched_deps:
+                    continue
+                # If the sum of ALL unmatched deposits for this channel on this date matches the single item
+                total_deps = round(sum(float(d.get("amount", 0)) for d in unmatched_deps), 2)
+                if abs(total_deps - item_amount) <= tolerance:
+                    item["_matched"] = True
+                    for d in unmatched_deps:
+                        d["matched"] = True
+                    matches.append({
+                        "expected": {k: v for k, v in item.items() if k != "_matched"},
+                        "deposit_group": unmatched_deps
+                    })
+                    break
+
+        # 2. Try to find single deposits that match the sum of a contiguous window of channel_items
+        for deposit in available:
+            if deposit.get("matched") or deposit.get("source") != channel:
+                continue
+            dep_amount = round(float(deposit.get("amount", 0)), 2)
+            
+            # Try to match single item first
+            single_match = next((i for i in channel_items if not i["_matched"] and abs(float(i.get("expected_deposit", i.get("amount", 0))) - dep_amount) <= tolerance), None)
+            if single_match:
+                single_match["_matched"] = True
+                deposit["matched"] = True
+                matches.append({"expected": {k: v for k, v in single_match.items() if k != "_matched"}, "deposit": deposit})
+                continue
+            
+            # Try to match contiguous groups (up to 5 items) for terminal / agrupaciones
+            found_group = False
+            for i in range(len(channel_items)):
+                if found_group:
+                    break
+                if channel_items[i]["_matched"]:
+                    continue
+                group = []
+                group_sum = 0.0
+                for j in range(i, min(i + 5, len(channel_items))):
+                    if channel_items[j]["_matched"]:
+                        break
+                    group.append(channel_items[j])
+                    group_sum += float(channel_items[j].get("expected_deposit", channel_items[j].get("amount", 0)))
+                    if abs(group_sum - dep_amount) <= tolerance:
+                        found_group = True
+                        for item in group:
+                            item["_matched"] = True
+                        deposit["matched"] = True
+                        matches.append({
+                            "expected_group": [{k: v for k, v in item.items() if k != "_matched"} for item in group],
+                            "deposit": deposit
+                        })
+                        break
+                        
+    for item in others_remaining:
+        if not item["_matched"]:
             pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
 
-    combined_pending_items = _dedupe_pending_items(pending_corte_amex + pending_items)
-
     pending: dict[str, float] = {}
-    for item in combined_pending_items:
-        channel = str(item.get("channel", "amex"))
-        pending[channel] = round(pending.get(channel, 0.0) + float(item.get("amount", 0)), 2)
+    platforms_pending = []
+    final_pending_items = []
+    
+    seen_pending: set[tuple[str, str, float, str]] = set()
+    # We use pending_items directly since it contains all unmatched ledger items.
+    for item in pending_items:
+        channel = str(item.get("channel", "unclassified"))
+        item["amount"] = _pending_amount(item)
+        item["expected_deposit"] = _bank_match_amount(item)
+        pending_key = _ledger_key(item)
+        if pending_key in seen_pending:
+            continue
+        seen_pending.add(pending_key)
+        if channel in ("uber", "rappi", "plataformas", "plataforma"):
+            item["status"] = "pendiente_reporte_plataforma"
+            platforms_pending.append(item)
+        status = str(item.get("status") or "")
+        if channel != "amex" and status == "programado":
+            continue
+        label = "uber" if channel in ("plataformas", "plataforma") else channel
+        if status == "fuera_de_rango":
+            label = f"{label}_fuera_de_rango"
+        pending[label] = round(pending.get(label, 0.0) + _pending_amount(item), 2)
+        final_pending_items.append(item)
+    pending_items = final_pending_items
 
     # Status: bank_validated if no exceptions (even if some AMEX pending)
     has_exceptions = bool(exceptions)
 
+    additional_expenses = list(
+        banorte_statement.get("additional_expenses")
+        or banorte_statement.get("domiciled_expenses")
+        or []
+    )
+    if business_date:
+        additional_expenses = [
+            item for item in additional_expenses
+            if _date_key(item.get("operation_date")) == _date_key(business_date)
+        ]
+
     return {
         "status": "requires_review" if has_exceptions else "bank_validated",
-        "deposits_by_source": banorte_statement.get("deposits_by_source", {}),
-        "deposits": banorte_statement.get("deposits", []),
         "matches": matches,
         "amex_matches": amex_matches,
         "batch_validation": batch_validation,
-        "pending_items": combined_pending_items,
+        "pending_items": pending_items,
+        "platforms_pending": platforms_pending,
         "unused_amex": [{"cargos": p.get("cargos"), "neto": p.get("neto"), "fecha_envio": p.get("fecha_envio")} for p in unused_amex],
         "missing_funds": {
             "corte_to_amex": round(sum(float(item.get("amount", 0)) for item in pending_corte_amex), 2),
         },
         "pending_collections": pending,
-        "additional_expenses": banorte_statement.get("domiciled_expenses", []),
+        "additional_expenses": additional_expenses,
         "exceptions": exceptions,
     }

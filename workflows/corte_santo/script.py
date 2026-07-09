@@ -743,6 +743,21 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 if bank_module is not None:
                     bank_statement = bank_module.parse_banorte_csv(bank_doc["source_path"], config)
 
+        # Intercept CXC events with AI if applicable
+        body_text = str(payload.get("body_text") or "")
+        cxc_docs_ocr = []
+        vision_docs_list = vision_documents if isinstance(vision_documents, list) else []
+        for doc in vision_docs_list:
+            if isinstance(doc, dict) and doc.get("document_type") == "cxc" and doc.get("raw_ocr"):
+                cxc_docs_ocr.append(doc["raw_ocr"])
+                
+        if cxc_docs_ocr or "cxc" in body_text.lower() or "ajuste" in body_text.lower():
+            cxc_module = _load_sibling_module("cxc")
+            if cxc_module is not None and hasattr(cxc_module, "extract_cxc_events_with_ai"):
+                ai_cxc_events = cxc_module.extract_cxc_events_with_ai(body_text, cxc_docs_ocr)
+                if ai_cxc_events:
+                    payload["cxc_events"] = ai_cxc_events
+
         evidence_module = _load_sibling_module("evidence_builder")
         if evidence_module is not None:
             canonical_evidence = evidence_module.build_canonical_evidence(
@@ -836,6 +851,42 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 "expected_deposit": amex_bruto,
                 "source_date": business_date,
             })
+            
+        # Other bank-settled channels from sistema. Transfer/PayPal/cash are not
+        # part of the outstanding bank ledger; CxC is handled as itemized events.
+        for channel in ["banorte", "terminal_banorte", "terminal", "uber", "rappi"]:
+            ch_data = cierre_sistema_data.get(channel, {})
+            if isinstance(ch_data, dict):
+                ch_bruto = round(_to_float(ch_data.get("consumo", 0)) + _to_float(ch_data.get("propina", 0)), 2)
+            else:
+                ch_bruto = _to_float(ch_data)
+                
+            if ch_bruto > 0:
+                expected_collections.append({
+                    "business_date": business_date,
+                    "channel": channel,
+                    "amount": ch_bruto,
+                    "expected_deposit": ch_bruto,
+                    "source_date": business_date,
+                })
+                
+        # CXC events filtering (ignore cash)
+        cxc_events = payload.get("cxc_events", [])
+        for event in cxc_events:
+            medium = event.get("payment_medium", "unclassified")
+            if medium == "efectivo":
+                continue
+            
+            principal = float(event.get("principal", 0))
+            if principal > 0:
+                expected_collections.append({
+                    "business_date": business_date,
+                    "channel": f"cxc_{medium}" if medium != "unclassified" else "cxc",
+                    "amount": principal,
+                    "expected_deposit": principal,
+                    "source_date": business_date,
+                    "cxc_event": event,
+                })
 
     result = {
         "status": status,

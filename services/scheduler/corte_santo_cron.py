@@ -293,7 +293,14 @@ def _build_expected_collections(
             latest_snapshot_items = [dict(item) for item in pending_items if isinstance(item, dict)]
             latest_stage = output
 
-    expected: list[dict[str, Any]] = _normalize_pending_snapshot(latest_snapshot_items or [])
+    expected: list[dict[str, Any]] = [
+        _normalize_expected_collection(
+            item,
+            str(item.get("business_date") or item.get("source_date") or latest_snapshot_date),
+        )
+        for item in (latest_snapshot_items or [])
+        if isinstance(item, dict)
+    ]
     pending_runs: list[dict[str, Any]] = []
     seen_dates: set[str] = set()
 
@@ -326,11 +333,8 @@ def _build_expected_collections(
         if not isinstance(register, dict) or business_date in seen_dates:
             continue
 
-        day_items = _expected_collections_from_register(register, business_date)
-        if not day_items:
-            continue
         seen_dates.add(business_date)
-        expected.extend(day_items)
+        expected.extend(_expected_collections_from_output(output, business_date))
         pending_runs.append({
             "id": run["id"],
             "business_date": business_date,
@@ -350,7 +354,25 @@ def _build_expected_collections(
             "revision_document": output.get("revision_document"),
         })
 
-    return expected, list(by_date.values()), latest_stage, seen_dates
+    # Deduplicate expected collections
+    unique_expected = []
+    seen_expected = set()
+    for item in expected:
+        sd = str(item.get("source_date") or item.get("business_date"))
+        # We also want to prefer items that have a 'status' if there are duplicates with and without status
+        key = (sd, str(item.get("channel", "")), round(float(item.get("expected_deposit", item.get("amount", 0))), 2))
+        if key not in seen_expected:
+            seen_expected.add(key)
+            unique_expected.append(item)
+        else:
+            # If the new item has a status and the old one didn't, replace it
+            if item.get("status") and not next((x for x in unique_expected if x.get("source_date") == sd and x.get("channel") == item.get("channel") and round(float(x.get("expected_deposit", x.get("amount", 0))), 2) == key[2]), {}).get("status"):
+                for idx, x in enumerate(unique_expected):
+                    if x.get("source_date") == sd and x.get("channel") == item.get("channel") and round(float(x.get("expected_deposit", x.get("amount", 0))), 2) == key[2]:
+                        unique_expected[idx] = item
+                        break
+
+    return unique_expected, list(by_date.values()), latest_stage, seen_dates
 
 
 def _to_money(value: Any) -> float:
@@ -364,136 +386,92 @@ def _to_money(value: Any) -> float:
         return 0.0
 
 
-def _collection_item(item_channel: str, item_amount: float, item_date: str, **extra: Any) -> dict[str, Any]:
-    clean_extra = {
-        key: value
-        for key, value in extra.items()
-        if key not in ("business_date", "channel", "amount", "expected_deposit", "source_date")
-    }
+def _normalize_expected_collection(item: dict[str, Any], business_date: str) -> dict[str, Any]:
+    amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
+    source_date = str(item.get("source_date") or item.get("business_date") or business_date)
+    channel = str(item.get("channel") or "unclassified").lower()
+    if channel in ("terminal", "terminal_banorte"):
+        channel = "banorte"
+    if channel in ("plataforma", "plataformas", "uber_eats", "ubereats"):
+        channel = "uber"
     return {
-        **clean_extra,
-        "business_date": str(extra.get("business_date") or item_date),
-        "channel": item_channel,
-        "amount": round(item_amount, 2),
-        "expected_deposit": round(item_amount, 2),
-        "source_date": str(extra.get("source_date") or item_date),
+        **item,
+        "business_date": str(item.get("business_date") or source_date),
+        "source_date": source_date,
+        "channel": channel,
+        "amount": amount,
+        "expected_deposit": amount,
     }
 
 
-def _expected_collections_from_register(register: dict[str, Any], business_date: str) -> list[dict[str, Any]]:
-    """Expected future deposits for one Corte day.
+def _expected_collections_from_output(output: dict[str, Any], business_date: str) -> list[dict[str, Any]]:
+    """Build the bank-stage ledger for one Corte day.
 
-    Efectivo and propinas are deliberately excluded: they are not future bank
-    settlement items. Banorte terminal cards are represented as one deposit
-    expectation because the bank statement parser classifies REST SANTO
-    deposits as ``banorte``.
+    The initial Corte run persists AMEX in ``expected_collections``.  The bank
+    watcher carries those rows forward and adds day-level Banorte/platform
+    expectations from the canonical income register.  Cash and tips are not
+    future bank deposits, so they are intentionally excluded.
     """
-    items: list[dict[str, Any]] = []
+    raw_expected = output.get("expected_collections")
+    if not isinstance(raw_expected, list):
+        nested = output.get("corte_santo_initial_stage") or {}
+        if isinstance(nested, dict):
+            raw_expected = nested.get("expected_collections")
+
+    allowed_channels = {"amex", "banorte", "uber", "rappi"}
+    expected = []
+    for item in (raw_expected or []):
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_expected_collection(item, business_date)
+        if str(normalized.get("channel") or "") in allowed_channels:
+            expected.append(normalized)
+    channels = {str(item.get("channel") or "") for item in expected}
+
+    register = output.get("income_register") or {}
+    if not register:
+        workflow_run = (output.get("workflow_result") or {}).get("workflow_run") or {}
+        candidate = (workflow_run.get("canonical_evidence") or {}).get("income_register") or {}
+        if isinstance(candidate, dict):
+            register = candidate
+    if not isinstance(register, dict):
+        register = {}
 
     def add(channel: str, amount: float) -> None:
-        if amount > 0:
-            items.append(_collection_item(channel, amount, business_date))
+        if amount <= 0 or channel in channels:
+            return
+        channels.add(channel)
+        expected.append({
+            "business_date": business_date,
+            "source_date": business_date,
+            "channel": channel,
+            "amount": amount,
+            "expected_deposit": amount,
+        })
 
     add("amex", _to_money(register.get("amex")))
     add("banorte", round(_to_money(register.get("debito")) + _to_money(register.get("credito")), 2))
     add("uber", _to_money(register.get("uber") if register.get("uber") is not None else register.get("uber_eats")))
     add("rappi", _to_money(register.get("rappi")))
-    add("paypal", _to_money(register.get("paypal")))
-    add("transferencia", _to_money(register.get("transferencia")))
-    return items
-
-
-def _normalize_pending_snapshot(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Normalize legacy snapshots before carrying them forward.
-
-    Older watcher runs stored debit/credit separately and sometimes included
-    efectivo.  Carrying that forward makes the live balance wrong forever.  This
-    keeps real future-deposit channels, folds debit+credit into Banorte per day,
-    and drops cash/tips.
-    """
-    normalized: list[dict[str, Any]] = []
-    banorte_by_date: dict[str, float] = {}
-    banorte_extra_by_date: dict[str, dict[str, Any]] = {}
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        raw_channel = str(item.get("channel") or "").lower()
-        business_date = str(item.get("business_date") or item.get("source_date") or "")
-        if not business_date:
-            continue
-        amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
-        if amount <= 0:
-            continue
-        if raw_channel in ("efectivo", "propinas", "cash", "tips"):
-            continue
-        if raw_channel in ("debito", "credito", "banorte"):
-            banorte_by_date[business_date] = round(banorte_by_date.get(business_date, 0) + amount, 2)
-            banorte_extra_by_date.setdefault(business_date, item)
-            continue
-        if raw_channel == "uber_eats":
-            raw_channel = "uber"
-        normalized.append(_collection_item(raw_channel or "unclassified", amount, business_date, **item))
-
-    for business_date, amount in sorted(banorte_by_date.items()):
-        normalized.append(_collection_item("banorte", amount, business_date, **banorte_extra_by_date.get(business_date, {})))
-    return _dedupe_expected_collections(normalized)
-
-
-def _expected_collection_identity(item: dict[str, Any]) -> tuple[str, str, float, str, str]:
-    source_date = str(item.get("source_date") or item.get("business_date") or "")
-    business_date = str(item.get("business_date") or source_date)
-    channel = str(item.get("channel") or "").lower()
-    amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
-    receivable_key = str(item.get("receivable_key") or item.get("receivable_id") or "")
-    expected_payment_date = str(item.get("expected_payment_date") or "")
-    if receivable_key:
-        return ("receivable", receivable_key, amount, "", "")
-    return (business_date, channel, amount, source_date, expected_payment_date)
-
-
-def _expected_collection_loose_identity(item: dict[str, Any]) -> tuple[str, str, float, str, str]:
-    source_date = str(item.get("source_date") or item.get("business_date") or "")
-    business_date = str(item.get("business_date") or source_date)
-    channel = str(item.get("channel") or "").lower()
-    amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
-    expected_payment_date = str(item.get("expected_payment_date") or "")
-    return (business_date, channel, amount, source_date, expected_payment_date)
-
-
-def _dedupe_expected_collections(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    deduped: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, float, str, str]] = set()
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        key = _expected_collection_identity(item)
-        loose_key = _expected_collection_loose_identity(item)
-        if key in seen or loose_key in seen:
-            continue
-        seen.add(key)
-        seen.add(loose_key)
-        deduped.append(item)
-    return deduped
-
-
-def _is_canonical_cxc_receivable(receivable: dict[str, Any]) -> bool:
-    evidence = receivable.get("evidence")
-    if not isinstance(evidence, dict) or not evidence:
-        return False
-    if evidence.get("kind") in ("opening", "settlement"):
-        return True
-    if evidence.get("source") in ("email_body", "vision_extractor"):
-        return True
-    return bool(evidence.get("description") or evidence.get("movement_id"))
+    return expected
 
 
 def _summarize_pending(items: list[dict[str, Any]]) -> dict[str, float]:
     totals: dict[str, float] = {}
     for item in items:
-        channel = str(item.get("channel") or "unclassified")
+        base_channel = str(item.get("channel") or "unclassified")
         amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
-        if amount > 0:
-            totals[channel] = round(totals.get(channel, 0) + amount, 2)
+        if amount <= 0:
+            continue
+            
+        status = str(item.get("status") or "")
+        label = base_channel
+        
+        if status == "fuera_de_rango":
+            label = f"{base_channel}_fuera_de_rango"
+            
+        totals[label] = round(totals.get(label, 0) + amount, 2)
+        
     return totals
 
 
@@ -589,6 +567,14 @@ def run_bank_watcher_once(
         effective_date,
     )
 
+    # Remove any existing cxc items from the snapshot since we fetch fresh from DB
+    expected_cols = [
+        item for item in expected_cols 
+        if not str(item.get("channel", "")).lower().startswith("cxc") 
+        and "cxc" not in str(item.get("channel", "")).lower()
+    ]
+
+    # ── Fetch active receivables from DB ──
     resp_rx = httpx.get(
         f"{supabase_url}/rest/v1/corte_receivables",
         params={
@@ -600,31 +586,21 @@ def run_bank_watcher_once(
     )
     if resp_rx.status_code < 400:
         for rx in resp_rx.json():
-            if not isinstance(rx, dict):
-                continue
             ev = rx.get("evidence") or {}
-            if not _is_canonical_cxc_receivable(rx):
-                continue
-            channel = ev.get("channel") if isinstance(ev, dict) else None
-            amount = _to_money(rx.get("principal")) - _to_money(rx.get("settled_principal"))
-            if amount <= 0:
-                continue
             expected_cols.append({
                 "business_date": rx.get("opened_on"),
-                "channel": channel or "cxc",
-                "amount": amount,
-                "expected_deposit": amount,
+                "channel": ev.get("channel", "cxc"),
+                "amount": float(rx.get("principal", 0)),
+                "expected_deposit": float(rx.get("principal", 0)),
                 "source_date": rx.get("opened_on"),
                 "receivable_id": rx.get("id"),
                 "receivable_key": rx.get("receivable_key"),
             })
 
-    expected_cols = _dedupe_expected_collections(expected_cols)
-
-    if not expected_cols:
+    if not expected_cols and not pending_runs:
         return {
             "status": "requires_review",
-            "requires_review_reason": "no_pending_bank_collections_found",
+            "requires_review_reason": "no_pending_amex_collections_found",
             "pending_runs_checked": len(all_runs),
             "watcher_result": watcher,
         }
@@ -751,6 +727,36 @@ def run_bank_watcher_once(
     amex_matches = bank_result.get("amex_matches", [])
     validated_dates: set[str] = set()
 
+    # Mark matched receivables as settled
+    general_matches = bank_result.get("matches", [])
+    matched_receivable_ids = set()
+    
+    for match in amex_matches:
+        if match.get("receivable_id"):
+            matched_receivable_ids.add(match["receivable_id"])
+    
+    for match in general_matches:
+        expected = match.get("expected")
+        if isinstance(expected, dict) and expected.get("receivable_id"):
+            matched_receivable_ids.add(expected["receivable_id"])
+        group = match.get("expected_group")
+        if isinstance(group, list):
+            for item in group:
+                if isinstance(item, dict) and item.get("receivable_id"):
+                    matched_receivable_ids.add(item["receivable_id"])
+
+    if matched_receivable_ids:
+        for rid in matched_receivable_ids:
+            try:
+                httpx.patch(
+                    f"{supabase_url}/rest/v1/corte_receivables?id=eq.{rid}",
+                    json={"status": "settled", "settled_on": effective_date},
+                    headers={"apikey": service_key, "Authorization": f"Bearer {service_key}", "Content-Type": "application/json"},
+                    timeout=10.0,
+                )
+            except Exception as exc:
+                logging.exception("Failed to mark receivable %s as settled: %s", rid, exc)
+
     for match in amex_matches:
         bd = match.get("business_date") or match.get("source_date")
         if not bd:
@@ -790,16 +796,10 @@ def run_bank_watcher_once(
             if pr["business_date"] == bd:
                 try:
                     # Only update status and bank fields, don't replace output_payload
-                    day_pending_items = _pending_items_for_date(
-                        bank_result.get("pending_items") or [],
-                        bd,
-                    )
-                    day_pending = _summarize_pending(day_pending_items)
-                    day_bank_status = "bank_requires_review" if day_pending else "bank_validated"
                     r_upd = httpx.patch(
                         f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
                         json={
-                            "status": "waiting_for_input" if day_pending else "completed",
+                            "status": "completed",
                         },
                         headers={"apikey": service_key, "Authorization": f"Bearer {service_key}",
                                  "Content-Type": "application/json", "Prefer": "return=representation"},
@@ -819,16 +819,23 @@ def run_bank_watcher_once(
                             if isinstance(current_op, str):
                                 try: current_op = json.loads(current_op)
                                 except: current_op = {}
-                            current_op["bank_validation_status"] = day_bank_status
-                            current_op["stage"] = day_bank_status
+                            current_op["bank_validation_status"] = "bank_validated"
+                            current_op["stage"] = "bank_validated"
                             current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
+                            day_pending_items = _pending_items_for_date(
+                                bank_result.get("pending_items") or [],
+                                bd,
+                            )
+                            day_pending = _summarize_pending(day_pending_items)
                             revision = current_op.get("revision_document") or {}
                             if isinstance(revision, dict):
                                 revision["falta_por_entrar"] = day_pending
-                                revision["bank_validation_status"] = day_bank_status
+                                revision["bank_validation_status"] = (
+                                    "bank_requires_review" if day_pending else "bank_validated"
+                                )
                                 current_op["revision_document"] = revision
                             current_op["bank_reconciliation"] = {
-                                "status": day_bank_status,
+                                "status": "bank_requires_review" if day_pending else "bank_validated",
                                 "pending_items": day_pending_items,
                                 "pending_collections": day_pending,
                                 "matched_on_later_statement": True,
@@ -900,10 +907,7 @@ def run_bank_watcher_once(
                 revision["falta_por_entrar"] = pending_collections
                 revision["bank_validation_status"] = persisted_bank_status
                 current_op["revision_document"] = revision
-                current_op["bank_reconciliation"] = {
-                    **bank_result,
-                    "status": persisted_bank_status,
-                }
+                current_op["bank_reconciliation"] = bank_result
                 current_op["falta_por_entrar_por_dia"] = result["falta_por_entrar_por_dia"]
                 current_op["bank_validation_status"] = persisted_bank_status
                 current_op["bank_validated_at"] = datetime.now(UTC).isoformat()

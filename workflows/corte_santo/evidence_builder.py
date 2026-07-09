@@ -192,26 +192,18 @@ def _formula_from_terms(terms: Any, fallback_total: float) -> str:
 
 
 def _cxc_paypal_note(values: dict[str, Any], total: float, channel: str | None) -> dict[str, Any]:
-    normalized_channel = channel or "sin medio confirmado"
-    lines = ["Ajuste CXC detectado por SantoOS"]
-    if total > 0:
-        lines.append(f"Importe CxC identificado: ${total:,.2f}")
-    lines.append(f"Medio de cobro detectado: {normalized_channel}")
-    if channel in (None, "cxc"):
-        lines.append("No se confirmó un medio de pago específico; queda como CxC/pendiente operativo.")
-    elif channel == "efectivo":
+    lines = ["CXC"]
+    if channel in (None, "efectivo", "cxc") and total > 0:
         lines.append(f"Pago en efectivo de CXC: ${total:,.2f}")
-        lines.append("Se interpreta como cobrado en efectivo; no debe esperarse como depósito bancario separado.")
-    elif channel in ("debito", "credito"):
-        lines.append("Se interpreta como cobrado con tarjeta; debe entrar dentro de la liquidación Banorte terminal.")
-    elif channel == "amex":
-        lines.append("Se interpreta como cobrado con AMEX; debe entrar dentro de la liquidación AMEX.")
-    else:
-        lines.append("Revisar contra el medio correspondiente antes de marcarlo como pendiente bancario.")
     for line in values.get("comment_lines") or []:
         text = str(line).strip()
         if text and text not in lines:
             lines.append(text)
+    if total > 0 and not any("total" in line.lower() for line in lines):
+        lines.append(f"TOTAL ${total:,.2f}")
+    if channel:
+        lines.append(f"Canal: {channel}")
+    lines.append("======")
     return {
         "kind": "cxc",
         "amount": total,
@@ -570,62 +562,6 @@ def build_canonical_evidence(
         )
 
     merged_cxc_events = list(cxc_events) if isinstance(cxc_events, list) else []
-    seen_cxc_events = {
-        (
-            str(event.get("kind") or ""),
-            str(event.get("movement_id") or ""),
-            round(_amount(event.get("principal")) or 0.0, 2),
-        )
-        for event in merged_cxc_events
-        if isinstance(event, dict)
-    }
-    for doc in _vision_documents_of_type(vision_documents, "cxc") + _vision_documents_of_type(vision_documents, "tira"):
-        values = doc.get("values") if isinstance(doc.get("values"), dict) else {}
-        raw_events = values.get("cxc_events")
-        if isinstance(raw_events, list):
-            for event in raw_events:
-                if not isinstance(event, dict) or event.get("kind") not in ("opening", "settlement"):
-                    continue
-                principal = _amount(event.get("principal")) or 0.0
-                identity = (str(event.get("kind") or ""), str(event.get("movement_id") or ""), round(principal, 2))
-                if principal <= 0 or identity in seen_cxc_events:
-                    continue
-                seen_cxc_events.add(identity)
-                merged_cxc_events.append({
-                    "kind": event["kind"],
-                    "movement_id": str(event.get("movement_id") or "").strip() or None,
-                    "principal": principal,
-                    "description": str(event.get("description") or "").strip(),
-                    "source": "vision_extractor",
-                })
-            continue
-
-        candidate_channel = _channel_from_raw(values.get("canal"))
-        if opening_events and candidate_channel == "cxc":
-            continue
-        amount = _amount(values.get("cxc_note_amount"))
-        if amount is None or amount <= 0:
-            amount = _amount(values.get("paypal_amount"))
-        if (amount is None or amount <= 0) and candidate_channel == "cxc":
-            amount = _cxc_total(values)
-        if amount is None or amount <= 0:
-            continue
-        kind = "opening" if candidate_channel in (None, "cxc") else "settlement"
-        description = "; ".join(str(line).strip() for line in values.get("comment_lines") or [] if str(line).strip())
-        if not description:
-            description = f"CXC {candidate_channel or ''} ${amount:g}".strip()
-        identity = (kind, "", round(amount, 2))
-        if identity in seen_cxc_events:
-            continue
-        seen_cxc_events.add(identity)
-        merged_cxc_events.append({
-            "kind": kind,
-            "movement_id": None,
-            "principal": amount,
-            "description": description,
-            "source": "vision_extractor",
-        })
-
     return {
         "status": "requires_review" if exceptions else "ready",
         "reconciliation_inputs": {

@@ -844,10 +844,15 @@ def poll_and_classify(
                         ):
                             wr = corte_stage.get("workflow_result", {}).get("workflow_run", {})
                             canonical = wr.get("canonical_evidence", {}) or {}
-                            cxc_events = canonical.get("cxc_events") or parse_cxc_events(body)
+                            canonical_cxc = canonical.get("cxc_events")
+                            if canonical_cxc is not None:
+                                cxc_events = canonical_cxc
+                            else:
+                                cxc_events = parse_cxc_events(body)
                             inp = wr.get("input_payload", {}) or {}
                             register = (
-                                canonical.get("income_register", {})
+                                (wr.get("canonical_evidence", {}) or {})
+                                .get("income_register", {})
                             )
                             # Prefer income_register (cortesia already in efectivo)
                             # over raw input_payload income_channels.
@@ -873,7 +878,7 @@ def poll_and_classify(
                                 "drive_file_ids": inp.get("drive_file_ids"),
                                 "workbook_paths": inp.get("workbook_paths"),
                                 "workbook_outputs": inp.get("workbook_outputs"),
-                                "expected_collections": wr.get("expected_collections", []),
+                                "expected_collections": [],
                                 "revision_document": wr.get("revision_document"),
                             }
                             supabase.update_workflow_run_output(
@@ -899,6 +904,24 @@ def poll_and_classify(
                                     "source_provider_message_id": message_id,
                                     "source_workflow_run_id": run_id,
                                     "evidence": event,
+                                })
+
+                            for channel_name, amount in channels.items():
+                                if channel_name in ("propinas",) or amount <= 0:
+                                    continue
+                                stable_receivable_key = f"{restaurant_id}:{corte_business_date}:{channel_name}"
+                                supabase.upsert_corte_receivable({
+                                    "receivable_key": stable_receivable_key,
+                                    "restaurant_id": restaurant_id,
+                                    "movement_id": None,
+                                    "opened_on": corte_business_date,
+                                    "principal": amount,
+                                    "settled_on": None,
+                                    "settled_principal": 0,
+                                    "status": "open",
+                                    "source_provider_message_id": message_id,
+                                    "source_workflow_run_id": run_id,
+                                    "evidence": {"kind": "channel_sales", "channel": channel_name},
                                 })
                             if restaurant_id and register:
                                 from workflows.corte_santo.daily_record import (

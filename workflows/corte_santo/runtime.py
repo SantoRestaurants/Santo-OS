@@ -270,6 +270,7 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
         banorte,
         amex,
         tolerance=float(config.get("thresholds", {}).get("reconciliation_tolerance", 0)),
+        business_date=str(payload.get("business_date", "")),
     )
     pending_collections = bank_result.get("pending_collections") or {}
     bank_stage_status = (

@@ -57,6 +57,37 @@ function amountFrom(run: ReconciliationRun, path: string) {
   return typeof current === "number" ? current : null;
 }
 
+type AdditionalExpense = {
+  amount: number;
+  description: string;
+  detail?: string | null;
+};
+
+function additionalExpensesForRun(run: ReconciliationRun): AdditionalExpense[] {
+  const day = run.business_date;
+  const payload = run.output_payload ?? {};
+  const bank = payload.bank_reconciliation as Record<string, unknown> | undefined;
+  const bankExpenses = Array.isArray(bank?.additional_expenses) ? bank.additional_expenses : [];
+  const revisionExpenses = Array.isArray(run.revision?.gastos_adicionales) ? run.revision.gastos_adicionales : [];
+  const source = bankExpenses.length > 0 ? bankExpenses : revisionExpenses;
+
+  return source
+    .filter((raw): raw is Record<string, unknown> => Boolean(raw && typeof raw === "object" && !Array.isArray(raw)))
+    .filter((raw) => {
+      const operationDate = typeof raw.operation_date === "string" ? raw.operation_date : null;
+      if (!day || !operationDate) return true;
+      const [dd, mm, yyyy] = operationDate.split("/");
+      const normalized = yyyy && mm && dd ? `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}` : operationDate;
+      return normalized === day;
+    })
+    .map((raw) => ({
+      amount: Number(raw.amount ?? raw.importe ?? 0),
+      description: String(raw.description ?? raw.concepto ?? "Gasto adicional"),
+      detail: typeof raw.detail === "string" ? raw.detail : typeof raw.observaciones === "string" ? raw.observaciones : null,
+    }))
+    .filter((item) => Number.isFinite(item.amount) && item.amount > 0);
+}
+
 function Flash({ success, error }: { success?: string; error?: string }) {
   if (error) {
     return (
@@ -116,6 +147,35 @@ function RunCard({ run, defaultOpen = false }: { run: ReconciliationRun; default
             <Stat label="Venta real" value={formatCurrency(dailySales(run))} color={GOLD} />
             <Stat label="Total conciliado" value={formatCurrency(amountFrom(run, "reconciliation_totals.total_real"))} />
             <Stat label="Diferencia conciliación" value={formatCurrency(difference)} color={difference === 0 ? "#4CAF82" : "#E05A5A"} />
+          </div>
+
+          <div className="rounded-md border p-4" style={{ borderColor: LINE, background: "#fbfaf7" }}>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-[1px]" style={{ color: MUTED }}>Gastos adicionales del dia</div>
+            {(() => {
+              const expenses = additionalExpensesForRun(run);
+              if (expenses.length === 0) {
+                return <div className="text-xs" style={{ color: MUTED }}>Sin gastos adicionales registrados para este dia.</div>;
+              }
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, background: PANEL }}>
+                    <span style={{ color: MUTED }}>Total</span>
+                    <span className="font-semibold" style={{ color: RED }}>{formatCurrency(expenses.reduce((sum, item) => sum + item.amount, 0))}</span>
+                  </div>
+                  {expenses.map((expense, index) => (
+                    <div key={`${expense.description}-${index}`} className="rounded-md border px-3 py-2 text-xs" style={{ borderColor: LINE, background: PANEL }}>
+                      <div className="flex justify-between gap-3">
+                        <span style={{ color: INK }}>{expense.description}</span>
+                        <span className="shrink-0 font-semibold" style={{ color: RED }}>{formatCurrency(expense.amount)}</span>
+                      </div>
+                      {expense.detail && expense.detail !== "-" && (
+                        <div className="mt-1 leading-5" style={{ color: MUTED }}>{expense.detail}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="rounded-md border p-4" style={{ borderColor: LINE, background: "#fbfaf7" }}>

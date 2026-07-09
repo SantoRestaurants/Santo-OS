@@ -21,6 +21,7 @@ def _load(name: str):
 
 writer = _load("workbook_writer")
 bank = _load("bank_reconciliation")
+bank_parser = _load("bank_statement_parser")
 pipeline = _load("two_stage_pipeline")
 runtime = _load("runtime")
 
@@ -370,6 +371,119 @@ def test_bank_matching_groups_amex_payments_by_expected_payment_date() -> None:
     assert result["status"] == "bank_validated"
     assert result["pending_collections"] == {}
     assert result["matches"][0]["expected_group"][0]["amount"] == 18437.66
+
+
+def test_bank_matching_uses_corte_ledger_as_canonical_amex_source() -> None:
+    result = bank.reconcile_bank_stage(
+        [
+            {"business_date": "2026-07-02", "channel": "amex", "amount": 1000.0, "source_date": "2026-07-02"},
+            {"business_date": "2026-07-03", "channel": "amex", "amount": 2000.0, "source_date": "2026-07-03"},
+        ],
+        {
+            "status": "ok",
+            "deposits": [{"source": "amex", "amount": 960.0, "operation_date": "2026-07-07"}],
+            "additional_expenses": [],
+        },
+        {
+            "status": "ok",
+            "payments": [
+                {
+                    "cargos": 1000.0,
+                    "neto": 960.0,
+                    "amount": 960.0,
+                    "gross_amount": 1000.0,
+                    "source_date": "2026-07-02",
+                    "fecha_envio": "2026-07-02",
+                    "payment_date": "2026-07-07",
+                },
+                {
+                    "cargos": 9999.0,
+                    "neto": 9700.0,
+                    "amount": 9700.0,
+                    "gross_amount": 9999.0,
+                    "source_date": "2026-07-04",
+                    "fecha_envio": "2026-07-04",
+                    "payment_date": "2026-07-08",
+                },
+            ],
+        },
+    )
+
+    assert result["pending_collections"] == {"amex": 2000.0}
+    assert result["pending_items"] == [
+        {
+            "business_date": "2026-07-03",
+            "channel": "amex",
+            "amount": 2000.0,
+            "source_date": "2026-07-03",
+            "expected_deposit": 2000.0,
+            "status": "pendiente_reporte_amex",
+        }
+    ]
+
+
+def test_bank_matching_clears_banorte_group_and_keeps_platforms_separate() -> None:
+    result = bank.reconcile_bank_stage(
+        [
+            {"business_date": "2026-07-06", "channel": "banorte", "amount": 100.0, "source_date": "2026-07-06"},
+            {"business_date": "2026-07-06", "channel": "uber", "amount": 60.0, "source_date": "2026-07-06"},
+            {"business_date": "2026-07-06", "channel": "rappi", "amount": 50.0, "source_date": "2026-07-06"},
+        ],
+        {
+            "status": "ok",
+            "deposits": [
+                {"source": "banorte", "amount": 40.0, "operation_date": "2026-07-07"},
+                {"source": "banorte", "amount": 60.0, "operation_date": "2026-07-07"},
+                {"source": "uber", "amount": 60.0, "operation_date": "2026-07-07"},
+            ],
+            "additional_expenses": [],
+        },
+        {"status": "ok", "payments": []},
+    )
+
+    assert result["pending_collections"] == {"rappi": 50.0}
+    assert [item["channel"] for item in result["pending_items"]] == ["rappi"]
+
+
+def test_banorte_parser_reads_real_headers_and_additional_expenses() -> None:
+    parsed = bank_parser.parse_banorte_rows([
+        {
+            "FECHA DE OPERACIÓN": "06/07/2026",
+            "DESCRIPCIÓN": "COMISION             08890734C",
+            "DESCRIPCIÓN DETALLADA": "APLICACION DE TASAS",
+            "DEPÓSITOS": "-",
+            "RETIROS": "$10.00",
+            "SALDO": "$100.00",
+        },
+        {
+            "FECHA DE OPERACIÓN": "06/07/2026",
+            "DESCRIPCIÓN": "CC REST SANTO HAND R 08890734",
+            "DESCRIPCIÓN DETALLADA": "CONTRACARGO APLICADO",
+            "DEPÓSITOS": "-",
+            "RETIROS": "$1,753.75",
+            "SALDO": "$90.00",
+        },
+        {
+            "FECHA DE OPERACIÓN": "06/07/2026",
+            "DESCRIPCIÓN": "2026070240014TRAPP000450573660",
+            "DESCRIPCIÓN DETALLADA": "-",
+            "DEPÓSITOS": "$1,360.00",
+            "RETIROS": "-",
+            "SALDO": "$1,450.00",
+        },
+    ])
+
+    assert parsed["status"] == "ok"
+    assert parsed["deposits_by_source"] == {"rappi": 1360.0}
+    assert parsed["additional_expenses"] == [
+        {
+            "description": "CC REST SANTO HAND R 08890734",
+            "detail": "CONTRACARGO APLICADO",
+            "amount": 1753.75,
+            "operation_date": "06/07/2026",
+            "category": "gasto_adicional",
+        }
+    ]
 
 
 def test_initial_stage_waits_for_bank_files() -> None:

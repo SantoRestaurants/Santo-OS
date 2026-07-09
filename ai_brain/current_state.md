@@ -1,36 +1,25 @@
 # Current State
 
-## 2026-07-08 - Corte July 7 recovered and bank/CxC ledger corrected
+## 2026-07-08 - Corte outstanding ledger semantics corrected
 
-- Manual Agent Mail workflow run `28946093136` recovered the forwarded
-  `SANTO CORTE MARTES 07 JULIO 2026` email from
-  `developer@santorestaurants.com`, created workflow run
-  `d2192c29-9e12-4133-a36b-ba703cf8f3db`, and wrote the canonical daily record:
-  Venta Bruta 55,448.90, Total Bruto 61,807.09, Forecast 57,686.09.
-- The scheduled Agent Mail workflow now uses a 36-hour lookback instead of
-  5 hours. Message-id and fingerprint idempotency remain the duplicate guard,
-  so delayed/forwarded Corte mail can be picked up without reprocessing older
-  packages.
-- Bank watcher expected collections now preserve the workflow's initial AMEX
-  ledger, add only true future bank deposits from new Corte days, folds
-  debit+credit into one Banorte expectation, includes Uber/Rappi/PayPal/
-  transferencia when present, and excludes efectivo/propinas from "falta por
-  entrar".
-- Legacy bank snapshots are normalized before carry-forward: debit/credit are
-  folded into Banorte and cash/tips are discarded, so previous contaminated
-  snapshots cannot keep inflating the live outstanding balance.
-- Open `corte_receivables` rows are appended to bank-stage expected
-  collections, and dashboard outstanding now renders unmatched bank
-  `pending_items` plus open CxC rows without double-counting CxC already
-  represented in a bank snapshot.
-- Non-canonical legacy `corte_receivables` rows with empty evidence, created by
-  prior manual scripts for channels such as efectivo/debito/credito, are ignored
-  by both the bank watcher and dashboard so they do not duplicate or inflate the
-  live outstanding balance.
-- Agent Mail no longer overwrites workflow `expected_collections` with `[]`
-  when persisting stage-1 output for the bank watcher. CxC events extracted
-  from OCR/vision evidence are now propagated into canonical evidence and
-  persisted to `corte_receivables` when the email body is empty.
+- Confirmed `Falta por entrar` source of truth: daily Corte sales by source
+  date, carried forward as item-level ledger rows and subtracted only when bank
+  deposits are detected. AMEX export rows enrich Corte-created ledger items
+  with net/payment-date details but no longer create duplicate pending items.
+- Bank watcher/reconciliation now keeps pending channels to AMEX, Banorte,
+  Uber, Rappi and itemized CxC. Cash, PayPal and transfers are no longer
+  reconstructed as bank-pending balances from `income_register`.
+- Banorte CSV parsing now supports the real accented headers, classifies the
+  observed Rappi SPEI that previously became unclassified, and returns
+  additional expenses as non-commission/non-IVA withdrawals for the relevant
+  bank business date.
+- Dashboard outstanding summaries now prefer ledger `amount` over AMEX net
+  `expected_deposit` and normalize old labels such as
+  `amex_neto_pendiente`/`banorte_terminal_pendiente` back to channel names.
+- Regression tests cover AMEX dedupe/canonical Corte source, Banorte group
+  clearing, separate Uber/Rappi pending ledgers and Banorte additional expenses.
+  Watch item: direct Corte AI answers that inspect `pending_collections` may
+  need wording updates if they expected the old synthetic labels.
 
 ## 2026-07-07 - Outstanding bank carry-forward and current-day forecast repaired
 
@@ -582,23 +571,3 @@ Activate and validate the Corte two-stage runtime in production:
   matches the key exposed in Git history, and the GitHub repository remains
   public. Rotate the key in Supabase/local/Vercel/GitHub and make the repository
   private before operational acceptance.
-
-## 2026-07-08 - Bank spreadsheet state and July 6 display corrections
-
-- Bank validation no longer paints the Ingresos row blue just because AMEX and
-  Banorte files were uploaded/crossed. Blue now means the sale day has no
-  pending bank collections. If pending collections remain, the watcher rewrites
-  the row as `corte_loaded` so stale blue fills are removed.
-- Bank stage notification copy now says the Corte was crossed against banks and
-  left pending when money has not entered, instead of saying the Excel was marked
-  blue.
-- Dashboard reconciliation hydration now prefers the canonical
-  `corte_daily_records` row over stale `revision_document` totals, so the July 6
-  CxC adjustment does not continue to show a `$535` reconciliation difference
-  after the daily record has been corrected.
-- CxC spreadsheet comments are clearer: they state the detected amount, detected
-  payment medium, and whether the item should be expected as a separate bank
-  deposit or inside a terminal/platform liquidation.
-- Conciliación UI copy changed the supervisor button from “Aprobar Agent Mail”
-  to “Aprobar”, and global cursor styles now show the pointer cursor for normal
-  clickable controls.

@@ -256,10 +256,13 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
   const pendingItems = Array.isArray(bank?.pending_items) ? bank.pending_items : [];
   for (const raw of pendingItems) {
     if (!isRecord(raw)) continue;
-    const amount = amountOf(raw.expected_deposit ?? raw.amount);
+    const channelRaw = String(raw.channel ?? "unclassified");
+    const status = String(raw.status ?? "");
+    if (channelRaw !== "amex" && status === "programado") continue;
+
+    const amount = amountOf(raw.amount ?? raw.expected_deposit);
     if (amount <= 0) continue;
-    const channel = normalizeOutstandingChannel(String(raw.channel ?? "unclassified"), raw);
-    if (channel === "No bancario") continue;
+    const channel = normalizeOutstandingChannel(channelRaw, raw);
     entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
     if (typeof raw.receivable_id === "string") representedReceivables.add(raw.receivable_id);
     if (typeof raw.receivable_key === "string") representedReceivables.add(raw.receivable_key);
@@ -268,13 +271,13 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
   if (pendingItems.length === 0 && isRecord(bank?.pending_collections)) {
     for (const [channel, value] of Object.entries(bank.pending_collections)) {
       const amount = amountOf(value);
-      if (amount > 0) entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
+      const normalizedChannel = normalizeOutstandingChannel(channel);
+      if (amount > 0) entriesMap.set(normalizedChannel, (entriesMap.get(normalizedChannel) ?? 0) + amount);
     }
   }
 
   for (const rec of receivables) {
     if (rec.status !== "open") continue;
-    if (!isCanonicalReceivable(rec)) continue;
     if (representedReceivables.has(rec.receivable_key)) continue;
     const amount = amountOf(rec.principal) - amountOf(rec.settled_principal);
     if (amount <= 0 || Number.isNaN(amount)) continue;
@@ -304,11 +307,23 @@ function amountOf(value: unknown) {
 
 function normalizeOutstandingChannel(channel: string, item?: Record<string, unknown>) {
   const key = channel.toLowerCase();
+  const status = typeof item?.status === "string" ? item.status : "";
+
+  if (status === "fuera_de_rango") {
+    return `${channel}_fuera_de_rango`;
+  }
+  if (key === "amex_neto_pendiente" || key === "amex_bruto_sin_reporte") return "amex";
+  if (key === "banorte_terminal_pendiente") return "banorte";
+  if (key === "amex") {
+    return "amex";
+  }
+  if (key === "banorte") {
+    return "banorte";
+  }
+
   if (key === "uber_eats" || key === "ubereats") return "uber";
   if (key === "cxc") return "CXC";
-  if (["amex", "banorte", "uber", "rappi", "paypal", "transferencia"].includes(key)) return key;
-  if (key === "debito" || key === "credito") return "banorte";
-  if (key === "efectivo" || key === "propinas") return "No bancario";
+  if (["amex", "banorte", "uber", "rappi", "paypal", "transferencia", "debito", "credito"].includes(key)) return key;
   const description = item?.description ?? item?.receivable_key;
   return typeof description === "string" && description ? `Otros (${description})` : `Otros (${channel})`;
 }
@@ -323,14 +338,6 @@ function normalizeReceivableChannel(rec: CorteReceivableLike) {
   if (!normalized.startsWith("Otros")) return normalized;
   const description = typeof ev?.description === "string" ? ev.description : null;
   return description ? `CXC (${description})` : "CXC";
-}
-
-function isCanonicalReceivable(rec: CorteReceivableLike) {
-  const ev = rec.evidence;
-  if (!ev || Object.keys(ev).length === 0) return false;
-  if (ev.kind === "opening" || ev.kind === "settlement") return true;
-  if (ev.source === "email_body" || ev.source === "vision_extractor") return true;
-  return Boolean(ev.description || ev.movement_id);
 }
 function compareRunQuality(a: RunLike, b: RunLike) {
   return scoreRun(b) - scoreRun(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();

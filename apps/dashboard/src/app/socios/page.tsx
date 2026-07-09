@@ -1,4 +1,5 @@
 import { getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
+import { RESTAURANT_OPTIONS } from "@/lib/restaurant-options";
 import { dailyForecastMeta, dailySales, dedupeRunsByDay, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
 import Link from "next/link";
 import Image from "next/image";
@@ -49,6 +50,38 @@ function dateLabel(value: string | null | undefined, mode: "short" | "long" = "l
     month: mode === "long" ? "long" : "short",
     year: mode === "long" ? "numeric" : undefined,
   }).format(parsed);
+}
+
+type AdditionalExpense = {
+  amount: number;
+  description: string;
+  detail?: string | null;
+};
+
+function additionalExpensesForRun(run: ReconciliationRun | null): AdditionalExpense[] {
+  if (!run) return [];
+  const day = run.business_date;
+  const payload = run.output_payload ?? {};
+  const bank = payload.bank_reconciliation as Record<string, unknown> | undefined;
+  const bankExpenses = Array.isArray(bank?.additional_expenses) ? bank.additional_expenses : [];
+  const revisionExpenses = Array.isArray(run.revision?.gastos_adicionales) ? run.revision.gastos_adicionales : [];
+  const source = bankExpenses.length > 0 ? bankExpenses : revisionExpenses;
+
+  return source
+    .filter((raw): raw is Record<string, unknown> => Boolean(raw && typeof raw === "object" && !Array.isArray(raw)))
+    .filter((raw) => {
+      const operationDate = typeof raw.operation_date === "string" ? raw.operation_date : null;
+      if (!day || !operationDate) return true;
+      const [dd, mm, yyyy] = operationDate.split("/");
+      const normalized = yyyy && mm && dd ? `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}` : operationDate;
+      return normalized === day;
+    })
+    .map((raw) => ({
+      amount: Number(raw.amount ?? raw.importe ?? 0),
+      description: String(raw.description ?? raw.concepto ?? "Gasto adicional"),
+      detail: typeof raw.detail === "string" ? raw.detail : typeof raw.observaciones === "string" ? raw.observaciones : null,
+    }))
+    .filter((item) => Number.isFinite(item.amount) && item.amount > 0);
 }
 
 function isBankValidated(run: ReconciliationRun) {
@@ -113,6 +146,7 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const allRuns = data.runs.filter(r => r.business_date);
   const runs = dedupeRunsByDay(allRuns);
   const units = Array.from(new Set(runs.map(getUnit))).sort();
+  const restaurantOptions = Array.from(new Set([...RESTAURANT_OPTIONS, ...units]));
 
   /* navigation state */
   const todayMonth = new Date().toISOString().slice(0, 7);
@@ -334,6 +368,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
           border: 1px solid ${C.border}; background: ${C.surface}; color: ${C.dim};
           transition: all 0.15s ease; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; }
         .year-pill:hover, .unit-pill:hover { background: ${C.surfaceHover}; color: ${C.ink}; }
+        .unit-pill.disabled { cursor: not-allowed; opacity: 0.45; }
+        .unit-pill.disabled:hover { background: ${C.surface}; color: ${C.dim}; }
         .year-pill.active, .unit-pill.active { background: ${C.santoGlow}; border-color: ${C.borderActive}; color: ${C.santo}; }
 
         .selector-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px;
@@ -617,6 +653,37 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                               <span style={{ color: C.red, fontWeight: 600, fontSize: "14px" }}>{moneyFull(amount)}</span>
                             </div>
                           ))}
+                        </div>
+                      );
+                    })()}
+
+                    {/* gastos adicionales */}
+                    {(() => {
+                      const expenses = additionalExpensesForRun(selectedRun);
+                      return (
+                        <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Gastos adicionales</div>
+                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>{dateLabel(selectedRun.business_date, "short")}</div>
+                          {expenses.length === 0 ? (
+                            <div style={{ color: C.dim, fontSize: "13px" }}>Sin gastos adicionales registrados</div>
+                          ) : (
+                            <>
+                              <div className="display-font" style={{ color: C.red, fontSize: "30px", fontWeight: 700, marginBottom: "12px" }}>
+                                {moneyFull(expenses.reduce((sum, item) => sum + item.amount, 0))}
+                              </div>
+                              {expenses.map((expense, index) => (
+                                <div key={`${expense.description}-${index}`} style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                                  <div className="flex justify-between gap-3">
+                                    <span style={{ color: C.dim, fontSize: "13px" }}>{expense.description}</span>
+                                    <span style={{ color: C.red, fontWeight: 600, fontSize: "14px", whiteSpace: "nowrap" }}>{moneyFull(expense.amount)}</span>
+                                  </div>
+                                  {expense.detail && expense.detail !== "-" && (
+                                    <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", lineHeight: 1.4 }}>{expense.detail}</div>
+                                  )}
+                                </div>
+                              ))}
+                            </>
+                          )}
                         </div>
                       );
                     })()}
