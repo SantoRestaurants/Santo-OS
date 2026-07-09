@@ -1,5 +1,20 @@
 # Current State
 
+## 2026-07-09 - Financial questions use deterministic period-aware rules
+
+- `/api/cortes/ai` now resolves the period stated in the question (including
+  explicit ranges and month-end questions), queries canonical Corte records,
+  CxC lifecycle rows and all persisted bank reconciliations, and calculates
+  supported answers before producing them. An AI fallback interprets equivalent
+  natural-language questions from the same compact, verified financial facts.
+- Incomplete months are identified from daily-record coverage; a month-end
+  request returns a plain-language incomplete-close response rather than a
+  fabricated monthly result. Missing bank-origin links return an explicit
+  plain-language data gap, never an estimated deposit or commission.
+- Historical-month pending questions use the latest bank state for the month's
+  source sales; once all June collections have landed in July, the response is
+  `$0.00 (Ya ingresó todo al banco)`.
+
 ## 2026-07-09 - Manual CxC breakdown is ledger-backed
 
 - The outstanding balance now prefers open `corte_receivables` items over a
