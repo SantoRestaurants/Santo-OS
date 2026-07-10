@@ -15,6 +15,13 @@
   source sales; once all June collections have landed in July, the response is
   `$0.00 (Ya ingresó todo al banco)`.
 
+## 2026-07-09 - Daily sales and payment-channel answers read Corte directly
+
+- A question about a selected business day reads its canonical Corte record
+  directly for gross sales and for American Express, cash, debit, credit, Uber
+  Eats and Rappi. These answers do not wait for a bank reconciliation and are
+  always shown as MXN.
+
 ## 2026-07-09 - Manual CxC breakdown is ledger-backed
 
 - The outstanding balance now prefers open `corte_receivables` items over a

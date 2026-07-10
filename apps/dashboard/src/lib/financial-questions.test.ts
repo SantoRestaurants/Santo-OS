@@ -52,6 +52,9 @@ function answerAll(liveContext: typeof context & { closingRun?: typeof context.l
 if (process.env.LIVE_FINANCIAL_TEST !== "1") {
   for (const question of questions) assert.ok(answerFinancialQuestion({ ...context, question }), question);
   assert.deepEqual(resolveFinancialPeriod("¿Qué se depositó durante junio por ventas de mayo?", "2026-07", "2026-07-09"), { start: "2026-06-01", end: "2026-06-30", effectiveDate: "2026-07-09" });
+  const july4 = { ...context, periodStart: "2026-07-01", periodEnd: "2026-07-31", effectiveDate: "2026-07-04", dailyRecords: [{ business_date: "2026-07-04", venta_bruta: 236432, amex: 78368.4, efectivo: 37596, debito: 24518.2, credito: 111270.62, uber_eats: 6950, rappi: 2660 }] };
+  assert.match(answerFinancialQuestion({ ...july4, question: "¿Cuánto se vendió hoy?" }) ?? "", /236,432.00/);
+  assert.match(answerFinancialQuestion({ ...july4, question: "¿Cuánto de AMEX se cargó hoy?" }) ?? "", /78,368.40/);
   const partialJuly = days.slice(0, 8).map((row, index) => ({ ...row, business_date: `2026-07-${String(index + 1).padStart(2, "0")}` }));
   assert.match(answerFinancialQuestion({ ...context, question: "Al cierre de julio, ¿cuánto quedó pendiente de American Express?", periodStart: "2026-07-01", periodEnd: "2026-07-31", dailyRecords: partialJuly }), /Todavía no puedo dar el cierre/);
   console.log(`OK: ${questions.length} preguntas y resolución de período`);
