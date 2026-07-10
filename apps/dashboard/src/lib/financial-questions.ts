@@ -128,6 +128,8 @@ export function answerFinancialQuestion(data: FinancialQuestionData) {
   }
   const deposits = bankDeposits(data.bankRuns);
   const periodDeposits = deposits.filter((deposit) => deposit.date && deposit.date >= data.periodStart && deposit.date <= data.periodEnd);
+  const dailyAnswer = answerDailySalesOrChannel(q, data.effectiveDate, data.dailyRecords);
+  if (dailyAnswer) return dailyAnswer;
 
   if (has(q, "american express", "deposito", "dia de hoy")) {
     const total = deposits.filter((deposit) => deposit.source === "amex" && deposit.date === data.effectiveDate).reduce((value, row) => value + row.amount, 0);
@@ -222,6 +224,27 @@ export function answerFinancialQuestion(data: FinancialQuestionData) {
   if (has(q, "deposito", "banorte")) {
     const total = periodDeposits.filter((deposit) => deposit.source === "banorte").reduce((value, row) => value + row.amount, 0);
     return total ? `Los depósitos conciliados de Banorte entre ${period} fueron ${money(total)}.` : "No hay depósitos de Banorte conciliados para ese período.";
+  }
+  return null;
+}
+
+function answerDailySalesOrChannel(question: string, businessDate: string, dailyRecords: UnknownRecord[]) {
+  const asksDaily = question.includes("hoy") || /\b(20\d{2}-\d{2}-\d{2})\b/.test(question);
+  const isAggregate = /porcentaje|promedio|acumulad|total del mes|durante el mes/.test(question);
+  if (!asksDaily || isAggregate) return null;
+  const record = dailyRecords.find((row) => String(row.business_date) === businessDate);
+  if (!record) return `No tengo un corte cargado para ${businessDate}.`;
+  const channel = [
+    { terms: ["american express", "amex"], key: "amex", label: "American Express" },
+    { terms: ["efectivo"], key: "efectivo", label: "efectivo" },
+    { terms: ["debito"], key: "debito", label: "débito" },
+    { terms: ["credito"], key: "credito", label: "crédito" },
+    { terms: ["uber"], key: "uber_eats", label: "Uber Eats" },
+    { terms: ["rappi"], key: "rappi", label: "Rappi" },
+  ].find((candidate) => candidate.terms.some((term) => question.includes(term)));
+  if (channel) return `El ${businessDate}, ${channel.label} registró MXN ${money(number(record[channel.key]))}.`;
+  if (/\b(venta|ventas|vendio|vendieron|facturo|facturaron)\b/.test(question)) {
+    return `El ${businessDate} se vendieron MXN ${money(number(record.venta_bruta))} de venta bruta.`;
   }
   return null;
 }
