@@ -170,3 +170,38 @@ def test_pending_summary_uses_only_positive_unmatched_balances():
     ]
 
     assert cron._summarize_pending(items) == {"amex": 35000, "uber": 8000}
+
+
+def test_cxc_expected_collection_rejects_legacy_channel_sales_rows():
+    row = {
+        "id": "legacy-debit",
+        "opened_on": "2026-07-09",
+        "principal": 16868.45,
+        "settled_principal": 0,
+        "receivable_key": "restaurant:2026-07-09:debito",
+        "evidence": {"kind": "channel_sales", "channel": "debito"},
+    }
+
+    assert cron._cxc_expected_collection(row) is None
+
+
+def test_cxc_expected_collection_keeps_named_manual_receivable():
+    row = {
+        "id": "cxc-diego",
+        "opened_on": "2026-07-09",
+        "principal": 6715,
+        "settled_principal": 0,
+        "receivable_key": "restaurant:manual-cxc-2026-07-09:diego-villanueva",
+        "evidence": {"kind": "opening", "description": "Diego Villanueva", "channel": "paypal"},
+    }
+
+    assert cron._cxc_expected_collection(row) == {
+        "business_date": "2026-07-09",
+        "channel": "cxc",
+        "amount": 6715.0,
+        "expected_deposit": 6715.0,
+        "source_date": "2026-07-09",
+        "receivable_id": "cxc-diego",
+        "receivable_key": "restaurant:manual-cxc-2026-07-09:diego-villanueva",
+        "description": "Diego Villanueva",
+    }

@@ -1,6 +1,6 @@
 import { getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { RESTAURANT_OPTIONS } from "@/lib/restaurant-options";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
+import { dailyForecastMeta, dailySales, dedupeRunsByDay, getLatestSaldos, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
 import Link from "next/link";
 import Image from "next/image";
 import { SociosChart } from "./SociosChart";
@@ -20,6 +20,20 @@ function money(v: number | undefined | null) {
 function moneyFull(v: number | undefined | null) {
   if (v == null || Number.isNaN(v)) return "—";
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(v);
+}
+
+function outstandingChannelLabel(channel: string) {
+  const labels: Record<string, string> = {
+    amex: "AMEX",
+    banorte: "Banorte (crédito + débito)",
+    uber: "Uber Eats",
+    rappi: "Rappi",
+  };
+  return labels[channel] ?? channel;
+}
+
+function cxcLabel(channel: string) {
+  return channel.includes("—") ? channel.split("—").slice(1).join("—").trim() : "Otro";
 }
 
 function parseDate(value: string | null | undefined) {
@@ -307,12 +321,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     monthChartData.sort((a, b) => a.fecha.localeCompare(b.fecha));
   }
 
-  /* Saldos from any run that has data */
-  const runWithSaldos = data.runs.find((run) => {
-    const s = (run.output_payload?.saldos as Record<string, number> | undefined);
-    return s && Object.values(s).some((v) => Number(v) > 0);
-  });
-  const saldos: Record<string, number> = (runWithSaldos?.output_payload?.saldos as Record<string, number> | undefined) ?? {};
+  /* Latest manually persisted balances are global for the active P0 unit. */
+  const { saldos, businessDate: saldosBusinessDate } = getLatestSaldos(unitAllRuns);
 
   /* Week and month context for AI */
   const weekContext = {
@@ -654,12 +664,23 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                           <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falta por entrar hasta hoy</div>
                           <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
                           <div className="display-font" style={{ color: C.red, fontSize: "30px", fontWeight: 700, marginBottom: "12px" }}>{moneyFull(outstanding.total)}</div>
-                          {outstanding.entries.map(({ channel, amount }) => (
+                          {outstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
                             <div key={channel} className="flex justify-between" style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                              <span style={{ color: C.dim, fontSize: "13px" }}>{channel}</span>
+                              <span style={{ color: C.dim, fontSize: "13px" }}>{outstandingChannelLabel(channel)}</span>
                               <span style={{ color: C.red, fontWeight: 600, fontSize: "14px" }}>{moneyFull(amount)}</span>
                             </div>
                           ))}
+                          {outstanding.entries.some(({ channel }) => channel.startsWith("CXC")) && (
+                            <div style={{ marginTop: "18px" }}>
+                              <div style={{ color: C.santo, fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" }}>Cuentas por cobrar</div>
+                              {outstanding.entries.filter(({ channel }) => channel.startsWith("CXC")).map(({ channel, amount }) => (
+                                <div key={channel} className="flex justify-between gap-3" style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                                  <span style={{ color: C.dim, fontSize: "13px" }}>{cxcLabel(channel)}</span>
+                                  <span style={{ color: C.red, fontWeight: 600, fontSize: "14px", whiteSpace: "nowrap" }}>{moneyFull(amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -697,7 +718,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
 
                     {/* saldos */}
                     <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
-                      <div style={{ fontSize: "11px", fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "20px" }}>Posición de Efectivo y Saldos</div>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>Posición de Efectivo y Saldos</div>
+                      <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "20px" }}>Actualizados al {dateLabel(saldosBusinessDate, "short")}</div>
                       <div style={{ flex: 1 }}>
                         <div style={{ marginBottom: "24px" }}>
                           <div style={{ fontSize: "10px", color: C.dim, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "4px" }}>Fondo Fijo Banorte</div>

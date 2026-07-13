@@ -169,8 +169,25 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
     },
   });
 
+  await updateBankProcessing(serviceClient, workflowRunId, {
+    status: "running",
+    business_date: businessDate,
+    started_at: new Date().toISOString(),
+    uploaded_documents: uploads.map((upload) => ({
+      document_type: upload.documentType,
+      name: upload.name,
+      drive_file_id: upload.id,
+    })),
+  });
+
   const trigger = await triggerBankWatcher(businessDate);
   if (!trigger.ok) {
+    await updateBankProcessing(serviceClient, workflowRunId, {
+      status: "failed",
+      business_date: businessDate,
+      completed_at: new Date().toISOString(),
+      error: trigger.error,
+    });
     await markUploadBlocked(serviceClient, workflowRunId, user.email ?? null, {
       reason: "bank_watcher_trigger_failed",
       trigger_error: trigger.error,
@@ -181,6 +198,22 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
   revalidatePath("/conciliacion");
   revalidatePath("/cortes");
   redirect(withQuery(returnTo, "success", "bank_watcher_triggered"));
+}
+
+async function updateBankProcessing(
+  serviceClient: ServiceClient,
+  workflowRunId: string,
+  state: Record<string, unknown>,
+) {
+  const { data, error } = await serviceClient
+    .from("workflow_runs")
+    .select("output_payload")
+    .eq("id", workflowRunId)
+    .single();
+  if (error) return;
+  const output = { ...((data?.output_payload ?? {}) as Record<string, unknown>) };
+  output.bank_processing = state;
+  await serviceClient.from("workflow_runs").update({ output_payload: output }).eq("id", workflowRunId);
 }
 
 async function hasSupervisorApproval(serviceClient: ServiceClient, workflowRunId: string) {

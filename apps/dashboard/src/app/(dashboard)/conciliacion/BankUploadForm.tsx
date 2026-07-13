@@ -1,13 +1,13 @@
 "use client";
 
-import { FileUp, CheckCircle2, UploadCloud } from "lucide-react";
+import { FileUp, CheckCircle2, LoaderCircle, UploadCloud } from "lucide-react";
 import { useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 import { uploadBankFilesAndTrigger } from "./actions";
 
 const LINE = "#ded7ca";
 const PANEL = "#ffffff";
 const GREEN = "#2e7d55";
-const GOLD = "#e8463b";
 const MUTED = "#766f65";
 const INK = "#282521";
 
@@ -97,20 +97,7 @@ export function BankUploadForm({
             <span className="text-[10px] uppercase tracking-wide" style={{ color: MUTED }}>.csv .xls .xlsx</span>
           </button>
 
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="mt-2 w-full rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-[1px] transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90"
-            style={{ background: canSubmit ? GREEN : "#bdb6aa", color: "#ffffff" }}
-          >
-            {!amexFile && !banorteFile
-              ? "Seleccioná ambos archivos para continuar"
-              : !amexFile
-                ? "Falta archivo AMEX"
-                : !banorteFile
-                  ? "Falta archivo Banorte"
-                  : "Subir y correr Bank Watcher"}
-          </button>
+          <BankSubmitButton canSubmit={canSubmit} hasAmex={amexFile !== null} hasBanorte={banorteFile !== null} />
         </div>
       )}
 
@@ -121,5 +108,38 @@ export function BankUploadForm({
         Si falta configuración de Drive o GitHub, el sistema lo deja en revisión.
       </p>
     </form>
+  );
+}
+
+function BankSubmitButton({ canSubmit, hasAmex, hasBanorte }: { canSubmit: boolean; hasAmex: boolean; hasBanorte: boolean }) {
+  const { pending } = useFormStatus();
+  const label = pending
+    ? "Subiendo bancos…"
+    : !hasAmex && !hasBanorte
+      ? "Seleccioná ambos archivos para continuar"
+      : !hasAmex
+        ? "Falta archivo AMEX"
+        : !hasBanorte
+          ? "Falta archivo Banorte"
+          : "Subir y conciliar bancos";
+
+  return (
+    <>
+      {pending && (
+        <div className="mt-2 flex items-center gap-2 rounded-md border px-3 py-3 text-xs" role="status" aria-live="polite" style={{ borderColor: "#b8dbc9", background: "#f1fbf5", color: GREEN }}>
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+          Subiendo AMEX y Banorte. No cierres esta pantalla.
+        </div>
+      )}
+      <button
+        type="submit"
+        disabled={!canSubmit || pending}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-[1px] transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90"
+        style={{ background: canSubmit ? GREEN : "#bdb6aa", color: "#ffffff" }}
+      >
+        {pending && <LoaderCircle className="h-4 w-4 animate-spin" />}
+        {label}
+      </button>
+    </>
   );
 }

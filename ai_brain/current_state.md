@@ -1,5 +1,27 @@
 # Current State
 
+## 2026-07-13 - Outstanding ledger, manual balances and bank UX repaired
+
+- `Falta por entrar` now renders only AMEX, Banorte, Uber, Rappi and named
+  CxC. Debit and credit roll up once into Banorte; cash is never bank-pending.
+- The latest bank snapshot remains authoritative through its reconciliation
+  date, while newer canonical Corte days are added once until another bank
+  snapshot clears them. Platform balances therefore carry forward and are
+  subtracted only by a later bank reconciliation.
+- Legacy `corte_receivables` rows that mirrored daily payment channels are
+  retired as settled audit history. Agent Mail no longer creates them, and the
+  bank watcher rejects any surviving `evidence.kind=channel_sales` rows. The
+  table is again reserved for real CxC lifecycle items.
+- The production July 9 snapshot was repaired to the allowed channel set. Open
+  CxC now consists only of Diego Villanueva, La Valisse and Otro (MXN 17,230).
+- Manual balances saved in `/saldos` are read as the latest global SANTO
+  balance and appear consistently in both `/cortes` and `/socios`.
+- Conciliation groups editable channels by terminals, cash/transfers,
+  platforms and complements. Supervisor approval has an immediate pending
+  state, and bank uploads expose upload/progress/result states with polling.
+- The duplicate-Corte warning was removed from the supervisor Corte screen;
+  internal deduplication remains active.
+
 ## 2026-07-09 - Financial questions use deterministic period-aware rules
 
 - `/api/cortes/ai` now resolves the period stated in the question (including

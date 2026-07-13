@@ -906,23 +906,6 @@ def poll_and_classify(
                                     "evidence": event,
                                 })
 
-                            for channel_name, amount in channels.items():
-                                if channel_name in ("propinas",) or amount <= 0:
-                                    continue
-                                stable_receivable_key = f"{restaurant_id}:{corte_business_date}:{channel_name}"
-                                supabase.upsert_corte_receivable({
-                                    "receivable_key": stable_receivable_key,
-                                    "restaurant_id": restaurant_id,
-                                    "movement_id": None,
-                                    "opened_on": corte_business_date,
-                                    "principal": amount,
-                                    "settled_on": None,
-                                    "settled_principal": 0,
-                                    "status": "open",
-                                    "source_provider_message_id": message_id,
-                                    "source_workflow_run_id": run_id,
-                                    "evidence": {"kind": "channel_sales", "channel": channel_name},
-                                })
                             if restaurant_id and register:
                                 from workflows.corte_santo.daily_record import (
                                     build_daily_record,

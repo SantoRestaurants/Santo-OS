@@ -1,8 +1,9 @@
-import { CheckCircle2, Clock3 } from "lucide-react";
+import { Clock3 } from "lucide-react";
 import Link from "next/link";
 
-import { approveAgentMailStage } from "./actions";
+import { ApprovalForm } from "./ApprovalForm";
 import { BankUploadForm } from "./BankUploadForm";
+import { BankProcessingStatus } from "./BankProcessingStatus";
 import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { dailySales, dedupeRunsByDay } from "@/lib/corte-dashboard-utils";
 import { EmailEvidence } from "@/components/cortes/EmailEvidence";
@@ -99,7 +100,7 @@ function Flash({ success, error }: { success?: string; error?: string }) {
   if (!success) return null;
   const labels: Record<string, string> = {
     agent_mail_approved: "Etapa Agent Mail aprobada. Ya se pueden subir los bancos.",
-    bank_watcher_triggered: "Bancos subidos a Drive y Bank Watcher disparado.",
+    bank_watcher_triggered: "Bancos subidos. La conciliación está en proceso y esta pantalla se actualizará automáticamente.",
   };
   return (
     <div className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: "#4CAF8255", background: "#4CAF8211", color: "#4CAF82" }}>
@@ -198,29 +199,14 @@ function RunCard({ run, defaultOpen = false }: { run: ReconciliationRun; default
         </div>
 
         <div className="space-y-4">
-          <form action={approveAgentMailStage} className="rounded-md border p-4" style={{ borderColor: LINE, background: "#fbfaf7" }}>
-            <input type="hidden" name="workflowRunId" value={run.id} />
-            <div className="mb-3 flex items-center gap-2 text-xs" style={{ color: MUTED }}>
-              <CheckCircle2 className="h-4 w-4" />
-              Aprobación de supervisora
-            </div>
-            <textarea
-              name="notes"
-              rows={3}
-              placeholder="Notas de revisión"
-              className="w-full rounded-md border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: LINE, background: PANEL, color: INK }}
-              defaultValue={approved ? "Aprobado" : ""}
-            />
-            <button
-              type="submit"
-              disabled={approved}
-              className="mt-3 w-full rounded-md px-4 py-2 text-xs font-semibold uppercase tracking-[1px] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ background: GOLD, color: "#ffffff" }}
-            >
-              {approved ? "Ya aprobado" : "Aprobar"}
-            </button>
-          </form>
+          <ApprovalForm workflowRunId={run.id} approved={approved} />
+
+          <BankProcessingStatus
+            workflowRunId={run.id}
+            initialState={run.output_payload.bank_processing && typeof run.output_payload.bank_processing === "object"
+              ? run.output_payload.bank_processing as Record<string, unknown>
+              : null}
+          />
 
           <BankUploadForm
             workflowRunId={run.id}

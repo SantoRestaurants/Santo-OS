@@ -213,6 +213,21 @@ export type OutstandingSnapshot = {
   total: number;
 };
 
+const SALDO_KEYS = ["banorte", "amex", "efectivo", "aguinaldos", "utilidades"] as const;
+
+export function getLatestSaldos(runs: RunLike[]) {
+  const sorted = [...runs]
+    .filter((run) => Boolean(run.business_date))
+    .sort((a, b) => String(b.business_date).localeCompare(String(a.business_date)) || b.created_at.localeCompare(a.created_at));
+  for (const run of sorted) {
+    const saldos = run.output_payload?.saldos;
+    if (!isRecord(saldos)) continue;
+    if (!SALDO_KEYS.some((key) => typeof saldos[key] === "number")) continue;
+    return { saldos: saldos as Record<string, number>, businessDate: run.business_date };
+  }
+  return { saldos: {} as Record<string, number>, businessDate: null };
+}
+
 export type CorteReceivableLike = {
   restaurant_id: string;
   receivable_key: string;
@@ -248,6 +263,7 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
   // CxC is a lifecycle ledger. When its open items are available, they are
   // more precise than the aggregate CxC amount retained in a bank snapshot.
   const hasOpenReceivables = receivables.some((rec) => {
+    if (!isCanonicalCxcReceivable(rec) || (rec.opened_on && rec.opened_on > throughDate)) return false;
     const outstanding = amountOf(rec.principal) - amountOf(rec.settled_principal);
     return rec.status === "open" && outstanding > 0 && !Number.isNaN(outstanding);
   });
@@ -260,9 +276,14 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
   const bank = bankReconciliation ?? nestedBankReconciliation;
 
   const pendingItems = Array.isArray(bank?.pending_items) ? bank.pending_items : [];
+  const snapshotHasBanorte = pendingItems.some((raw) => (
+    isRecord(raw) && normalizeOutstandingChannel(String(raw.channel ?? ""), raw) === "banorte"
+  ));
+  let legacyBanorteComponents = 0;
   for (const raw of pendingItems) {
     if (!isRecord(raw)) continue;
     const channelRaw = String(raw.channel ?? "unclassified");
+    const channelKey = channelRaw.toLowerCase();
     const status = String(raw.status ?? "");
     if (channelRaw !== "amex" && status === "programado") continue;
     if (hasOpenReceivables && channelRaw.toLowerCase() === "cxc") continue;
@@ -270,22 +291,59 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
     const amount = amountOf(raw.amount ?? raw.expected_deposit);
     if (amount <= 0) continue;
     const channel = normalizeOutstandingChannel(channelRaw, raw);
+    if (channelKey === "debito" || channelKey === "credito") {
+      if (!snapshotHasBanorte) legacyBanorteComponents += amount;
+      continue;
+    }
+    if (!isOutstandingChannel(channel)) continue;
     entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
     if (typeof raw.receivable_id === "string") representedReceivables.add(raw.receivable_id);
     if (typeof raw.receivable_key === "string") representedReceivables.add(raw.receivable_key);
   }
+  if (!snapshotHasBanorte && legacyBanorteComponents > 0) {
+    entriesMap.set("banorte", (entriesMap.get("banorte") ?? 0) + legacyBanorteComponents);
+  }
 
   if (pendingItems.length === 0 && isRecord(bank?.pending_collections)) {
+    const collectionKeys = new Set(Object.keys(bank.pending_collections).map((key) => key.toLowerCase()));
+    let legacyCollectionBanorte = 0;
     for (const [channel, value] of Object.entries(bank.pending_collections)) {
       if (hasOpenReceivables && channel.toLowerCase() === "cxc") continue;
       const amount = amountOf(value);
       const normalizedChannel = normalizeOutstandingChannel(channel);
-      if (amount > 0) entriesMap.set(normalizedChannel, (entriesMap.get(normalizedChannel) ?? 0) + amount);
+      if (channel.toLowerCase() === "debito" || channel.toLowerCase() === "credito") {
+        if (!collectionKeys.has("banorte")) legacyCollectionBanorte += amount;
+        continue;
+      }
+      if (amount > 0 && isOutstandingChannel(normalizedChannel)) {
+        entriesMap.set(normalizedChannel, (entriesMap.get(normalizedChannel) ?? 0) + amount);
+      }
+    }
+    if (!collectionKeys.has("banorte") && legacyCollectionBanorte > 0) {
+      entriesMap.set("banorte", (entriesMap.get("banorte") ?? 0) + legacyCollectionBanorte);
+    }
+  }
+
+  // A bank snapshot closes the ledger only through its own date. Add Corte
+  // channels from newer days so the card remains current without using the
+  // CxC lifecycle table as a duplicate sales ledger.
+  const newerRunsByDate = new Map<string, RunLike[]>();
+  for (const run of runs) {
+    if (!run.business_date || run.business_date <= asOfDate || run.business_date > throughDate) continue;
+    const items = newerRunsByDate.get(run.business_date) ?? [];
+    items.push(run);
+    newerRunsByDate.set(run.business_date, items);
+  }
+  for (const dayRuns of newerRunsByDate.values()) {
+    const run = dayRuns.sort(compareRunQuality)[0];
+    for (const [channel, amount] of Object.entries(pendingChannelsFromRun(run))) {
+      if (amount > 0) entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
     }
   }
 
   for (const rec of receivables) {
     if (rec.status !== "open") continue;
+    if (!isCanonicalCxcReceivable(rec) || (rec.opened_on && rec.opened_on > throughDate)) continue;
     if (representedReceivables.has(rec.receivable_key)) continue;
     const amount = amountOf(rec.principal) - amountOf(rec.settled_principal);
     if (amount <= 0 || Number.isNaN(amount)) continue;
@@ -337,20 +395,43 @@ function normalizeOutstandingChannel(channel: string, item?: Record<string, unkn
 }
 
 function normalizeReceivableChannel(rec: CorteReceivableLike) {
-  const ev = rec.evidence;
-  const evidenceChannel = typeof ev?.channel === "string" ? ev.channel : null;
-  const description = typeof ev?.description === "string" ? ev.description.trim() : null;
-  if (evidenceChannel) {
-    const normalized = normalizeOutstandingChannel(evidenceChannel, ev ?? undefined);
-    if (normalized === "CXC" && description) return `CXC — ${description}`;
-    return normalized;
-  }
-  const parts = rec.receivable_key.split(":");
-  const raw = parts.length >= 3 ? parts[2] : (parts.length === 2 ? parts[1] : "cxc");
-  const normalized = normalizeOutstandingChannel(raw, ev ?? undefined);
-  if (!normalized.startsWith("Otros")) return normalized;
+  const description = typeof rec.evidence?.description === "string"
+    ? rec.evidence.description.trim()
+    : null;
   return description ? `CXC — ${description}` : "CXC";
 }
+
+function isCanonicalCxcReceivable(rec: CorteReceivableLike) {
+  return rec.evidence?.kind !== "channel_sales";
+}
+
+function isOutstandingChannel(channel: string) {
+  return channel === "amex"
+    || channel === "banorte"
+    || channel === "uber"
+    || channel === "rappi"
+    || channel === "CXC"
+    || channel.startsWith("CXC — ");
+}
+
+function pendingChannelsFromRun(run: RunLike) {
+  const payload = run.output_payload ?? {};
+  const daily = isRecord(payload.daily_record) ? payload.daily_record : null;
+  const register = isRecord(payload.income_register)
+    ? payload.income_register
+    : isRecord(payload.income_channels)
+      ? payload.income_channels
+      : null;
+  const source = daily ?? register;
+  if (!source) return {};
+  return {
+    amex: amountOf(source.amex),
+    banorte: amountOf(source.debito) + amountOf(source.credito),
+    uber: amountOf(source.uber_eats ?? source.uber),
+    rappi: amountOf(source.rappi),
+  };
+}
+
 function compareRunQuality(a: RunLike, b: RunLike) {
   return scoreRun(b) - scoreRun(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 }

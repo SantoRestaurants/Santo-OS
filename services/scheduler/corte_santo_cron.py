@@ -482,6 +482,31 @@ def _pending_items_for_date(items: list[dict[str, Any]], business_date: str) -> 
     ]
 
 
+def _cxc_expected_collection(receivable: dict[str, Any]) -> dict[str, Any] | None:
+    """Return a bank-ledger item only for a real CxC lifecycle row.
+
+    Older Agent Mail runs incorrectly mirrored normal Corte channels into
+    corte_receivables with evidence.kind=channel_sales. Those rows duplicate
+    AMEX/Banorte/platform expectations and must never re-enter the bank ledger.
+    """
+    evidence = receivable.get("evidence") or {}
+    if not isinstance(evidence, dict) or evidence.get("kind") == "channel_sales":
+        return None
+    principal = _to_money(receivable.get("principal")) - _to_money(receivable.get("settled_principal"))
+    if principal <= 0:
+        return None
+    return {
+        "business_date": receivable.get("opened_on"),
+        "channel": "cxc",
+        "amount": principal,
+        "expected_deposit": principal,
+        "source_date": receivable.get("opened_on"),
+        "receivable_id": receivable.get("id"),
+        "receivable_key": receivable.get("receivable_key"),
+        "description": evidence.get("description"),
+    }
+
+
 def run_bank_watcher_once(
     *,
     config_path: str,
@@ -586,16 +611,9 @@ def run_bank_watcher_once(
     )
     if resp_rx.status_code < 400:
         for rx in resp_rx.json():
-            ev = rx.get("evidence") or {}
-            expected_cols.append({
-                "business_date": rx.get("opened_on"),
-                "channel": ev.get("channel", "cxc"),
-                "amount": float(rx.get("principal", 0)),
-                "expected_deposit": float(rx.get("principal", 0)),
-                "source_date": rx.get("opened_on"),
-                "receivable_id": rx.get("id"),
-                "receivable_key": rx.get("receivable_key"),
-            })
+            expected = _cxc_expected_collection(rx)
+            if expected:
+                expected_cols.append(expected)
 
     if not expected_cols and not pending_runs:
         return {
@@ -930,6 +948,69 @@ def run_bank_watcher_once(
     return result
 
 
+def _persist_bank_processing_outcome(business_date: str | None, result: dict[str, Any]) -> None:
+    """Close the dashboard's visible bank-processing state for every outcome."""
+    if not business_date or _env("SANTO_CRON_WRITE", "").strip().lower() not in ("true", "1"):
+        return
+    supabase_url = _env("SUPABASE_URL") or _env("NEXT_PUBLIC_SUPABASE_URL")
+    service_key = _env("SUPABASE_SERVICE_KEY") or _env("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not service_key:
+        return
+    try:
+        import httpx
+
+        headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+        response = httpx.get(
+            f"{supabase_url}/rest/v1/workflow_runs",
+            params={
+                "business_date": f"eq.{business_date}",
+                "source_channel": "eq.agent_mail",
+                "select": "id,output_payload",
+                "order": "created_at.desc",
+                "limit": "1",
+            },
+            headers=headers,
+            timeout=15.0,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if not isinstance(rows, list) or not rows:
+            return
+        output = rows[0].get("output_payload") or {}
+        if isinstance(output, str):
+            output = json.loads(output)
+        if not isinstance(output, dict):
+            output = {}
+        previous = output.get("bank_processing") or {}
+        if not isinstance(previous, dict):
+            previous = {}
+        result_status = str(result.get("status") or "requires_review")
+        processing_status = "completed" if result_status in (
+            "completed", "waiting_for_input", "bank_validated", "bank_requires_review"
+        ) else "requires_review"
+        bank = output.get("bank_reconciliation") or {}
+        pending = bank.get("pending_collections") if isinstance(bank, dict) else {}
+        output["bank_processing"] = {
+            **previous,
+            "status": processing_status,
+            "completed_at": datetime.now(UTC).isoformat(),
+            "result_status": result_status,
+            "requires_review_reason": result.get("requires_review_reason"),
+            "validated_count": result.get("validated_count"),
+            "validated_dates": result.get("validated_dates") or [],
+            "pending_collections": pending or {},
+        }
+        update = httpx.patch(
+            f"{supabase_url}/rest/v1/workflow_runs?id=eq.{rows[0]['id']}",
+            json={"output_payload": output},
+            headers={**headers, "Content-Type": "application/json"},
+            timeout=15.0,
+        )
+        update.raise_for_status()
+    except Exception:
+        logging.exception("Failed to persist bank processing outcome for %s", business_date)
+
+
 def run_all(args: argparse.Namespace) -> dict[str, Any]:
     jobs: list[dict[str, Any]] = []
     if args.job in ("agent-mail", "all"):
@@ -947,14 +1028,16 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
     if args.job in ("bank-watcher", "all"):
+        bank_result = run_bank_watcher_once(
+            config_path=args.corte_config,
+            restaurant_key=args.restaurant_key,
+            business_date=args.business_date,
+        )
+        _persist_bank_processing_outcome(args.business_date, bank_result)
         jobs.append(
             {
                 "job": "bank-watcher",
-                "result": run_bank_watcher_once(
-                    config_path=args.corte_config,
-                    restaurant_key=args.restaurant_key,
-                    business_date=args.business_date,
-                ),
+                "result": bank_result,
             }
         )
     statuses = [job["result"].get("status") for job in jobs]

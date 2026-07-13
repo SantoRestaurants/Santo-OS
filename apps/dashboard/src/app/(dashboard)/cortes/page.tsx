@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   CalendarDays,
-  CheckCircle2,
   ChevronRight,
   FileSpreadsheet,
   FolderOpen,
@@ -10,8 +9,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-import { APPROVAL_REVIEW_KEY, getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, duplicateRunsByDay, hasForecastSourceForMonth, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
+import { getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
+import { dailyForecastMeta, dailySales, dedupeRunsByDay, getLatestSaldos, hasForecastSourceForMonth, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
 import { RESTAURANT_OPTIONS } from "@/lib/restaurant-options";
 import { CorteAiBox } from "./CorteAiBox";
 import { InlineEditTable } from "./InlineEditTable";
@@ -31,6 +30,20 @@ const AMBER = "#b8782d";
 function money(value: number | undefined | null) {
   if (value == null || Number.isNaN(value)) return "-";
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(value);
+}
+
+function outstandingChannelLabel(channel: string) {
+  const labels: Record<string, string> = {
+    amex: "AMEX",
+    banorte: "Banorte (crédito + débito)",
+    uber: "Uber Eats",
+    rappi: "Rappi",
+  };
+  return labels[channel] ?? channel;
+}
+
+function cxcLabel(channel: string) {
+  return channel.includes("—") ? channel.split("—").slice(1).join("—").trim() : "Otro";
 }
 
 function parseDate(value: string | null | undefined) {
@@ -129,10 +142,6 @@ function isBankValidated(run: ReconciliationRun) {
   return run.status === "completed" || run.status === "bank_validated" || run.documents.some((doc) => doc.document_type === "amex_statement" || doc.document_type === "banorte_statement");
 }
 
-function hasApproval(run: ReconciliationRun) {
-  return run.reviews.some((review) => review.review_key === APPROVAL_REVIEW_KEY && review.status === "approved");
-}
-
 function runTotal(run: ReconciliationRun) { return dailySales(run); }
 
 export const dynamic = "force-dynamic";
@@ -162,7 +171,6 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
 
   const allRuns = data.runs.filter((run) => run.business_date);
   const runs = dedupeRunsByDay(allRuns);
-  const duplicateDates = duplicateRunsByDay(allRuns);
   const units = Array.from(new Set(runs.map(getUnit))).sort();
   const restaurantOptions = Array.from(new Set([...RESTAURANT_OPTIONS, ...units]));
   const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
@@ -176,6 +184,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
     return key === selectedUnit;
   });
   const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, todayMexico);
+  const latestBalance = getLatestSaldos(unitAllRuns);
   const years = Array.from(new Set(unitRuns.map((run) => yearKey(run.business_date)))).sort().reverse();
   const selectedYear = params.year && years.includes(params.year) ? params.year : years[0] ?? new Date().toISOString().slice(0, 4);
   const yearRuns = unitRuns.filter((run) => yearKey(run.business_date) === selectedYear);
@@ -310,12 +319,6 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                 <p className="mt-1 text-sm" style={{ color: MUTED }}>Subilo una vez y queda registrado para todo el mes.</p>
               </div>
             </div>
-          </div>
-        )}
-
-        {duplicateDates.length > 0 && (
-          <div className="rounded-md border p-4 text-sm" style={{ borderColor: "#e4c58f", background: "#fff8ec", color: AMBER }}>
-            Hay cortes duplicados para {duplicateDates.map(([date]) => dateLabel(date, "short")).join(", ")}. Se muestra solo la version mas completa de cada dia.
           </div>
         )}
 
@@ -465,12 +468,23 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                         if (!outstanding) return <div className="text-xs" style={{ color: MUTED }}>Nada pendiente</div>;
                         return <>
                           <div className="mb-1 text-[10px]" style={{ color: MUTED }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
-                          {outstanding.entries.map(({ channel, amount }) => (
-                            <div key={channel} className="flex justify-between text-xs py-0.5" style={{ color: INK }}>
-                              <span style={{ color: MUTED }}>{channel}</span>
+                          {outstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
+                            <div key={channel} className="flex justify-between text-xs py-1" style={{ color: INK }}>
+                              <span style={{ color: MUTED }}>{outstandingChannelLabel(channel)}</span>
                               <span className="font-medium">{money(amount)}</span>
                             </div>
                           ))}
+                          {outstanding.entries.some(({ channel }) => channel.startsWith("CXC")) && (
+                            <div className="mt-2 border-t pt-2" style={{ borderColor: LINE }}>
+                              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>Cuentas por cobrar</div>
+                              {outstanding.entries.filter(({ channel }) => channel.startsWith("CXC")).map(({ channel, amount }) => (
+                                <div key={channel} className="flex justify-between gap-3 py-1 text-xs" style={{ color: INK }}>
+                                  <span className="min-w-0 truncate" style={{ color: MUTED }}>{cxcLabel(channel)}</span>
+                                  <span className="shrink-0 font-medium">{money(amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </>;
                       })()}
                     </div>
@@ -630,30 +644,31 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                   </div>
                 )}
 
-                {!!selectedRun.output_payload?.saldos && (
+                {Object.keys(latestBalance.saldos).length > 0 && (
                   <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>
                     <div className="mb-3 font-semibold" style={{ color: INK }}>Saldos al cierre</div>
+                    <div className="mb-3 text-xs" style={{ color: MUTED }}>Actualizados manualmente al {dateLabel(latestBalance.businessDate, "short")}</div>
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
                         <span className="shrink-0">Banorte</span>
-                        <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).banorte)}</span>
+                        <span className="min-w-0 truncate text-right font-semibold">{money(latestBalance.saldos.banorte)}</span>
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
                         <span className="shrink-0">AMEX</span>
-                        <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).amex)}</span>
+                        <span className="min-w-0 truncate text-right font-semibold">{money(latestBalance.saldos.amex)}</span>
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
                         <span className="shrink-0">Efectivo</span>
-                        <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).efectivo)}</span>
+                        <span className="min-w-0 truncate text-right font-semibold">{money(latestBalance.saldos.efectivo)}</span>
                       </div>
                       <div className="pt-2 mt-2 border-t" style={{ borderColor: LINE }}>
                         <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
                           <span className="shrink-0">Aguinaldos</span>
-                          <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).aguinaldos)}</span>
+                          <span className="min-w-0 truncate text-right font-semibold">{money(latestBalance.saldos.aguinaldos)}</span>
                         </div>
                         <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm" style={{ borderColor: LINE, color: INK }}>
                           <span className="shrink-0">Utilidades</span>
-                          <span className="min-w-0 truncate text-right font-semibold">{money((selectedRun.output_payload.saldos as Record<string, number>).utilidades)}</span>
+                          <span className="min-w-0 truncate text-right font-semibold">{money(latestBalance.saldos.utilidades)}</span>
                         </div>
                       </div>
                     </div>

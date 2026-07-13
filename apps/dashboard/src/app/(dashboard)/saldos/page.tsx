@@ -1,7 +1,7 @@
 import { Building2, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { getReconciliationData } from "@/lib/reconciliation-data";
-import { dedupeRunsByDay } from "@/lib/corte-dashboard-utils";
+import { getLatestSaldos } from "@/lib/corte-dashboard-utils";
 
 const INK = "#282521";
 const MUTED = "#766f65";
@@ -10,11 +10,6 @@ const PAPER = "#fbfaf7";
 const PANEL = "#ffffff";
 const GOLD = "#e8463b";
 const GREEN = "#16a34a";
-
-function money(value: number | undefined | null) {
-  if (value == null || Number.isNaN(value)) return "-";
-  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(value);
-}
 
 type SearchParams = Promise<{ success?: string; error?: string }>;
 
@@ -41,14 +36,9 @@ export default async function SaldosPage({ searchParams }: { searchParams: Searc
   }
 
   const allRuns = data.runs.filter((run) => run.business_date);
-  const runs = dedupeRunsByDay(allRuns);
-  
-  // Find latest run that actually has saldos data
-  const latestRun = runs.find((run) => {
-    const s = (run.output_payload?.saldos as Record<string, number> | undefined);
-    return s && Object.values(s).some((v) => v > 0);
-  }) || runs[0];
-  const saldos = (latestRun?.output_payload?.saldos as Record<string, number> | undefined) ?? {};
+  const latestRun = [...allRuns].sort((a, b) => String(b.business_date).localeCompare(String(a.business_date)) || b.created_at.localeCompare(a.created_at))[0];
+  const latestBalance = getLatestSaldos(allRuns);
+  const saldos = latestBalance.saldos;
 
   const fields = [
     { key: "banorte", label: "Banorte", hint: "Automático — del archivo de banco" },
@@ -65,7 +55,7 @@ export default async function SaldosPage({ searchParams }: { searchParams: Searc
           <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: GOLD }}>Gestión</div>
           <h1 className="mt-1 text-3xl font-semibold">Saldos Acumulados</h1>
           <p className="mt-2 text-sm" style={{ color: MUTED }}>
-            Último corte: {latestRun?.business_date || "N/A"} — modificá cualquier saldo manualmente.
+            Último corte: {latestRun?.business_date || "N/A"} · saldos vigentes desde {latestBalance.businessDate || "sin carga manual"}.
           </p>
         </header>
 

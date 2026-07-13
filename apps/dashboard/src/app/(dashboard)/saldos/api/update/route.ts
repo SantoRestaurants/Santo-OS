@@ -33,7 +33,9 @@ export async function POST(request: Request) {
     const { data: runs } = await serviceClient
       .from("workflow_runs")
       .select("id, output_payload")
+      .eq("source_channel", "agent_mail")
       .order("business_date", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1);
 
     if (!runs || runs.length === 0) {
@@ -41,16 +43,17 @@ export async function POST(request: Request) {
     }
 
     const latestRun = runs[0];
-    const payload = (latestRun.output_payload || {}) as Record<string, unknown>;
-    const saldos = (payload.saldos || {}) as Record<string, number>;
+    const payload = { ...((latestRun.output_payload || {}) as Record<string, unknown>) };
+    const saldos = { ...((payload.saldos || {}) as Record<string, number>) };
     
     Object.assign(saldos, values);
     payload.saldos = saldos;
 
-    await serviceClient
+    const { error: updateError } = await serviceClient
       .from("workflow_runs")
       .update({ output_payload: payload })
       .eq("id", latestRun.id);
+    if (updateError) throw new Error(updateError.message);
 
     await serviceClient.from("events").insert({
       aggregate_type: "workflow_run",
