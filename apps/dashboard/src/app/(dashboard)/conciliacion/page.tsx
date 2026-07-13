@@ -273,7 +273,7 @@ export default async function ConciliacionPage({ searchParams }: { searchParams:
         )}
 
         <div className="flex flex-col gap-4">
-          {dedupeRunsByDay(data.runs).map((run, index) => (
+          {dedupeRunsByDay(data.runs).filter((run) => run.id !== "stub-today").map((run, index) => (
             <RunCard key={run.id} run={run} defaultOpen={index === 0} />
           ))}
         </div>
