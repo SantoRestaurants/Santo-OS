@@ -36,8 +36,15 @@
   },
   "bank_keywords": {
     "ignore_deposit": [
-      "ABONO DCTO. CARTERA"
+      "ABONO DCTO. CARTERA",
+      "COM. PAG. DCC",
+      "IVA PAG. DCC"
     ]
+  },
+  "bank_settlement_rules": {
+    "banorte": { "mode": "fifo_partial" },
+    "uber": { "mode": "deposit_cutoff" },
+    "rappi": { "mode": "deposit_cutoff" }
   },
   "supervisor_email": "developer@santorestaurants.com",
   "ingresos_layout": {

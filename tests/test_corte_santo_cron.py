@@ -172,6 +172,21 @@ def test_pending_summary_uses_only_positive_unmatched_balances():
     assert cron._summarize_pending(items) == {"amex": 35000, "uber": 8000}
 
 
+def test_normalized_snapshot_preserves_gross_amount_and_net_bank_match_amount():
+    normalized = cron._normalize_expected_collection(
+        {
+            "business_date": "2026-07-08",
+            "channel": "amex",
+            "amount": 13786.94,
+            "expected_deposit": 13323.15,
+        },
+        "2026-07-08",
+    )
+
+    assert normalized["amount"] == 13786.94
+    assert normalized["expected_deposit"] == 13323.15
+
+
 def test_cxc_expected_collection_rejects_legacy_channel_sales_rows():
     row = {
         "id": "legacy-debit",

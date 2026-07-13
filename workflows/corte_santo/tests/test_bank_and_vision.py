@@ -76,6 +76,29 @@ def test_banorte_ignores_configured_non_operating_deposit() -> None:
     assert res["deposits"] == []
 
 
+def test_banorte_ignores_dcc_commission_credit_rows() -> None:
+    res = bank.parse_banorte_rows([
+        {
+            bank.COL_OPERATION_DATE: "13/07/2026",
+            bank.COL_DESC: "COM. PAG. DCC        08890734C",
+            bank.COL_DESC_DETAIL: "IMPORTE $35,441.25 TXN: 16",
+            bank.COL_DEPOSIT: "$354.37",
+            bank.COL_WITHDRAWAL: "-",
+        },
+        {
+            bank.COL_OPERATION_DATE: "13/07/2026",
+            bank.COL_DESC: "IVA PAG. DCC         08890734C",
+            bank.COL_DESC_DETAIL: "IMPORTE $35,441.25 TXN: 16",
+            bank.COL_DEPOSIT: "$56.70",
+            bank.COL_WITHDRAWAL: "-",
+        },
+    ])
+
+    assert res["status"] == "ok"
+    assert res["unclassified_deposits"] == []
+    assert [item["amount"] for item in res["ignored_deposits"]] == [354.37, 56.70]
+
+
 def test_banorte_domiciled_expense_captured() -> None:
     rows = [
         {"DESCRIPCIÓN": "PAGO SPOTIFY", "DESCRIPCIÓN DETALLADA": "DOMICILIACION", "DEPÓSITOS": "-", "RETIROS": "$199.00"},

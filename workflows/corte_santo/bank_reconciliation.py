@@ -73,6 +73,12 @@ def _ledger_key(item: dict[str, Any]) -> tuple[str, str, float, str]:
     )
 
 
+def _operation_is_after_source(deposit: dict[str, Any], item: dict[str, Any]) -> bool:
+    operation_date = _date_key(deposit.get("operation_date"))
+    source_date = _date_key(item.get("source_date") or item.get("business_date"))
+    return bool(operation_date and source_date and operation_date > source_date)
+
+
 def _date_ge(a: str | None, b: str | None) -> bool:
     """True if date a >= date b (a is same day or after b)."""
     if not a or not b:
@@ -228,12 +234,16 @@ def _match_amex_to_corte(
         if p["_used"]:
             continue
         cargos = round(p.get("cargos", 0), 2)
+        neto = round(p.get("neto", p.get("amount", 0)), 2)
         envio = p.get("fecha_envio")
         for item in list(remaining_corte):
             expected = round(float(item.get("amount", 0)), 2)
+            expected_net = round(float(item.get("expected_deposit", expected)), 2)
             corte_date = item.get("business_date") or item.get("source_date")
             date_ok = _date_ge(envio, corte_date)
-            if cargos == expected:
+            gross_match = cargos == expected
+            legacy_net_match = neto == expected_net and expected == expected_net
+            if gross_match or legacy_net_match:
                 if not date_ok:
                     logger.debug(
                         "AMEX date fail: cargos=%.2f == corte %s AMEX=%.2f but envio=%s < corte_date=%s",
@@ -244,11 +254,12 @@ def _match_amex_to_corte(
                         "AMEX exact match: cargos=%.2f == corte %s AMEX=%.2f envio=%s",
                         cargos, corte_date, expected, envio,
                     )
-            if cargos == expected and date_ok:
+            if (gross_match or legacy_net_match) and date_ok:
                 p["_used"] = True
                 remaining_corte.remove(item)
                 matched_days.append({
                     **item,
+                    "amount": cargos if legacy_net_match else expected,
                     "validated_by": "amex_exact",
                     "amex_cargo": cargos,
                     "amex_envio": envio,
@@ -273,16 +284,21 @@ def _match_amex_to_corte(
                     if a.get("fecha_envio") != b.get("fecha_envio"):
                         continue
                     pair_sum = round(a.get("cargos", 0) + b.get("cargos", 0), 2)
+                    pair_net = round(float(a.get("neto", 0)) + float(b.get("neto", 0)), 2)
                     pair_envio = a.get("fecha_envio")  # both same
                     for item in list(remaining_corte):
                         expected = round(float(item.get("amount", 0)), 2)
+                        expected_net = round(float(item.get("expected_deposit", expected)), 2)
                         corte_date = item.get("business_date") or item.get("source_date")
-                        if pair_sum == expected and _date_ge(pair_envio, corte_date):
+                        gross_match = pair_sum == expected
+                        legacy_net_match = pair_net == expected_net and expected == expected_net
+                        if (gross_match or legacy_net_match) and _date_ge(pair_envio, corte_date):
                             a["_used"] = True
                             b["_used"] = True
                             remaining_corte.remove(item)
                             matched_days.append({
                                 **item,
+                                "amount": pair_sum if legacy_net_match else expected,
                                 "validated_by": "amex_pair",
                                 "amex_cargo_a": a.get("cargos"),
                                 "amex_cargo_b": b.get("cargos"),
@@ -309,6 +325,7 @@ def reconcile_bank_stage(
     *,
     tolerance: float = 0.0,
     business_date: str | None = None,
+    settlement_rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Reconcile bank stage: validate AMEX payments against Corte and Banorte.
 
@@ -318,6 +335,7 @@ def reconcile_bank_stage(
       3. Match paired AMEX cargos (same batch, same fecha_envio) to Corte days
     """
     exceptions: list[dict[str, Any]] = []
+    settlement_rules = settlement_rules or {}
 
     if banorte_statement.get("status") != "ok":
         exceptions.append({"exception_key": "banorte_statement_requires_review", "details": banorte_statement})
@@ -454,7 +472,7 @@ def reconcile_bank_stage(
     # Group AMEX by expected_payment_date for consolidated SPEI matching
     expected_remaining = [dict(item, _matched=False) for item in banorte_expected if item.get("channel") == "amex"]
     for item in expected_remaining:
-        if item.get("status") == "pendiente_reporte_amex":
+        if item.get("status") == "pendiente_reporte_amex" and not item.get("expected_payment_date"):
             item["_matched"] = True
             pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
     for deposit in available:
@@ -540,7 +558,15 @@ def reconcile_bank_stage(
             pending_items.append(unmatched_item)
 
     # Non-AMEX channels
-    others_remaining = [dict(item, _matched=False) for item in banorte_expected if item.get("channel") != "amex"]
+    others_remaining = [
+        dict(
+            item,
+            _matched=False,
+            _remaining=round(float(item.get("expected_deposit", item.get("amount", 0)) or 0), 2),
+        )
+        for item in banorte_expected
+        if item.get("channel") != "amex"
+    ]
     for channel in set(item.get("channel") for item in others_remaining):
         channel_items = [item for item in others_remaining if item.get("channel") == channel and not item["_matched"]]
         if not channel_items:
@@ -562,7 +588,10 @@ def reconcile_bank_stage(
             item_amount = round(float(item.get("expected_deposit", item.get("amount", 0))), 2)
             
             for date_key, deps in deps_by_date.items():
-                unmatched_deps = [d for d in deps if not d.get("matched")]
+                unmatched_deps = [
+                    d for d in deps
+                    if not d.get("matched") and _operation_is_after_source(d, item)
+                ]
                 if not unmatched_deps:
                     continue
                 # If the sum of ALL unmatched deposits for this channel on this date matches the single item
@@ -584,7 +613,12 @@ def reconcile_bank_stage(
             dep_amount = round(float(deposit.get("amount", 0)), 2)
             
             # Try to match single item first
-            single_match = next((i for i in channel_items if not i["_matched"] and abs(float(i.get("expected_deposit", i.get("amount", 0))) - dep_amount) <= tolerance), None)
+            single_match = next((
+                i for i in channel_items
+                if not i["_matched"]
+                and _operation_is_after_source(deposit, i)
+                and abs(float(i.get("expected_deposit", i.get("amount", 0))) - dep_amount) <= tolerance
+            ), None)
             if single_match:
                 single_match["_matched"] = True
                 deposit["matched"] = True
@@ -601,7 +635,7 @@ def reconcile_bank_stage(
                 group = []
                 group_sum = 0.0
                 for j in range(i, min(i + 5, len(channel_items))):
-                    if channel_items[j]["_matched"]:
+                    if channel_items[j]["_matched"] or not _operation_is_after_source(deposit, channel_items[j]):
                         break
                     group.append(channel_items[j])
                     group_sum += float(channel_items[j].get("expected_deposit", channel_items[j].get("amount", 0)))
@@ -615,10 +649,89 @@ def reconcile_bank_stage(
                             "deposit": deposit
                         })
                         break
+
+        rule = settlement_rules.get(str(channel), {})
+        mode = rule.get("mode") if isinstance(rule, dict) else None
+
+        # Uber and Rappi statements land net of platform deductions. A payout
+        # therefore closes the gross Corte ledger through the day before the
+        # deposit; comparing the two amounts directly would leave commissions
+        # falsely outstanding forever.
+        if mode == "deposit_cutoff":
+            for deposit in sorted(
+                (d for d in available if not d.get("matched") and d.get("source") == channel),
+                key=lambda d: _date_key(d.get("operation_date")) or "",
+            ):
+                eligible = [
+                    item for item in channel_items
+                    if not item["_matched"] and _operation_is_after_source(deposit, item)
+                ]
+                if not eligible:
+                    continue
+                for item in eligible:
+                    item["_matched"] = True
+                deposit["matched"] = True
+                matches.append({
+                    "expected_group": [
+                        {k: v for k, v in item.items() if not k.startswith("_")}
+                        for item in eligible
+                    ],
+                    "deposit": deposit,
+                    "settlement_mode": "deposit_cutoff",
+                })
+
+        # Banorte terminal settlements are gross, can arrive in several rows,
+        # and may only partially cover the latest Corte day. Apply later-dated
+        # deposits FIFO and retain only the true residual as outstanding.
+        if mode == "fifo_partial":
+            ordered_items = sorted(
+                (item for item in channel_items if not item["_matched"]),
+                key=lambda item: _date_key(item.get("source_date") or item.get("business_date")) or "",
+            )
+            for deposit in sorted(
+                (d for d in available if not d.get("matched") and d.get("source") == channel),
+                key=lambda d: _date_key(d.get("operation_date")) or "",
+            ):
+                deposit_remaining = round(float(deposit.get("amount", 0) or 0), 2)
+                allocations = []
+                for item in ordered_items:
+                    if item["_matched"] or deposit_remaining <= tolerance:
+                        continue
+                    if not _operation_is_after_source(deposit, item):
+                        continue
+                    allocation = round(min(float(item["_remaining"]), deposit_remaining), 2)
+                    if allocation <= 0:
+                        continue
+                    item["_remaining"] = round(float(item["_remaining"]) - allocation, 2)
+                    deposit_remaining = round(deposit_remaining - allocation, 2)
+                    allocations.append({
+                        "business_date": item.get("business_date"),
+                        "source_date": item.get("source_date"),
+                        "amount": allocation,
+                    })
+                    if item["_remaining"] <= tolerance:
+                        item["_matched"] = True
+                if allocations:
+                    deposit["matched"] = True
+                    matches.append({
+                        "allocations": allocations,
+                        "deposit": deposit,
+                        "unapplied_amount": max(0.0, deposit_remaining),
+                        "settlement_mode": "fifo_partial",
+                    })
                         
     for item in others_remaining:
         if not item["_matched"]:
-            pending_items.append({k: v for k, v in item.items() if not k.startswith("_")})
+            pending_item = {k: v for k, v in item.items() if not k.startswith("_")}
+            if float(item.get("_remaining", 0)) < float(item.get("expected_deposit", item.get("amount", 0)) or 0):
+                residual = round(float(item["_remaining"]), 2)
+                original = round(float(item.get("amount", item.get("expected_deposit", 0)) or 0), 2)
+                pending_item["original_amount"] = original
+                pending_item["settled_amount"] = round(original - residual, 2)
+                pending_item["amount"] = residual
+                pending_item["expected_deposit"] = residual
+                pending_item["status"] = "parcialmente_depositado"
+            pending_items.append(pending_item)
 
     pending: dict[str, float] = {}
     platforms_pending = []

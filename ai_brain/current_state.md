@@ -1,5 +1,23 @@
 # Current State
 
+## 2026-07-13 - Bank deposits now settle the outstanding ledger
+
+- AMEX Corte rows retain their gross sale amount while the AMEX export carries
+  the separate net bank-match amount. A previously pending row is reconsidered
+  when its payment date arrives; the old pending status no longer blocks an
+  otherwise exact batch deposit.
+- Banorte terminal deposits are applied FIFO to older open card-sale rows and
+  may partially settle a day. The ledger carries only the residual instead of
+  leaving the full day open when most of it has already landed.
+- Uber and Rappi payouts close gross platform sales through the day before the
+  payout. Their net bank amount is not compared directly with gross Corte sales,
+  because platform deductions would otherwise remain falsely outstanding.
+- Positive `COM. PAG. DCC` and `IVA PAG. DCC` rows are traced as non-operating
+  commission credits instead of unclassified sales deposits.
+- A read-only production rehearsal against the July 12 AMEX/Banorte uploads
+  produced AMEX 162,908.39, Banorte 4,580.90, Rappi 5,335.00, Uber 0.00 and
+  named CxC 17,230.00, with 15 matches and no parser exceptions.
+
 ## 2026-07-13 - Outstanding ledger, manual balances and bank UX repaired
 
 - `Falta por entrar` now renders only AMEX, Banorte, Uber, Rappi and named

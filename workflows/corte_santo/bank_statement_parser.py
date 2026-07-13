@@ -31,7 +31,11 @@ DEFAULT_BANK_KEYWORDS: dict[str, list[str]] = {
     "uber_spei": ["UBR PAGOS", "UBER"],
     "rappi_spei": ["RAPPI", "TRAPP"],
     "domiciliacion": ["DOMICILIACION", "SPOTIFY", "DOMICILIADO"],
-    "ignore_deposit": ["ABONO DCTO. CARTERA"],
+    "ignore_deposit": [
+        "ABONO DCTO. CARTERA",
+        "COM. PAG. DCC",
+        "IVA PAG. DCC",
+    ],
     "ignore_fee": ["COMISION", "IVA COMISION", "IVA"],
 }
 

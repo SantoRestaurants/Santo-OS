@@ -387,7 +387,8 @@ def _to_money(value: Any) -> float:
 
 
 def _normalize_expected_collection(item: dict[str, Any], business_date: str) -> dict[str, Any]:
-    amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
+    amount = _to_money(item.get("amount", item.get("expected_deposit", 0)))
+    expected_deposit = _to_money(item.get("expected_deposit", amount))
     source_date = str(item.get("source_date") or item.get("business_date") or business_date)
     channel = str(item.get("channel") or "unclassified").lower()
     if channel in ("terminal", "terminal_banorte"):
@@ -400,7 +401,7 @@ def _normalize_expected_collection(item: dict[str, Any], business_date: str) -> 
         "source_date": source_date,
         "channel": channel,
         "amount": amount,
-        "expected_deposit": amount,
+        "expected_deposit": expected_deposit,
     }
 
 
@@ -460,7 +461,7 @@ def _summarize_pending(items: list[dict[str, Any]]) -> dict[str, float]:
     totals: dict[str, float] = {}
     for item in items:
         base_channel = str(item.get("channel") or "unclassified")
-        amount = _to_money(item.get("expected_deposit", item.get("amount", 0)))
+        amount = _to_money(item.get("amount", item.get("expected_deposit", 0)))
         if amount <= 0:
             continue
             

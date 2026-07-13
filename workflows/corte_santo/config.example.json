@@ -82,8 +82,16 @@
       "DOMICILIADO"
     ],
     "ignore_deposit": [
-      "ABONO DCTO. CARTERA"
+      "ABONO DCTO. CARTERA",
+      "COM. PAG. DCC",
+      "IVA PAG. DCC"
     ]
+  },
+  "bank_settlement_rules": {
+    "_comment": "Banorte terminal deposits are applied FIFO to older open card sales. Uber/Rappi payouts close gross platform sales through the day before the deposit because the bank amount is net of platform deductions.",
+    "banorte": { "mode": "fifo_partial" },
+    "uber": { "mode": "deposit_cutoff" },
+    "rappi": { "mode": "deposit_cutoff" }
   },
   "excel_layout": {
     "_comment": "Optional. Overrides the default corte Excel layout used by Option B extraction. If omitted, the shipped default (Cierre Ter/Pla + Cierre Sistema anchors, Consumo/Propina rows) is used. Any column header not present in column_label_map becomes a requires_review warning.",

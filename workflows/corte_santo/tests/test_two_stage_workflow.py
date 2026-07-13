@@ -445,6 +445,103 @@ def test_bank_matching_clears_banorte_group_and_keeps_platforms_separate() -> No
     assert [item["channel"] for item in result["pending_items"]] == ["rappi"]
 
 
+def test_pending_amex_with_payment_date_is_cleared_when_batch_deposit_arrives() -> None:
+    result = bank.reconcile_bank_stage(
+        [{
+            "business_date": "2026-07-07",
+            "source_date": "2026-07-07",
+            "channel": "amex",
+            "amount": 14594.26,
+            "expected_deposit": 14594.26,
+            "expected_payment_date": "2026-07-13",
+            "status": "pendiente_reporte_amex",
+        }],
+        {
+            "status": "ok",
+            "deposits": [{"source": "amex", "amount": 14594.26, "operation_date": "13/07/2026"}],
+            "additional_expenses": [],
+        },
+        {
+            "status": "ok",
+            "payments": [{
+                "pago_num": "41909428",
+                "cargos": 15102.30,
+                "neto": 14594.26,
+                "fecha_envio": "2026-07-07",
+                "payment_date": "2026-07-13",
+            }],
+        },
+    )
+
+    assert result["pending_collections"] == {}
+    assert result["pending_items"] == []
+    assert result["batch_validation"][0]["status"] == "ok"
+    assert result["matches"][0]["expected"]["amount"] == 15102.30
+
+
+def test_banorte_later_deposits_apply_fifo_and_keep_only_partial_residual() -> None:
+    result = bank.reconcile_bank_stage(
+        [
+            {"business_date": "2026-07-09", "source_date": "2026-07-09", "channel": "banorte", "amount": 72864.86},
+            {"business_date": "2026-07-10", "source_date": "2026-07-10", "channel": "banorte", "amount": 114083.55},
+            {"business_date": "2026-07-11", "source_date": "2026-07-11", "channel": "banorte", "amount": 91786.49},
+            {"business_date": "2026-07-12", "source_date": "2026-07-12", "channel": "banorte", "amount": 58047.72},
+        ],
+        {
+            "status": "ok",
+            "deposits": [
+                {"source": "banorte", "amount": 47852.15, "operation_date": "09/07/2026"},
+                {"source": "banorte", "amount": 65742.56, "operation_date": "10/07/2026"},
+                {"source": "banorte", "amount": 266459.16, "operation_date": "13/07/2026"},
+            ],
+            "additional_expenses": [],
+        },
+        {"status": "ok", "payments": []},
+        settlement_rules={"banorte": {"mode": "fifo_partial"}},
+    )
+
+    assert result["pending_collections"] == {"banorte": 4580.90}
+    assert result["pending_items"] == [{
+        "business_date": "2026-07-12",
+        "source_date": "2026-07-12",
+        "channel": "banorte",
+        "amount": 4580.90,
+        "expected_deposit": 4580.90,
+        "original_amount": 58047.72,
+        "settled_amount": 53466.82,
+        "status": "parcialmente_depositado",
+    }]
+
+
+def test_platform_deposit_closes_gross_days_before_payout_date() -> None:
+    result = bank.reconcile_bank_stage(
+        [
+            {"business_date": "2026-07-07", "source_date": "2026-07-07", "channel": "rappi", "amount": 380},
+            {"business_date": "2026-07-09", "source_date": "2026-07-09", "channel": "rappi", "amount": 2340},
+            {"business_date": "2026-07-10", "source_date": "2026-07-10", "channel": "rappi", "amount": 1755},
+            {"business_date": "2026-07-12", "source_date": "2026-07-12", "channel": "uber", "amount": 5405},
+        ],
+        {
+            "status": "ok",
+            "deposits": [
+                {"source": "rappi", "amount": 7986.30, "operation_date": "10/07/2026"},
+                {"source": "uber", "amount": 15258.83, "operation_date": "13/07/2026"},
+            ],
+            "additional_expenses": [],
+        },
+        {"status": "ok", "payments": []},
+        settlement_rules={
+            "uber": {"mode": "deposit_cutoff"},
+            "rappi": {"mode": "deposit_cutoff"},
+        },
+    )
+
+    assert result["pending_collections"] == {"rappi": 1755.0}
+    assert [(item["channel"], item["business_date"]) for item in result["pending_items"]] == [
+        ("rappi", "2026-07-10")
+    ]
+
+
 def test_banorte_parser_reads_real_headers_and_additional_expenses() -> None:
     parsed = bank_parser.parse_banorte_rows([
         {
