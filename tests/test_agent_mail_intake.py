@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from services.agent_mail.intake import intake_email
 
 
@@ -42,6 +45,21 @@ def test_confirmed_subject_prefix_classifies_to_command() -> None:
     assert result["email_message"]["processing_status"] == "classified"
     assert result["email_message"]["classification_key"] == "[CORTE]"
     assert result["command"]["command_type"] == "workflow.intake"
+    assert result["command"]["workflow_key"] == "corte_santo_daily_sales_reconciliation"
+
+
+def test_gerencia_santo_japones_is_allowed_by_production_routing() -> None:
+    routing_path = Path("services/agent_mail/config.json")
+    routing = json.loads(routing_path.read_text(encoding="utf-8"))
+    email = {
+        **BASE_EMAIL,
+        "from_address": "gerencia@santojapones.com",
+        "subject": "SANTO CORTE MARTES 14 JULIO 2026",
+    }
+
+    result = intake_email(email, routing)
+
+    assert result["status"] == "classified"
     assert result["command"]["workflow_key"] == "corte_santo_daily_sales_reconciliation"
 
 

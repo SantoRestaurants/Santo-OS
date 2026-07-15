@@ -62,10 +62,76 @@ def _load_json(path: str | None) -> dict[str, Any]:
     return loaded
 
 
-def _document_type(filename: str) -> str:
+IMAGE_EXTENSIONS = (".JPG", ".JPEG", ".PNG", ".WEBP", ".HEIC", ".HEIF")
+
+
+def _document_type_from_ocr(text: str) -> str:
+    """Infer the Corte photo kind from OCR text when the filename is opaque.
+
+    Weekly Corte packages sometimes arrive with UUID filenames. The image
+    itself still contains stable labels such as AMEX, BANORTE or WANSOFT, so
+    use those labels as a supporting signal. Ties and weak signals remain
+    generic and are handled as review rather than guessed.
+    """
+    normalized = _normalize_label(text or "")
+    if not normalized:
+        return "email_attachment"
+
+    scores = {
+        "cxc": 0,
+        "amex": 0,
+        "bancarias": 0,
+        "detalle_efectivo": 0,
+        "tira": 0,
+    }
+
+    def add(document_type: str, *signals: str, weight: int = 1) -> None:
+        scores[document_type] += sum(weight for signal in signals if signal in normalized)
+
+    add("cxc", "CUENTA POR COBRAR", "AJUSTE DE CXC", "MOVIMIENTO CXC", "CXC", weight=4)
+    add("amex", "AMERICAN EXPRESS", "AMEX", weight=4)
+    add("bancarias", "BANORTE", "VANORTE", "BANCARIAS", "MASTERCARD", "MASTER CARD", weight=3)
+    add(
+        "detalle_efectivo",
+        "EFECTIVO REAL",
+        "CORTESIA",
+        "CORTESIA DIRECCION",
+        "DEPOSITO",
+        "DIRECCION",
+        weight=3,
+    )
+    add(
+        "tira",
+        "WANSOFT",
+        "TIRA",
+        "VENTA BRUTA",
+        "TOTAL BRUTO",
+        "VENTAS POR FORMA DE PAGO",
+        "TOTAL VENTAS",
+        "TOTAL PROPINAS",
+        "CONTROL POR FORMA PAGO",
+        "REPORTE DE VENTAS",
+        weight=3,
+    )
+
+    best_score = max(scores.values())
+    if best_score < 3:
+        return "email_attachment"
+    best = [document_type for document_type, score in scores.items() if score == best_score]
+    if len(best) != 1:
+        return "email_attachment"
+    second_score = sorted(scores.values(), reverse=True)[1]
+    if best_score - second_score < 2:
+        return "email_attachment"
+    return best[0]
+
+
+def _document_type(filename: str, *, ocr_text: str | None = None) -> str:
     normalized = filename.upper()
     if "SANTO CORTE" in normalized and normalized.endswith((".XLSX", ".XLS")):
         return "corte_excel"
+    if "CONTROL MOVIMIENTOS" in normalized and normalized.endswith((".XLSX", ".XLS")):
+        return "wansoft_system_close"
     if "TIRA" in normalized:
         return "tira"
     if "BANCARIAS" in normalized or "BANCARIA" in normalized:
@@ -78,6 +144,8 @@ def _document_type(filename: str) -> str:
         return "cxc"
     if "DESCUENTO" in normalized:
         return "discounts"
+    if ocr_text:
+        return _document_type_from_ocr(ocr_text)
     return "email_attachment"
 
 
@@ -109,6 +177,21 @@ def _restaurant_key(text: str) -> str | None:
 
 def _safe_filename(filename: str) -> str:
     return re.sub(r"[^A-Za-z0-9._ -]+", "_", filename).strip() or "attachment"
+
+
+def _is_image_attachment(filename: str, content_type: str | None = None) -> bool:
+    return str(content_type or "").lower().startswith("image/") or str(filename).upper().endswith(IMAGE_EXTENSIONS)
+
+
+def _ocr_for_document_inference(path: Path, config: dict[str, Any]) -> str:
+    """Read only enough OCR to classify an opaque photo filename."""
+    try:
+        from workflows.corte_santo import vision_extractor
+
+        cfg = vision_extractor._vision_config(config)
+        return vision_extractor._run_tesseract(path, cfg) or ""
+    except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+        return ""
 
 
 def _download_workbook_from_drive(file_id: str, target: Path) -> str | None:
@@ -350,6 +433,13 @@ def run_corte_initial_from_message(
             "requires_review_reason": "corte_subject_missing_business_date_or_restaurant",
         }
 
+    config_path = (
+        routing_config.get("corte_santo_automation", {}).get("config_path")
+        if isinstance(routing_config.get("corte_santo_automation"), dict)
+        else None
+    ) or os.environ.get("CORTE_SANTO_CONFIG_PATH", "workflows/corte_santo/fixtures/config_confirmed.json")
+    config = _load_json(config_path)
+
     temp_root = Path(tempfile.gettempdir()) / "santoos-agentmail-corte" / hashlib.sha256(
         str(message_id).encode("utf-8")
     ).hexdigest()[:16]
@@ -357,6 +447,7 @@ def run_corte_initial_from_message(
     attachments_dir.mkdir(parents=True, exist_ok=True)
 
     documents: list[dict[str, Any]] = []
+    unclassified_images: list[str] = []
     for attachment in source_message.get("attachments") or []:
         attachment_id = attachment.get("attachment_id")
         filename = str(attachment.get("filename") or "attachment")
@@ -367,6 +458,15 @@ def run_corte_initial_from_message(
         local_path = attachments_dir / _safe_filename(filename)
         local_path.write_bytes(content)
         document_type = _document_type(filename)
+        if document_type == "email_attachment" and _is_image_attachment(
+            filename, attachment.get("content_type")
+        ):
+            document_type = _document_type(
+                filename,
+                ocr_text=_ocr_for_document_inference(local_path, config),
+            )
+            if document_type == "email_attachment":
+                unclassified_images.append(filename)
         documents.append(
             {
                 "document_key": document_type,
@@ -379,12 +479,6 @@ def run_corte_initial_from_message(
             }
         )
 
-    config_path = (
-        routing_config.get("corte_santo_automation", {}).get("config_path")
-        if isinstance(routing_config.get("corte_santo_automation"), dict)
-        else None
-    ) or os.environ.get("CORTE_SANTO_CONFIG_PATH", "workflows/corte_santo/fixtures/config_confirmed.json")
-    config = _load_json(config_path)
     paths, outputs, drive_file_ids, workbook_missing = _workbook_paths(
         temp_root,
         business_date,
@@ -412,6 +506,14 @@ def run_corte_initial_from_message(
             "status": "requires_review",
             "requires_review_reason": "corte_workbook_sources_missing",
             "missing": workbook_missing,
+            "request": request,
+        }
+
+    if unclassified_images:
+        return {
+            "status": "requires_review",
+            "requires_review_reason": "corte_image_classification_requires_review",
+            "unclassified_images": unclassified_images,
             "request": request,
         }
 
