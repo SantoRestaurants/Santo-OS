@@ -199,10 +199,7 @@ def _is_probable_inline_signature(filename: str, content_type: str | None = None
     message is forwarded. It is not a Corte document and has no document
     label to classify, so it must not block the actual Corte photos.
     """
-    return (
-        str(filename).strip().lower() in {"image.png", "image.jpg", "image.jpeg"}
-        and str(content_type or "").lower().startswith("image/")
-    )
+    return str(filename).strip().lower() in {"image.png", "image.jpg", "image.jpeg"}
 
 
 def _ocr_for_document_inference(path: Path, config: dict[str, Any]) -> str:
@@ -229,6 +226,48 @@ def _ocr_for_document_inference(path: Path, config: dict[str, Any]) -> str:
         return "\n".join(texts)
     except (ImportError, OSError, RuntimeError, TypeError, ValueError):
         return ""
+
+
+def _vision_document_type(path: Path, config: dict[str, Any]) -> str:
+    """Classify an opaque image with the configured vision provider.
+
+    OCR is the cheap first pass. If a photographed receipt is too narrow or
+    blurred for OCR, use the already-configured Corte vision provider with a
+    closed set of document types and a confidence gate. Low-confidence or
+    malformed responses remain generic and therefore require review.
+    """
+    try:
+        from workflows.corte_santo import vision_extractor
+
+        cfg = vision_extractor._vision_config(config)
+        if not cfg.get("api_key") or not cfg.get("model") or not path.is_file():
+            return "email_attachment"
+        prompt = (
+            "Classify this Corte Santo image. Return JSON only with keys "
+            '"document_type" and "confidence". document_type must be exactly '
+            "one of: amex, bancarias, tira, cxc, detalle_efectivo, "
+            "email_attachment. Use email_attachment for signatures, unrelated "
+            "images, or ambiguity. Do not infer from attachment filename. "
+            "A tira is a Wansoft system close/report and commonly contains "
+            "totals, payment-method sections, tips, CXC or operational totals."
+        )
+        media_type, encoded = vision_extractor._encode_image(path)
+        if cfg.get("provider") == "gemini":
+            result = vision_extractor._call_gemini(cfg, prompt, media_type, encoded)
+        elif cfg.get("provider") == "anthropic":
+            result = vision_extractor._call_anthropic(cfg, prompt, media_type, encoded)
+        else:
+            return "email_attachment"
+        if not isinstance(result, dict):
+            return "email_attachment"
+        document_type = str(result.get("document_type") or "").strip().lower()
+        confidence = float(result.get("confidence"))
+        allowed = {"amex", "bancarias", "tira", "cxc", "detalle_efectivo"}
+        if document_type not in allowed or confidence < float(cfg.get("confidence_threshold") or 0.9):
+            return "email_attachment"
+        return document_type
+    except (ImportError, OSError, RuntimeError, TypeError, ValueError, KeyError):
+        return "email_attachment"
 
 
 def _download_workbook_from_drive(file_id: str, target: Path) -> str | None:
@@ -500,10 +539,13 @@ def run_corte_initial_from_message(
         if document_type == "email_attachment" and _is_image_attachment(
             filename, attachment.get("content_type")
         ):
+            ocr_text = _ocr_for_document_inference(local_path, config)
             document_type = _document_type(
                 filename,
-                ocr_text=_ocr_for_document_inference(local_path, config),
+                ocr_text=ocr_text,
             )
+            if document_type == "email_attachment":
+                document_type = _vision_document_type(local_path, config)
             if document_type == "email_attachment":
                 unclassified_images.append(filename)
         documents.append(
