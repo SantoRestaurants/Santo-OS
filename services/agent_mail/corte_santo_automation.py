@@ -226,7 +226,55 @@ def _ocr_for_document_inference(path: Path, config: dict[str, Any]) -> str:
             text = vision_extractor._run_tesseract(path, ocr_cfg) or ""
             if text:
                 texts.append(text)
-        return "\n".join(texts)
+        combined = "\n".join(texts)
+        if _document_type_from_ocr(combined) != "email_attachment":
+            return combined
+
+        # A receipt photographed on a table can be too small relative to the
+        # background for Tesseract. Try a contrast-enhanced full image and a
+        # centered crop, both enlarged, before falling back to model vision.
+        try:
+            from PIL import Image, ImageFilter, ImageOps
+
+            with Image.open(path) as source:
+                gray = ImageOps.grayscale(source.convert("RGB"))
+                variants = [ImageOps.autocontrast(gray)]
+                width, height = gray.size
+                if width > 10 and height > 10:
+                    crop = gray.crop((int(width * 0.15), 0, int(width * 0.85), height))
+                    crop = ImageOps.autocontrast(crop)
+                    variants.extend(
+                        [
+                            crop,
+                            crop.point(lambda value: 255 if value >= 170 else 0),
+                        ]
+                    )
+                for index, variant in enumerate(variants):
+                    enlarged = variant.resize(
+                        (max(1, variant.width * 2), max(1, variant.height * 2))
+                    ).filter(ImageFilter.SHARPEN)
+                    with tempfile.NamedTemporaryFile(
+                        prefix=f"{path.stem}-ocr-{index}-",
+                        suffix=".png",
+                        delete=False,
+                    ) as handle:
+                        variant_path = Path(handle.name)
+                    try:
+                        enlarged.save(variant_path)
+                        for psm in ("6", "11", "12"):
+                            ocr_cfg = dict(cfg)
+                            ocr_cfg["local_ocr_psm"] = psm
+                            text = vision_extractor._run_tesseract(variant_path, ocr_cfg) or ""
+                            if text:
+                                texts.append(text)
+                        combined = "\n".join(texts)
+                        if _document_type_from_ocr(combined) != "email_attachment":
+                            return combined
+                    finally:
+                        variant_path.unlink(missing_ok=True)
+        except ImportError:
+            logger.info("Pillow unavailable; skipping enhanced OCR for image=%s", path.name)
+        return combined
     except (ImportError, OSError, RuntimeError, TypeError, ValueError):
         return ""
 
