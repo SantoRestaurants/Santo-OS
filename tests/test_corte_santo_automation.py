@@ -1,4 +1,8 @@
-from services.agent_mail.corte_santo_automation import _document_type, _document_type_from_ocr
+from services.agent_mail.corte_santo_automation import (
+    _document_type,
+    _document_type_from_ocr,
+    _is_probable_inline_signature,
+)
 
 
 def test_cxc_adjustment_photo_is_classified_for_vision() -> None:
@@ -32,3 +36,15 @@ def test_weak_or_ambiguous_ocr_signal_stays_generic() -> None:
 
 def test_wansoft_workbook_is_classified() -> None:
     assert _document_type("CONTROL MOVIMIENTOS 14 JULIO 2026 WANSOFT.xlsx") == "wansoft_system_close"
+
+
+def test_tira_ocr_wins_over_payment_brand_on_system_close_photo() -> None:
+    assert _document_type_from_ocr(
+        "TOTALES GENERALES VENTAS POR FORMA DE PAGO "
+        "AMERICAN EXPRESS CONTROL POR FORMA INFORMACION OPERATIVA"
+    ) == "tira"
+
+
+def test_common_forwarded_signature_image_is_ignored() -> None:
+    assert _is_probable_inline_signature("image.png", "image/png") is True
+    assert _is_probable_inline_signature("random-photo.jpg", "image/jpeg") is False

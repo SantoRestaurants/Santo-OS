@@ -104,6 +104,15 @@ def _document_type_from_ocr(text: str) -> str:
         "tira",
         "WANSOFT",
         "TIRA",
+        "TOTALES GENERALES",
+        "VENTAS POR FORMA",
+        "FORMA DE PAGO",
+        "PROPINA POR FORMA",
+        "CXC POR FORMA",
+        "CONTROL POR FORMA",
+        "INFORMACION OPERATIVA",
+        "VENTAS POR PLATILLOS",
+        "TOTAL POR TIPO DE GRUPO",
         "VENTA BRUTA",
         "TOTAL BRUTO",
         "VENTAS POR FORMA DE PAGO",
@@ -111,7 +120,7 @@ def _document_type_from_ocr(text: str) -> str:
         "TOTAL PROPINAS",
         "CONTROL POR FORMA PAGO",
         "REPORTE DE VENTAS",
-        weight=3,
+        weight=2,
     )
 
     best_score = max(scores.values())
@@ -183,13 +192,41 @@ def _is_image_attachment(filename: str, content_type: str | None = None) -> bool
     return str(content_type or "").lower().startswith("image/") or str(filename).upper().endswith(IMAGE_EXTENSIONS)
 
 
+def _is_probable_inline_signature(filename: str, content_type: str | None = None) -> bool:
+    """Ignore the common Gmail signature image exposed as an attachment.
+
+    AgentMail can flatten an inline Gmail signature into an attachment when a
+    message is forwarded. It is not a Corte document and has no document
+    label to classify, so it must not block the actual Corte photos.
+    """
+    return (
+        str(filename).strip().lower() in {"image.png", "image.jpg", "image.jpeg"}
+        and str(content_type or "").lower().startswith("image/")
+    )
+
+
 def _ocr_for_document_inference(path: Path, config: dict[str, Any]) -> str:
     """Read only enough OCR to classify an opaque photo filename."""
     try:
         from workflows.corte_santo import vision_extractor
 
         cfg = vision_extractor._vision_config(config)
-        return vision_extractor._run_tesseract(path, cfg) or ""
+        # Narrow/photographed receipts can produce very little text with the
+        # configured block mode. A small set of alternate page segmentation
+        # modes improves recall without making the workflow guess from the
+        # attachment order or filename.
+        texts: list[str] = []
+        seen_psm: set[str] = set()
+        for psm in (str(cfg.get("local_ocr_psm") or "6"), "11", "12", "3"):
+            if psm in seen_psm:
+                continue
+            seen_psm.add(psm)
+            ocr_cfg = dict(cfg)
+            ocr_cfg["local_ocr_psm"] = psm
+            text = vision_extractor._run_tesseract(path, ocr_cfg) or ""
+            if text:
+                texts.append(text)
+        return "\n".join(texts)
     except (ImportError, OSError, RuntimeError, TypeError, ValueError):
         return ""
 
@@ -452,6 +489,8 @@ def run_corte_initial_from_message(
         attachment_id = attachment.get("attachment_id")
         filename = str(attachment.get("filename") or "attachment")
         if not attachment_id:
+            continue
+        if _is_probable_inline_signature(filename, attachment.get("content_type")):
             continue
         content = client.download_attachment(str(message_id), str(attachment_id))
         source_hash = hashlib.sha256(content).hexdigest()
