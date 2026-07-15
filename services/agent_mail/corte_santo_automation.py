@@ -303,10 +303,14 @@ def _vision_document_type(path: Path, config: dict[str, Any]) -> str:
             "totals, payment-method sections, tips, CXC or operational totals."
         )
         media_type, encoded = vision_extractor._encode_image(path)
+        # Classification is only a fallback for opaque filenames; do not let
+        # the extraction retry policy hold the intake for several minutes.
+        vision_cfg = dict(cfg)
+        vision_cfg["retry_attempts"] = 1
         if cfg.get("provider") == "gemini":
-            result = vision_extractor._call_gemini(cfg, prompt, media_type, encoded)
+            result = vision_extractor._call_gemini(vision_cfg, prompt, media_type, encoded)
         elif cfg.get("provider") == "anthropic":
-            result = vision_extractor._call_anthropic(cfg, prompt, media_type, encoded)
+            result = vision_extractor._call_anthropic(vision_cfg, prompt, media_type, encoded)
         else:
             return "email_attachment"
         if not isinstance(result, dict):
