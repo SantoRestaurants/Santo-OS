@@ -1,5 +1,24 @@
 # Current State
 
+## 2026-07-15 - Gerencia sender and opaque Corte photos
+
+- Gmail confirms the SANTO Corte email for business date 2026-07-14 arrived on
+  2026-07-15 at 04:40:59 UTC from `gerencia@santojapones.com`, addressed to
+  `santoos@agentmail.to`, with two workbooks and three JPG evidence photos.
+- A live Agent Mail poll after 2026-07-14 returned no message for that subject,
+  and Supabase has no `email_messages` or `workflow_runs` row for 2026-07-14.
+- Fixed `services/agent_mail/config.json`: the sender allowlist now contains
+  the real singular address `gerencia@santojapones.com`.
+- Corte intake now classifies opaque UUID-named photos from OCR labels such as
+  AMEX, BANORTE and the Wansoft/tira report; weak or ambiguous OCR remains
+  `requires_review`. The Wansoft control workbook is also retained as its own
+  document type.
+- Targeted Agent Mail/Corte tests pass (27 tests). The change is committed as
+  `f017dcd` and pushed to `main`.
+- The current email still needs an explicit operator-authorized internal
+  re-ingestion path because the Gmail connector blocked forwarding its private
+  attachments to Agent Mail as an external transfer.
+
 ## 2026-07-13 - Bank deposits now settle the outstanding ledger
 
 - AMEX Corte rows retain their gross sale amount while the AMEX export carries
