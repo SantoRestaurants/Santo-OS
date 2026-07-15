@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import logging
 import os
 import re
 import tempfile
@@ -22,6 +23,7 @@ from workflows.corte_santo.cxc import parse_cxc_events
 WORKFLOW_KEY = "corte_santo_daily_sales_reconciliation"
 GOOGLE_DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 WORKBOOK_EXTENSIONS = (".XLSX", ".XLS")
+logger = logging.getLogger(__name__)
 SPANISH_MONTHS = {
     "ENERO": 1,
     "FEBRERO": 2,
@@ -124,6 +126,7 @@ def _document_type_from_ocr(text: str) -> str:
     )
 
     best_score = max(scores.values())
+    logger.info("Opaque Corte OCR classification scores=%s", scores)
     if best_score < 3:
         return "email_attachment"
     best = [document_type for document_type, score in scores.items() if score == best_score]
@@ -266,7 +269,8 @@ def _vision_document_type(path: Path, config: dict[str, Any]) -> str:
         if document_type not in allowed or confidence < float(cfg.get("confidence_threshold") or 0.9):
             return "email_attachment"
         return document_type
-    except (ImportError, OSError, RuntimeError, TypeError, ValueError, KeyError):
+    except Exception:  # provider limits/network/parse errors must degrade to review
+        logger.warning("Opaque Corte vision classification unavailable", exc_info=True)
         return "email_attachment"
 
 
