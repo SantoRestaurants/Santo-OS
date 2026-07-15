@@ -5,19 +5,24 @@
 - Gmail confirms the SANTO Corte email for business date 2026-07-14 arrived on
   2026-07-15 at 04:40:59 UTC from `gerencia@santojapones.com`, addressed to
   `santoos@agentmail.to`, with two workbooks and three JPG evidence photos.
-- A live Agent Mail poll after 2026-07-14 returned no message for that subject,
-  and Supabase has no `email_messages` or `workflow_runs` row for 2026-07-14.
+- A live Agent Mail poll initially returned no message for that subject, and
+  Supabase had no `email_messages` or `workflow_runs` row for 2026-07-14.
 - Fixed `services/agent_mail/config.json`: the sender allowlist now contains
   the real singular address `gerencia@santojapones.com`.
 - Corte intake now classifies opaque UUID-named photos from OCR labels such as
-  AMEX, BANORTE and the Wansoft/tira report; weak or ambiguous OCR remains
-  `requires_review`. The Wansoft control workbook is also retained as its own
-  document type.
-- Targeted Agent Mail/Corte tests pass (27 tests). The change is committed as
-  `f017dcd` and pushed to `main`.
-- The current email still needs an explicit operator-authorized internal
-  re-ingestion path because the Gmail connector blocked forwarding its private
-  attachments to Agent Mail as an external transfer.
+  AMEX, BANORTE and the Wansoft/tira report; narrow photographed receipts use
+  contrast/crop OCR before a confidence-gated vision fallback. The common
+  forwarded Gmail signature image is ignored, and the Wansoft control workbook
+  is retained as its own document type.
+- The operator-authorized forward created Agent Mail message
+  `<CALSNHX3ivrKMbk5JnM+3wiieDyh9A0Fiok0ODLRf6CV=bHrqFQ@mail.gmail.com>`. The
+  production reprocess registered all five Corte documents and classified the
+  three photos as `tira`, `bancarias` and `amex`; Supabase workflow run
+  `daff0b78-b9c8-44cf-b999-0e984ec3f464` is `waiting_for_input` for the next
+  operational review/input gate.
+- Targeted Agent Mail/Corte tests pass (27 tests initially; 14 focused tests
+  pass after the OCR/vision hardening). Changes are committed through
+  `2cda851` and pushed to `main`.
 
 ## 2026-07-13 - Bank deposits now settle the outstanding ledger
 
