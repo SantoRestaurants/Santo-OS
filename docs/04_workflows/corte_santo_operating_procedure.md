@@ -57,7 +57,10 @@ update Drive -> notify supervisor -> completed`
 - Register gross amounts by channel in the corresponding date row.
 - Record tips separately in column R.
 - Tips are AMEX + debit + credit tips only.
-- Use the lower tip total when tira and bank evidence disagree.
+- Use the lower supported tip total when tira and bank evidence disagree. A
+  tira total below either individual bank-tip component is arithmetically
+  impossible: keep the supported AMEX + debit + credit total and require
+  review of the tira extraction.
 - Add dish courtesies to cash for the monthly Ingresos registration.
 - The resulting Venta Bruta must match the Wansoft global sales evidence.
 

@@ -81,6 +81,45 @@ def test_builds_income_values_using_pdf_rules() -> None:
     )
 
 
+def test_impossible_tira_tip_total_cannot_replace_supported_bank_tips() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {
+            "amex": {"consumo": 5018.0, "propina": 699.95},
+            "bancos": {"consumo": 55565.0, "propina": 7879.0},
+        },
+        {
+            "amex": {"consumo": 5018.0, "propina": 699.95},
+            "bancos": {"consumo": 55565.0, "propina": 7879.0},
+        },
+        vision_documents=[
+            {
+                "document_type": "tira",
+                "status": "extracted",
+                "values": {"propina_total": 1557.70},
+            },
+            {
+                "document_type": "amex",
+                "status": "extracted",
+                "values": {"consumo": 5018.0, "propina": 699.95, "total": 5717.95},
+            },
+            {
+                "document_type": "bancarias",
+                "status": "extracted",
+                "values": {"consumo": 55565.0, "propina": 7879.0, "total": 63444.0},
+            },
+        ],
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["selected_tips"] == 8578.95
+    assert result["income_register"]["propinas"] == 8578.95
+    assert result["status"] == "requires_review"
+    assert any(
+        exception["exception_key"] == "tira_tip_total_below_bank_component"
+        for exception in result["exceptions"]
+    )
+
+
 def test_photo_total_mismatch_requires_review() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"amex": {"consumo": 100.0, "propina": 10.0}},
@@ -475,6 +514,7 @@ def test_july_18_transfer_settlements_ignore_invented_ocr_paypal_delta() -> None
     )
 
     assert result["income_register"]["paypal"] == 0.0
+    assert result["income_register"]["propinas"] == 0.0
     assert result["income_cell_notes"]["paypal"]["formula"] == "=640-640+770-770"
 
 

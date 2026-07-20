@@ -328,16 +328,31 @@ def build_canonical_evidence(
 
     selected_tips = None
     if tira_tips is not None and bank_tips is not None:
-        selected_tips = min(tira_tips, bank_tips)
+        bank_component_floor = max(amex_tips or 0.0, bancarias_tips or 0.0)
+        tira_total_is_possible = tira_tips >= bank_component_floor
+        selected_tips = min(tira_tips, bank_tips) if tira_total_is_possible else bank_tips
         checks.append(
             {
                 "check_key": "lower_tip_rule",
                 "tira_tips": tira_tips,
                 "bank_photo_tips": bank_tips,
+                "bank_component_floor": bank_component_floor,
                 "selected_tips": selected_tips,
-                "status": "ok",
+                "status": "ok" if tira_total_is_possible else "requires_review",
             }
         )
+        if not tira_total_is_possible:
+            exceptions.append(
+                _exception(
+                    "tira_tip_total_below_bank_component",
+                    {
+                        "tira_tips": tira_tips,
+                        "bank_photo_tips": bank_tips,
+                        "bank_component_floor": bank_component_floor,
+                        "selected_tips": selected_tips,
+                    },
+                )
+            )
     if selected_tips is None and bank_tips is not None and tip_overrides:
         selected_tips = bank_tips
     if selected_tips is None:
