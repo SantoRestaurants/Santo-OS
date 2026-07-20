@@ -610,8 +610,11 @@ def run_bank_watcher_once(
         headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
         timeout=30.0,
     )
-    if resp_rx.status_code < 400:
-        for rx in resp_rx.json():
+    active_receivables = resp_rx.json() if resp_rx.status_code < 400 else []
+    if not isinstance(active_receivables, list):
+        active_receivables = []
+    if active_receivables:
+        for rx in active_receivables:
             expected = _cxc_expected_collection(rx)
             if expected:
                 expected_cols.append(expected)
@@ -749,6 +752,12 @@ def run_bank_watcher_once(
     # Mark matched receivables as settled
     general_matches = bank_result.get("matches", [])
     matched_receivable_ids = set()
+    receivable_allocations: dict[str, float] = {}
+    receivables_by_id = {
+        str(item.get("id")): item
+        for item in active_receivables
+        if isinstance(item, dict) and item.get("id")
+    }
     
     for match in amex_matches:
         if match.get("receivable_id"):
@@ -763,18 +772,57 @@ def run_bank_watcher_once(
             for item in group:
                 if isinstance(item, dict) and item.get("receivable_id"):
                     matched_receivable_ids.add(item["receivable_id"])
+        allocations = match.get("allocations")
+        if isinstance(allocations, list):
+            for allocation in allocations:
+                if not isinstance(allocation, dict) or not allocation.get("receivable_id"):
+                    continue
+                rid = str(allocation["receivable_id"])
+                receivable_allocations[rid] = round(
+                    receivable_allocations.get(rid, 0.0) + _to_money(allocation.get("amount")),
+                    2,
+                )
 
     if matched_receivable_ids:
         for rid in matched_receivable_ids:
             try:
+                receivable = receivables_by_id.get(str(rid), {})
+                principal = _to_money(receivable.get("principal"))
                 httpx.patch(
                     f"{supabase_url}/rest/v1/corte_receivables?id=eq.{rid}",
-                    json={"status": "settled", "settled_on": effective_date},
+                    json={
+                        "status": "settled",
+                        "settled_on": effective_date,
+                        "settled_principal": principal,
+                    },
                     headers={"apikey": service_key, "Authorization": f"Bearer {service_key}", "Content-Type": "application/json"},
                     timeout=10.0,
                 )
             except Exception as exc:
                 logging.exception("Failed to mark receivable %s as settled: %s", rid, exc)
+
+    for rid, allocation in receivable_allocations.items():
+        if rid in matched_receivable_ids:
+            continue
+        receivable = receivables_by_id.get(rid)
+        if not receivable:
+            continue
+        principal = _to_money(receivable.get("principal"))
+        settled = round(_to_money(receivable.get("settled_principal")) + allocation, 2)
+        is_settled = settled >= principal
+        try:
+            httpx.patch(
+                f"{supabase_url}/rest/v1/corte_receivables?id=eq.{rid}",
+                json={
+                    "settled_principal": min(settled, principal),
+                    "status": "settled" if is_settled else "open",
+                    "settled_on": effective_date if is_settled else None,
+                },
+                headers={"apikey": service_key, "Authorization": f"Bearer {service_key}", "Content-Type": "application/json"},
+                timeout=10.0,
+            )
+        except Exception as exc:
+            logging.exception("Failed to apply partial receivable settlement %s: %s", rid, exc)
 
     for match in amex_matches:
         bd = match.get("business_date") or match.get("source_date")
