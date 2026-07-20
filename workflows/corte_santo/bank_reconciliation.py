@@ -708,6 +708,8 @@ def reconcile_bank_stage(
                         "business_date": item.get("business_date"),
                         "source_date": item.get("source_date"),
                         "amount": allocation,
+                        "receivable_id": item.get("receivable_id"),
+                        "receivable_key": item.get("receivable_key"),
                     })
                     if item["_remaining"] <= tolerance:
                         item["_matched"] = True

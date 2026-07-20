@@ -9,8 +9,18 @@ from typing import Any
 
 _MOVEMENT_RE = re.compile(r"\bMOV(?:IMIENTO)?\.?\s*(\d{4,})\b", re.IGNORECASE)
 _AMOUNT_RE = re.compile(r"\$\s*([\d,]+(?:\.\d{1,2})?)")
+_MOVEMENT_AMOUNT_RE = re.compile(
+    r"\bMOV(?:IMIENTO)?\.?\s*(\d{4,})\b(?:(?!\bMOV(?:IMIENTO)?\.?\b|\bCXC\b).){0,80}?"
+    r"\$\s*([\d,]+(?:\.\d{1,2})?)",
+    re.IGNORECASE,
+)
 _SETTLEMENT_RE = re.compile(
     r"\b(?:PAGO(?:\s+EN\s+EFECTIVO)?\s+(?:DE\s+)?CXC|CXC\s+(?:COBRAD[AO]|PAGAD[AO])|SE\s+COBR[OÓ])\b",
+    re.IGNORECASE,
+)
+_PAYMENT_COMPLETION_RE = re.compile(
+    r"\bPAG(?:O|ADO|ADA)(?:S)?\s+(?:POR|CON|V[IÍ]A)\s+"
+    r"(?:TRANSFERENCIA|SPEI|EFECTIVO|TARJETA|TDD|TDC|VISA|MASTERCARD|BANORTE|AMEX)\b",
     re.IGNORECASE,
 )
 
@@ -32,7 +42,7 @@ def _extract_medium(text: str) -> str:
 
 
 def parse_cxc_events(body: str | None) -> list[dict[str, Any]]:
-    """Extract one stable event per CxC mention without interpreting images."""
+    """Extract stable events from the authoritative CxC email wording."""
     text = " ".join(str(body or "").replace("\r", "\n").split())
     if not text:
         return []
@@ -44,28 +54,40 @@ def parse_cxc_events(body: str | None) -> list[dict[str, Any]]:
         end = starts[index + 1] if index + 1 < len(starts) else min(len(text), start + 180)
         segment = text[start:end].strip(" ,.;")
         classification_context = text[max(0, start - 35):end]
-        amount_match = _AMOUNT_RE.search(segment)
-        if not amount_match:
-            continue
-        amount = round(float(amount_match.group(1).replace(",", "")), 2)
-        movement_match = _MOVEMENT_RE.search(segment)
-        movement_id = movement_match.group(1) if movement_match else None
-        kind = "settlement" if _SETTLEMENT_RE.search(classification_context) else "opening"
-        identity = (kind, movement_id, amount)
-        if amount <= 0 or identity in seen:
-            continue
-        seen.add(identity)
-        medium = _extract_medium(classification_context)
-        events.append(
-            {
-                "kind": kind,
-                "movement_id": movement_id,
-                "principal": amount,
-                "payment_medium": medium,
-                "source": "email_body",
-                "description": segment[:180],
-            }
+        kind = (
+            "settlement"
+            if _SETTLEMENT_RE.search(classification_context)
+            or _PAYMENT_COMPLETION_RE.search(classification_context)
+            else "opening"
         )
+        medium = _extract_medium(classification_context)
+        movement_amounts = [
+            (match.group(1), round(float(match.group(2).replace(",", "")), 2))
+            for match in _MOVEMENT_AMOUNT_RE.finditer(segment)
+        ]
+        if not movement_amounts:
+            amount_match = _AMOUNT_RE.search(segment)
+            if not amount_match:
+                continue
+            amount = round(float(amount_match.group(1).replace(",", "")), 2)
+            movement_match = _MOVEMENT_RE.search(segment)
+            movement_amounts = [(movement_match.group(1) if movement_match else None, amount)]
+
+        for movement_id, amount in movement_amounts:
+            identity = (kind, movement_id, amount)
+            if amount <= 0 or identity in seen:
+                continue
+            seen.add(identity)
+            events.append(
+                {
+                    "kind": kind,
+                    "movement_id": movement_id,
+                    "principal": amount,
+                    "payment_medium": medium,
+                    "source": "email_body",
+                    "description": segment[:180],
+                }
+            )
     return events
 
 

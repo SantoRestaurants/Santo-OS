@@ -450,6 +450,63 @@ def test_email_body_openings_are_authoritative_and_not_duplicated_by_images() ->
     assert result["income_cell_notes"]["paypal"]["formula"] == "=990+640"
 
 
+def test_july_18_transfer_settlements_ignore_invented_ocr_paypal_delta() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 0.0, "propina": 0.0}},
+        {"bancos": {"consumo": 0.0, "propina": 0.0}},
+        cxc_events=[
+            {"kind": "settlement", "movement_id": "90359", "principal": 640.0, "payment_medium": "transferencia"},
+            {"kind": "settlement", "movement_id": "90487", "principal": 770.0, "payment_medium": "transferencia"},
+        ],
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {
+                    "canal": "transferencia",
+                    "paypal_amount": 130.0,
+                    "paypal_formula_terms": [770.0, -640.0],
+                    "propina": 0.0,
+                },
+            }
+        ],
+        income_channels={"paypal": 0.0},
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["income_register"]["paypal"] == 0.0
+    assert result["income_cell_notes"]["paypal"]["formula"] == "=640-640+770-770"
+
+
+def test_july_19_email_openings_override_incorrect_ocr_amounts() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {"bancos": {"consumo": 0.0, "propina": 0.0}},
+        {"bancos": {"consumo": 0.0, "propina": 0.0}},
+        cxc_events=[
+            {"kind": "opening", "movement_id": "91678", "principal": 665.0},
+            {"kind": "opening", "movement_id": "91691", "principal": 340.0},
+        ],
+        vision_documents=[
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {"canal": "cxc", "cxc_note_amount": 685.0, "paypal_amount": 685.0},
+            },
+            {
+                "document_type": "cxc",
+                "status": "extracted",
+                "values": {"canal": "cxc", "cxc_note_amount": 685.0, "paypal_amount": 685.0},
+            },
+        ],
+        income_channels={"paypal": 0.0},
+        income_adjustments={"cxc": 1005.0},
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["income_register"]["paypal"] == 1005.0
+    assert result["income_cell_notes"]["paypal"]["formula"] == "=665+340"
+
+
 def test_cxc_vision_failure_requires_review() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"bancos": {"consumo": 83564.65, "propina": 0.0}},

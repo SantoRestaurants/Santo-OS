@@ -38,6 +38,29 @@ def test_marks_explicit_payment_as_settlement() -> None:
     assert events[0]["kind"] == "settlement"
 
 
+def test_parses_july_18_multiple_transfer_settlements_from_one_cxc_clause() -> None:
+    events = parse_cxc_events(
+        "Ajuste de CXC mov. 90359 $640.00 y mov. 90487 $770 pago por transferencia La Valisse"
+    )
+
+    assert [(event["kind"], event["movement_id"], event["principal"]) for event in events] == [
+        ("settlement", "90359", 640.0),
+        ("settlement", "90487", 770.0),
+    ]
+    assert all(event["payment_medium"] == "transferencia" for event in events)
+
+
+def test_parses_july_19_multiple_openings_from_one_cxc_clause() -> None:
+    events = parse_cxc_events(
+        "CXC mov. 91678 $665 y mov. 91691 $340 La Valisse, quedando pendiente"
+    )
+
+    assert [(event["kind"], event["movement_id"], event["principal"]) for event in events] == [
+        ("opening", "91678", 665.0),
+        ("opening", "91691", 340.0),
+    ]
+
+
 def test_receivable_key_is_stable_without_message_id() -> None:
     event = parse_cxc_events("CXC $785 La Valisse, quedando pendiente.")[0]
     first = receivable_key("restaurant", "2026-06-24", event)

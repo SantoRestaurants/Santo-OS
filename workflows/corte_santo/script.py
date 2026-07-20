@@ -743,15 +743,21 @@ def run(input_payload: dict[str, Any], config: dict[str, Any] | None = None) -> 
                 if bank_module is not None:
                     bank_statement = bank_module.parse_banorte_csv(bank_doc["source_path"], config)
 
-        # Intercept CXC events with AI if applicable
+        # The email body is authoritative for CxC lifecycle intent, movement
+        # IDs and amounts. AI is only a fallback when deterministic parsing
+        # found no usable event; it must never overwrite known events.
         body_text = str(payload.get("body_text") or "")
+        deterministic_cxc_events = payload.get("cxc_events")
         cxc_docs_ocr = []
         vision_docs_list = vision_documents if isinstance(vision_documents, list) else []
         for doc in vision_docs_list:
             if isinstance(doc, dict) and doc.get("document_type") == "cxc" and doc.get("raw_ocr"):
                 cxc_docs_ocr.append(doc["raw_ocr"])
                 
-        if cxc_docs_ocr or "cxc" in body_text.lower() or "ajuste" in body_text.lower():
+        if (
+            not deterministic_cxc_events
+            and (cxc_docs_ocr or "cxc" in body_text.lower() or "ajuste" in body_text.lower())
+        ):
             cxc_module = _load_sibling_module("cxc")
             if cxc_module is not None and hasattr(cxc_module, "extract_cxc_events_with_ai"):
                 ai_cxc_events = cxc_module.extract_cxc_events_with_ai(body_text, cxc_docs_ocr)

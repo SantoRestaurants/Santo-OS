@@ -34,15 +34,19 @@
     "evidence_tolerance": 0.0,
     "income_photo_override_tolerance": 0.1
   },
-  "bank_keywords": {
+    "bank_keywords": {
+      "cxc_spei": [
+        "LA VALISSE"
+      ],
     "ignore_deposit": [
       "ABONO DCTO. CARTERA",
       "COM. PAG. DCC",
       "IVA PAG. DCC"
     ]
   },
-  "bank_settlement_rules": {
-    "banorte": { "mode": "fifo_partial" },
+    "bank_settlement_rules": {
+      "banorte": { "mode": "fifo_partial" },
+      "cxc": { "mode": "fifo_partial" },
     "uber": { "mode": "deposit_cutoff" },
     "rappi": { "mode": "deposit_cutoff" }
   },

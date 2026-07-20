@@ -93,6 +93,8 @@ def _classify(description: str, detail: str, keywords: dict[str, list[str]]) -> 
         return "uber"
     if any(k.upper() in blob for k in keywords.get("rappi_spei", [])):
         return "rappi"
+    if any(k.upper() in blob for k in keywords.get("cxc_spei", [])):
+        return "cxc"
     if any(k.upper() in blob for k in keywords.get("domiciliacion", [])):
         return "domiciliacion"
     if any(k.upper() in blob for k in keywords.get("ignore_deposit", [])):

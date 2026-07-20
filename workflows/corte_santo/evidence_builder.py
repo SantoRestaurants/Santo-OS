@@ -380,9 +380,14 @@ def build_canonical_evidence(
     paypal_cxc_total = 0.0
     paypal_note_values: dict[str, Any] = {"comment_lines": [], "paypal_formula_terms": []}
     paypal_note_channel = None
+    authoritative_events = [event for event in (cxc_events or []) if isinstance(event, dict)]
     opening_events = [
-        event for event in (cxc_events or [])
-        if isinstance(event, dict) and event.get("kind") == "opening" and (_amount(event.get("principal")) or 0) > 0
+        event for event in authoritative_events
+        if event.get("kind") == "opening" and (_amount(event.get("principal")) or 0) > 0
+    ]
+    settlement_events = [
+        event for event in authoritative_events
+        if event.get("kind") == "settlement" and (_amount(event.get("principal")) or 0) > 0
     ]
     for event in opening_events:
         principal = _amount(event.get("principal")) or 0.0
@@ -395,12 +400,45 @@ def build_canonical_evidence(
             note_line = description
         if note_line not in paypal_note_values["comment_lines"]:
             paypal_note_values["comment_lines"].append(note_line)
+    for event in settlement_events:
+        principal = _amount(event.get("principal")) or 0.0
+        movement = str(event.get("movement_id") or "").strip()
+        medium = str(event.get("payment_medium") or "unclassified").strip()
+        note_line = (
+            f"PAGO CXC MOV {movement} ${principal:g} {medium}"
+            if movement
+            else f"PAGO CXC ${principal:g} {medium}"
+        )
+        if note_line not in paypal_note_values["comment_lines"]:
+            paypal_note_values["comment_lines"].append(note_line)
+    settlement_tip_recorded = False
     for cxc_candidate in _vision_documents_of_type(vision_documents, "cxc"):
         candidate_values = cxc_candidate.get("values") if isinstance(cxc_candidate.get("values"), dict) else {}
         candidate_paypal = _amount(candidate_values.get("paypal_amount"))
         candidate_channel = _channel_from_raw(candidate_values.get("canal"))
         candidate_lines = [str(line).strip() for line in candidate_values.get("comment_lines") or [] if str(line).strip()]
         candidate_note_amount = _amount(candidate_values.get("cxc_note_amount"))
+        candidate_propina = _amount(candidate_values.get("propina")) or 0.0
+        for line in candidate_lines:
+            if line not in paypal_note_values["comment_lines"]:
+                paypal_note_values["comment_lines"].append(line)
+        if authoritative_events:
+            if candidate_channel and candidate_channel != "cxc":
+                paypal_note_channel = candidate_channel
+            if settlement_events and candidate_propina > 0:
+                candidate_terms = [
+                    amount
+                    for amount in (_amount(term) for term in candidate_values.get("paypal_formula_terms") or [])
+                    if amount is not None
+                ]
+                if candidate_terms and abs(sum(candidate_terms) - candidate_propina) <= tolerance:
+                    paypal_note_values["paypal_formula_terms"].extend(candidate_terms)
+                else:
+                    paypal_note_values["paypal_formula_terms"].append(candidate_propina)
+                paypal_cxc_total = round(paypal_cxc_total + candidate_propina, 2)
+                selected_tips = round((selected_tips or 0.0) + candidate_propina, 2)
+                settlement_tip_recorded = True
+            continue
         if candidate_channel == "cxc":
             if candidate_note_amount is None:
                 candidate_note_amount = candidate_paypal
@@ -422,7 +460,6 @@ def build_canonical_evidence(
                 paypal_note_values["paypal_formula_terms"].append(candidate_note_amount)
         if candidate_paypal is None or candidate_paypal <= 0:
             continue
-        candidate_propina = _amount(candidate_values.get("propina")) or 0.0
         paypal_cxc_total = round(paypal_cxc_total + candidate_paypal, 2)
         candidate_terms = list(candidate_values.get("paypal_formula_terms") or [])
         for term in candidate_terms:
@@ -435,17 +472,21 @@ def build_canonical_evidence(
             paypal_note_channel = candidate_channel
         if candidate_propina > 0:
             selected_tips = round((selected_tips or 0.0) + candidate_propina, 2)
+    if settlement_events and not settlement_tip_recorded:
+        for event in settlement_events:
+            principal = _amount(event.get("principal")) or 0.0
+            paypal_note_values["paypal_formula_terms"].extend([principal, -principal])
     if paypal_cxc_total > 0 or paypal_note_values["comment_lines"]:
         cxc_note = _cxc_paypal_note(paypal_note_values, paypal_cxc_total, paypal_note_channel)
 
-    if paypal_cxc_total <= 0 and cxc_doc and cxc_doc.get("status") != "extracted":
+    if not authoritative_events and paypal_cxc_total <= 0 and cxc_doc and cxc_doc.get("status") != "extracted":
         exceptions.append(
             _exception(
                 "cxc_vision_requires_review",
                 {"reason": cxc_doc.get("review_reason")},
             )
         )
-    elif paypal_cxc_total <= 0 and cxc_doc and cxc_doc.get("status") == "extracted":
+    elif not authoritative_events and paypal_cxc_total <= 0 and cxc_doc and cxc_doc.get("status") == "extracted":
         cxc_values = cxc_doc.get("values") or {}
         cxc_consumo = _amount(cxc_values.get("consumo")) or 0.0
         cxc_propina = _amount(cxc_values.get("propina")) or 0.0
@@ -562,6 +603,22 @@ def build_canonical_evidence(
         )
 
     merged_cxc_events = list(cxc_events) if isinstance(cxc_events, list) else []
+    inferred_cxc_principal = _amount(cxc_note.get("amount")) if isinstance(cxc_note, dict) else None
+    if not merged_cxc_events and cxc_note and (inferred_cxc_principal or 0) > 0:
+        descriptions = [
+            str(line).strip()
+            for line in (cxc_doc or {}).get("values", {}).get("comment_lines", [])
+            if str(line).strip()
+        ]
+        merged_cxc_events.append(
+            {
+                "kind": "opening",
+                "movement_id": None,
+                "principal": round(inferred_cxc_principal or 0.0, 2),
+                "description": descriptions[0] if descriptions else f"CXC ${inferred_cxc_principal:g}",
+                "source": "vision_extractor",
+            }
+        )
     return {
         "status": "requires_review" if exceptions else "ready",
         "reconciliation_inputs": {

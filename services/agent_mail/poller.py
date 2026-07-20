@@ -374,19 +374,85 @@ class SupabaseWriter:
     def upsert_corte_receivable(self, record: dict[str, Any]) -> bool:
         """Persist an idempotent CxC lifecycle row."""
         if record.get("status") == "settled" and record.get("movement_id"):
+            settlement_evidence = record.get("evidence") or {}
+            payment_medium = str(settlement_evidence.get("payment_medium") or "unclassified").lower()
             existing = self.http.get(
                 "/rest/v1/corte_receivables",
                 params={
                     "restaurant_id": f"eq.{record['restaurant_id']}",
                     "movement_id": f"eq.{record['movement_id']}",
-                    "select": "id",
+                    "select": "id,status,principal,settled_principal,evidence",
                     "limit": "1",
                 },
             )
             rows = existing.json() if existing.status_code < 400 else []
             if isinstance(rows, list) and rows:
+                target = rows[0]
+                target_evidence = target.get("evidence") or {}
+                superseded_by = target_evidence.get("superseded_by")
+                if target.get("status") == "cancelled" and superseded_by:
+                    replacement = self.http.get(
+                        "/rest/v1/corte_receivables",
+                        params={
+                            "id": f"eq.{superseded_by}",
+                            "select": "id,status,principal,settled_principal,evidence",
+                            "limit": "1",
+                        },
+                    )
+                    replacement_rows = replacement.json() if replacement.status_code < 400 else []
+                    if isinstance(replacement_rows, list) and len(replacement_rows) == 1:
+                        target = replacement_rows[0]
+                    else:
+                        # Historical cleanup used a logical supersession label,
+                        # not a row UUID. Resolve only one exact manual aggregate
+                        # with the same description; ambiguity stays in review.
+                        description = str(target_evidence.get("description") or "").strip().casefold()
+                        candidates_response = self.http.get(
+                            "/rest/v1/corte_receivables",
+                            params={
+                                "restaurant_id": f"eq.{record['restaurant_id']}",
+                                "status": "eq.open",
+                                "select": "id,status,principal,settled_principal,evidence",
+                            },
+                        )
+                        candidates = candidates_response.json() if candidates_response.status_code < 400 else []
+                        matches = [
+                            candidate for candidate in candidates
+                            if isinstance(candidate, dict)
+                            and str((candidate.get("evidence") or {}).get("source") or "") == "manual_outstanding_breakdown"
+                            and str((candidate.get("evidence") or {}).get("description") or "").strip().casefold() == description
+                        ] if isinstance(candidates, list) else []
+                        if len(matches) != 1:
+                            return False
+                        target = matches[0]
+
+                # Transfers and card payments are only settlement evidence at
+                # Corte time. Keep the receivable open until the bank watcher
+                # validates the actual deposit.
+                if payment_medium != "efectivo":
+                    evidence = dict(target.get("evidence") or {})
+                    pending = [
+                        item for item in evidence.get("pending_settlements", [])
+                        if isinstance(item, dict)
+                    ]
+                    movement_id = str(record.get("movement_id"))
+                    if not any(str(item.get("movement_id")) == movement_id for item in pending):
+                        pending.append({
+                            "movement_id": movement_id,
+                            "amount": record.get("settled_principal"),
+                            "reported_on": record.get("settled_on"),
+                            "payment_medium": payment_medium,
+                            "source_workflow_run_id": record.get("source_workflow_run_id"),
+                        })
+                    evidence["pending_settlements"] = pending
+                    resp = self.http.patch(
+                        f"/rest/v1/corte_receivables?id=eq.{target['id']}",
+                        json={"evidence": evidence},
+                    )
+                    return resp.status_code < 400
+
                 resp = self.http.patch(
-                    f"/rest/v1/corte_receivables?id=eq.{rows[0]['id']}",
+                    f"/rest/v1/corte_receivables?id=eq.{target['id']}",
                     json={
                         "settled_on": record.get("settled_on"),
                         "settled_principal": record.get("settled_principal"),
@@ -880,19 +946,17 @@ def poll_and_classify(
                                 "workbook_outputs": inp.get("workbook_outputs"),
                                 "expected_collections": [],
                                 "revision_document": wr.get("revision_document"),
+                                "cxc_events": cxc_events,
+                                "income_cell_notes": canonical.get("income_cell_notes", {}),
                             }
-                            supabase.update_workflow_run_output(
-                                run_id,
-                                output_payload,
-                                status="waiting_for_input",
-                            )
+                            cxc_persisted = True
                             for event in cxc_events:
                                 movement_id = event.get("movement_id")
                                 stable_receivable_key = receivable_key(
                                     restaurant_id, corte_business_date, event
                                 )
                                 is_settlement = event.get("kind") == "settlement"
-                                supabase.upsert_corte_receivable({
+                                cxc_persisted = supabase.upsert_corte_receivable({
                                     "receivable_key": stable_receivable_key,
                                     "restaurant_id": restaurant_id,
                                     "movement_id": movement_id,
@@ -904,7 +968,15 @@ def poll_and_classify(
                                     "source_provider_message_id": message_id,
                                     "source_workflow_run_id": run_id,
                                     "evidence": event,
-                                })
+                                }) and cxc_persisted
+
+                            if not cxc_persisted:
+                                output_payload["cxc_persistence_status"] = "requires_review"
+                            supabase.update_workflow_run_output(
+                                run_id,
+                                output_payload,
+                                status="waiting_for_input" if cxc_persisted else "requires_review",
+                            )
 
                             if restaurant_id and register:
                                 from workflows.corte_santo.daily_record import (

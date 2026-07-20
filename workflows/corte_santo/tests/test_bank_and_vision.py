@@ -99,6 +99,20 @@ def test_banorte_ignores_dcc_commission_credit_rows() -> None:
     assert [item["amount"] for item in res["ignored_deposits"]] == [354.37, 56.70]
 
 
+def test_banorte_classifies_configured_cxc_transfer() -> None:
+    rows = [{
+        bank.COL_DESC: "SPEI RECIBIDO LA VALISSE",
+        bank.COL_DESC_DETAIL: "PAGO CUENTA",
+        bank.COL_DEPOSIT: "$1,410.00",
+        bank.COL_WITHDRAWAL: "-",
+    }]
+
+    res = bank.parse_banorte_rows(rows, {"bank_keywords": {"cxc_spei": ["LA VALISSE"]}})
+
+    assert res["status"] == "ok"
+    assert res["deposits_by_source"]["cxc"] == 1410.0
+
+
 def test_banorte_domiciled_expense_captured() -> None:
     rows = [
         {"DESCRIPCIÓN": "PAGO SPOTIFY", "DESCRIPCIÓN DETALLADA": "DOMICILIACION", "DEPÓSITOS": "-", "RETIROS": "$199.00"},

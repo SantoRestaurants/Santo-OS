@@ -1,9 +1,69 @@
 import httpx
+import json
 
 from services.agent_mail.poller import AgentMailClient
 from services.agent_mail.poller import SupabaseWriter
 from services.agent_mail.poller import poll_and_classify
 from services.agent_mail.intake import intake_email, message_content_fingerprint
+
+
+def test_transfer_settlement_stays_pending_until_bank_and_follows_superseded_row() -> None:
+    target = {
+        "id": "manual-la-valisse",
+        "status": "open",
+        "principal": 3185.0,
+        "settled_principal": 0.0,
+        "evidence": {"source": "manual_outstanding_breakdown", "description": "La Valisse"},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if request.method == "GET" and "movement_id=eq.90359" in url:
+            return httpx.Response(200, json=[{
+                "id": "old-90359",
+                "status": "cancelled",
+                "principal": 640.0,
+                "settled_principal": 0.0,
+                "evidence": {"superseded_by": "manual_cxc_breakdown_2026-07-09", "description": "La Valisse"},
+            }], request=request)
+        if request.method == "GET" and "id=eq.manual_cxc_breakdown_2026-07-09" in url:
+            return httpx.Response(200, json=[], request=request)
+        if request.method == "GET" and "status=eq.open" in url:
+            return httpx.Response(200, json=[target], request=request)
+        if request.method == "PATCH" and "id=eq.manual-la-valisse" in url:
+            target.update(json.loads(request.content))
+            return httpx.Response(204, request=request)
+        raise AssertionError(f"Unexpected request: {request.method} {url}")
+
+    writer = SupabaseWriter("https://supabase.test", "service-key")
+    writer.http = httpx.Client(
+        base_url="https://supabase.test",
+        transport=httpx.MockTransport(handler),
+    )
+    settlement = {
+        "restaurant_id": "santo",
+        "movement_id": "90359",
+        "status": "settled",
+        "settled_on": "2026-07-18",
+        "settled_principal": 640.0,
+        "source_workflow_run_id": "run-18",
+        "evidence": {
+            "kind": "settlement",
+            "payment_medium": "transferencia",
+        },
+    }
+
+    assert writer.upsert_corte_receivable(settlement) is True
+    assert writer.upsert_corte_receivable(settlement) is True
+    assert target["status"] == "open"
+    assert target["settled_principal"] == 0.0
+    assert target["evidence"]["pending_settlements"] == [{
+        "movement_id": "90359",
+        "amount": 640.0,
+        "reported_on": "2026-07-18",
+        "payment_medium": "transferencia",
+        "source_workflow_run_id": "run-18",
+    }]
 
 
 def test_download_attachment_follows_agentmail_signed_url(monkeypatch) -> None:

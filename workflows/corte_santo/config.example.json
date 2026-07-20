@@ -76,6 +76,9 @@
     "rappi_spei": [
       "RAPPI"
     ],
+    "cxc_spei": [
+      "CONFIGURE_CUSTOMER_OR_ACCOUNT_KEYWORD"
+    ],
     "domiciliacion": [
       "DOMICILIACION",
       "SPOTIFY",
@@ -90,6 +93,7 @@
   "bank_settlement_rules": {
     "_comment": "Banorte terminal deposits are applied FIFO to older open card sales. Uber/Rappi payouts close gross platform sales through the day before the deposit because the bank amount is net of platform deductions.",
     "banorte": { "mode": "fifo_partial" },
+    "cxc": { "mode": "fifo_partial" },
     "uber": { "mode": "deposit_cutoff" },
     "rappi": { "mode": "deposit_cutoff" }
   },
