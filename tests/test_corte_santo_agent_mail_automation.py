@@ -11,6 +11,12 @@ class FakeAgentMailClient:
         return b"not-a-real-workbook"
 
 
+class GenericAttachmentClient:
+    def download_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        fixture = Path("workflows/corte_santo/fixtures/santo_corte_sample.xlsx")
+        return fixture.read_bytes()
+
+
 def test_corte_agent_mail_automation_requires_workbook_sources(monkeypatch) -> None:
     monkeypatch.delenv("CORTE_SANTO_INGRESOS_PATH", raising=False)
     monkeypatch.delenv("CORTE_SANTO_FORECAST_PATH", raising=False)
@@ -41,6 +47,40 @@ def test_corte_agent_mail_automation_requires_workbook_sources(monkeypatch) -> N
     assert result["requires_review_reason"] == "corte_workbook_sources_missing"
     assert result["request"]["payload"]["business_date"] == "2026-06-04"
     assert result["request"]["payload"]["restaurant_key"] == "santo"
+
+
+def test_generic_attachment_uses_content_and_keeps_parser_extension(monkeypatch) -> None:
+    monkeypatch.setattr(
+        automation,
+        "_workbook_paths",
+        lambda *args, **kwargs: ({}, {}, {}, ["configured_workbooks_missing"]),
+    )
+
+    result = run_corte_initial_from_message(
+        client=GenericAttachmentClient(),
+        source_message={
+            "message_id": "msg-generic",
+            "subject": "[CORTE] SANTO 04 JUNIO 2026",
+            "attachments": [{
+                "attachment_id": "att-generic",
+                "filename": "attachment",
+                "content_type": "application/octet-stream",
+            }],
+        },
+        intake_result={
+            "command": {"workflow_key": "corte_santo_daily_sales_reconciliation"}
+        },
+        routing_config={
+            "corte_santo_automation": {
+                "config_path": "workflows/corte_santo/fixtures/config_confirmed.json"
+            }
+        },
+        dry_run=True,
+    )
+
+    document = result["request"]["payload"]["documents"][0]
+    assert document["document_type"] == "corte_excel"
+    assert Path(document["source_path"]).suffix.lower() == ".xlsx"
 
 
 def test_workbooks_are_discovered_from_drive_folder(monkeypatch, tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from html import unescape
 import json
 import logging
 import re
@@ -54,6 +55,54 @@ def _normalized_subject_key(subject: Any) -> str:
     while value.startswith(("fwd:", "fw:", "re:")):
         value = value.split(":", 1)[1].strip()
     return " ".join(value.split())
+
+
+def _message_text(message: dict[str, Any]) -> str:
+    """Return the best available plain-text body from an AgentMail payload."""
+    for key in ("body_text", "text", "body", "content", "message_text", "html"):
+        value = message.get(key)
+        if isinstance(value, dict):
+            for nested_key in ("text", "plain", "body_text", "content", "html"):
+                nested = value.get(nested_key)
+                if isinstance(nested, str) and nested.strip():
+                    value = nested
+                    break
+        if isinstance(value, str) and value.strip():
+            if key == "html" or ("<" in value and ">" in value):
+                value = re.sub(r"<[^>]+>", " ", value)
+                value = unescape(value)
+            return "\n".join(line.strip() for line in value.splitlines() if line.strip())
+    return ""
+
+
+def _hydrate_message(client: Any, message: dict[str, Any]) -> dict[str, Any]:
+    """Fetch full AgentMail content when the list endpoint returned a summary.
+
+    The list endpoint may omit the body and can expose only partial attachment
+    metadata. Intake needs the full body for CxC lifecycle parsing and the full
+    attachment list for document classification, so use the detail endpoint as
+    a best-effort enrichment step before routing/automation.
+    """
+    message_id = message.get("message_id") or message.get("id")
+    needs_body = not _message_text(message)
+    needs_attachments = "attachments" not in message or message.get("attachments") is None
+    getter = getattr(client, "get_message", None)
+    if not message_id or not (needs_body or needs_attachments) or not callable(getter):
+        return message
+    try:
+        detail = getter(str(message_id))
+    except Exception:
+        logger.warning("Could not hydrate AgentMail message id=%s", message_id, exc_info=True)
+        return message
+    if not isinstance(detail, dict):
+        return message
+    if isinstance(detail.get("message"), dict):
+        detail = detail["message"]
+    merged = dict(message)
+    for key, value in detail.items():
+        if value not in (None, "", [], {}):
+            merged[key] = value
+    return merged
 
 
 AGENTMAIL_BASE = "https://api.agentmail.to/v0"
@@ -522,6 +571,7 @@ def _agentmail_to_intake_format(msg: dict[str, Any]) -> dict[str, Any]:
         "cc_addresses": cc_addresses,
         "subject": msg.get("subject"),
         "received_at": msg.get("timestamp"),
+        "body_text": _message_text(msg),
         "attachments": attachments,
         "labels": msg.get("labels", []),
     }
@@ -588,6 +638,7 @@ def poll_and_classify(
     results = []
 
     for msg in messages:
+        msg = _hydrate_message(client, msg)
         logger.info(
             "Processing AgentMail message id=%s subject=%r from=%r attachments=%d",
             msg.get("message_id"),
@@ -643,7 +694,7 @@ def poll_and_classify(
             and result["email_message"].get("requires_review_reason") == "unclassified_email"
         ):
             subject = msg.get("subject", "")
-            body = msg.get("body_text", "") or msg.get("body", "")
+            body = _message_text(msg)
             prefix_map = routing_config.get("subject_prefixes", {})
 
             ai_result = classify_email(
@@ -701,7 +752,7 @@ def poll_and_classify(
         # Generate summary for classified emails
         if result["status"] == "classified":
             subject = msg.get("subject", "")
-            body = msg.get("body_text", "") or msg.get("body", "")
+            body = _message_text(msg)
             summary = summarize_email(subject=subject, body=body)
             if summary:
                 result["email_message"]["raw_metadata"]["ai_summary"] = summary

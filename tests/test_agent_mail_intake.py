@@ -54,13 +54,35 @@ def test_gerencia_santo_japones_is_allowed_by_production_routing() -> None:
     email = {
         **BASE_EMAIL,
         "from_address": "gerencia@santojapones.com",
-        "subject": "SANTO CORTE MARTES 14 JULIO 2026",
+        "subject": "[CORTE] SANTO MARTES 14 JULIO 2026",
     }
 
     result = intake_email(email, routing)
 
     assert result["status"] == "classified"
     assert result["command"]["workflow_key"] == "corte_santo_daily_sales_reconciliation"
+
+
+def test_confirmed_corte_subject_routes_when_sender_changes() -> None:
+    routing = {
+        **CONFIRMED_ROUTING,
+        "allowed_senders": ["gerencia@santojapones.com"],
+    }
+    email = {
+        **BASE_EMAIL,
+        "from_address": "operacion@santojapones.com",
+        "subject": "[CORTE] SANTO MARTES 14 JULIO 2026",
+    }
+
+    result = intake_email(email, routing)
+
+    assert result["status"] == "classified"
+    assert result["email_message"]["raw_metadata"]["sender_allowlist"]["status"] == "not_in_allowlist"
+    assert result["command"]["payload"]["sender_allowlist_status"] == "not_in_allowlist"
+    assert any(
+        event["event_type"] == "agent_mail.sender_requires_review"
+        for event in result["events"]
+    )
 
 
 def test_unclassified_subject_requires_review() -> None:

@@ -3,6 +3,7 @@ import json
 
 from services.agent_mail.poller import AgentMailClient
 from services.agent_mail.poller import SupabaseWriter
+from services.agent_mail.poller import _agentmail_to_intake_format
 from services.agent_mail.poller import poll_and_classify
 from services.agent_mail.intake import intake_email, message_content_fingerprint
 
@@ -108,6 +109,55 @@ def test_list_messages_includes_unauthenticated_label() -> None:
     assert client.list_messages(after="2026-06-19T00:00:00Z") == []
     assert "include_unauthenticated=true" in seen["url"]
     assert "after=2026-06-19T00%3A00%3A00Z" in seen["url"]
+
+
+def test_poll_hydrates_message_body_before_corte_automation(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    class FakeClient:
+        def list_messages(self, after=None, limit=20):
+            return [{
+                "message_id": "msg-detail",
+                "inbox_id": "santoos@agentmail.to",
+                "from": "Operacion Santo <operacion@santojapones.com>",
+                "to": ["santoos@agentmail.to"],
+                "subject": "SANTO CORTE MARTES 14 JULIO 2026",
+                "timestamp": "2026-07-15T10:00:00Z",
+                "attachments": [],
+            }]
+
+        def get_message(self, message_id):
+            assert message_id == "msg-detail"
+            return {
+                "body_text": "CXC movimiento 91678 por transferencia",
+                "attachments": [{
+                    "attachment_id": "att-1",
+                    "filename": "attachment",
+                    "content_type": "application/octet-stream",
+                    "size": 10,
+                }],
+            }
+
+    def fake_automation(**kwargs):
+        seen["source_message"] = kwargs["source_message"]
+        return {"status": "waiting_for_input"}
+
+    monkeypatch.setattr("services.agent_mail.poller.run_corte_initial_from_message", fake_automation)
+    monkeypatch.setattr("services.agent_mail.poller.summarize_email", lambda subject, body: None)
+
+    results = poll_and_classify(
+        FakeClient(),
+        {
+            "confirmed": True,
+            "allowed_senders": ["operacion@santojapones.com"],
+            "subject_prefixes": {"SANTO CORTE": "corte_santo_daily_sales_reconciliation"},
+            "corte_santo_automation": {"enabled": True},
+        },
+    )
+
+    assert results[0]["status"] == "classified"
+    assert seen["source_message"]["body_text"] == "CXC movimiento 91678 por transferencia"
+    assert _agentmail_to_intake_format(seen["source_message"])["body_text"] == "CXC movimiento 91678 por transferencia"
 
 
 def test_supabase_email_upsert_uses_conflict_target() -> None:

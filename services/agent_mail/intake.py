@@ -200,29 +200,16 @@ def intake_email(email: dict[str, Any], routing_config: dict[str, Any] | None = 
         }
 
     # Sender allowlist check — only process emails from known senders
+    # A unique confirmed subject prefix is authoritative for routing; a new
+    # sender is recorded for review but does not block the Corte intake.
     allowed_senders = routing_config.get("allowed_senders", [])
+    from_address = str(email.get("from_address", "")).strip().lower()
+    sender_allowed = True
     if allowed_senders:
-        from_address = str(email.get("from_address", "")).strip().lower()
         sender_allowed = any(
             from_address == sender.strip().lower()
             for sender in allowed_senders
         )
-        if not sender_allowed:
-            record = _base_email_message(email, REQUIRES_REVIEW)
-            record["requires_review_reason"] = "sender_not_in_allowlist"
-            return {
-                "status": REQUIRES_REVIEW,
-                "email_message": record,
-                "command": None,
-                "events": [
-                    _event("agent_mail.received", "info", {"subject": subject}),
-                    _event(
-                        "agent_mail.requires_review",
-                        "warning",
-                        {"reason": "sender_not_in_allowlist", "from": from_address},
-                    ),
-                ],
-            }
 
     ignored_prefixes = routing_config.get("ignored_subject_prefixes", [])
     for ignored_prefix in ignored_prefixes:
@@ -277,6 +264,11 @@ def intake_email(email: dict[str, Any], routing_config: dict[str, Any] | None = 
     record = _base_email_message(email, "classified")
     record["classification_key"] = prefix
     record["raw_metadata"]["workflow_key"] = workflow_key
+    sender_status = "allowed" if sender_allowed else "not_in_allowlist"
+    record["raw_metadata"]["sender_allowlist"] = {
+        "status": sender_status,
+        "from_address": from_address,
+    }
 
     command = {
         "command_type": "workflow.intake",
@@ -293,21 +285,40 @@ def intake_email(email: dict[str, Any], routing_config: dict[str, Any] | None = 
             "provider_message_id": record["provider_message_id"],
             "classification_key": prefix,
             "attachments": record["raw_metadata"]["attachments"],
+            "sender_allowlist_status": sender_status,
         },
     }
+
+    events = [
+        _event("agent_mail.received", "info", {"subject": subject}),
+        _event(
+            "agent_mail.classified",
+            "info",
+            {
+                "prefix": prefix,
+                "workflow_key": workflow_key,
+                "sender_allowlist_status": sender_status,
+            },
+        ),
+    ]
+    if not sender_allowed:
+        events.append(
+            _event(
+                "agent_mail.sender_requires_review",
+                "warning",
+                {
+                    "from": from_address,
+                    "reason": "sender_not_in_allowlist_subject_routing_used",
+                    "workflow_key": workflow_key,
+                },
+            )
+        )
 
     return {
         "status": "classified",
         "email_message": record,
         "command": command,
-        "events": [
-            _event("agent_mail.received", "info", {"subject": subject}),
-            _event(
-                "agent_mail.classified",
-                "info",
-                {"prefix": prefix, "workflow_key": workflow_key},
-            ),
-        ],
+        "events": events,
     }
 
 

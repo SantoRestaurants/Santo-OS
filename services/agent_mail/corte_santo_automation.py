@@ -14,6 +14,7 @@ import os
 import re
 import tempfile
 from datetime import UTC, datetime
+from html import unescape
 from pathlib import Path
 from typing import Any
 
@@ -159,6 +160,123 @@ def _document_type(filename: str, *, ocr_text: str | None = None) -> str:
     if ocr_text:
         return _document_type_from_ocr(ocr_text)
     return "email_attachment"
+
+
+def _attachment_content_text(path: Path, content_type: str | None = None) -> str:
+    """Read lightweight labels from office/PDF attachments.
+
+    Operational mail sometimes renames every attachment to a generic value.
+    The file contents still carry stable labels, so inspect those labels before
+    falling back to human review. This is classification only; the workbook
+    parser remains responsible for validating the figures.
+    """
+    suffix = path.suffix.upper()
+    if not suffix:
+        media_type = str(content_type or "").lower()
+        if "spreadsheetml" in media_type or "openxmlformats" in media_type:
+            suffix = ".XLSX"
+        elif "ms-excel" in media_type:
+            suffix = ".XLS"
+        elif "pdf" in media_type:
+            suffix = ".PDF"
+        else:
+            try:
+                signature = path.read_bytes()[:4]
+                if signature[:2] == b"PK":
+                    suffix = ".XLSX"
+                elif signature == b"%PDF":
+                    suffix = ".PDF"
+            except OSError:
+                pass
+    try:
+        if suffix in WORKBOOK_EXTENSIONS:
+            if suffix == ".XLSX":
+                # XLSX is a ZIP/XML container. Reading its text labels directly
+                # avoids loading the full workbook just to classify it and
+                # keeps intake independent from the native spreadsheet stack.
+                import zipfile
+
+                values: list[str] = []
+                with zipfile.ZipFile(path) as archive:
+                    for name in archive.namelist():
+                        if not name.endswith(".xml"):
+                            continue
+                        raw = archive.read(name).decode("utf-8", errors="ignore")
+                        values.extend(
+                            unescape(value)
+                            for value in re.findall(r"<t(?: [^>]*)?>(.*?)</t>", raw, flags=re.DOTALL)
+                        )
+                return "\n".join(values)
+
+            import xlrd
+
+            workbook = xlrd.open_workbook(str(path), on_demand=True)
+            try:
+                values = []
+                for sheet in workbook.sheets()[:3]:
+                    for row_index in range(min(sheet.nrows, 250)):
+                        values.extend(
+                            str(value)
+                            for value in sheet.row_values(row_index)[:40]
+                            if value not in (None, "")
+                        )
+                return "\n".join(values)
+            finally:
+                workbook.release_resources()
+
+        if suffix == ".PDF":
+            try:
+                from PyPDF2 import PdfReader
+
+                reader = PdfReader(str(path))
+                return "\n".join((page.extract_text() or "") for page in reader.pages[:5])
+            except (ImportError, OSError, ValueError):
+                return ""
+    except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+        logger.info("Could not inspect attachment content for classification: %s", path)
+    return ""
+
+
+def _document_type_from_content(
+    path: Path,
+    filename: str,
+    content_type: str | None = None,
+) -> str:
+    """Classify generic workbooks/reports from labels in their contents."""
+    normalized_name = str(filename or "").upper()
+    document_type = _document_type(filename)
+    if document_type != "email_attachment":
+        return document_type
+
+    if not path.is_file():
+        return document_type
+    content = _attachment_content_text(path, content_type)
+    normalized = _normalize_label(content)
+    if not normalized:
+        return document_type
+
+    has_terminal_close = "CIERRE TER/PLA" in normalized or "CIERRE TER PLA" in normalized
+    has_system_close = "CIERRE SISTEMA" in normalized
+    if has_terminal_close and has_system_close:
+        return "corte_excel"
+
+    wansoft_signals = (
+        "WANSOFT",
+        "CONTROL MOVIMIENTOS",
+        "TOTALES GENERALES",
+        "VENTAS POR FORMA DE PAGO",
+        "CONTROL POR FORMA",
+        "TOTAL POR TIPO DE GRUPO",
+        "REPORTE DE VENTAS",
+    )
+    if has_system_close or sum(signal in normalized for signal in wansoft_signals) >= 2:
+        return "wansoft_system_close"
+
+    # Keep this helper useful for providers that omit a filename extension but
+    # still send a reliable content type; a failed content read remains review.
+    if "SPREADSHEET" in str(content_type or "").upper() and "CORTE" in normalized_name:
+        return "corte_excel"
+    return document_type
 
 
 def _business_date(text: str) -> str | None:
@@ -589,9 +707,36 @@ def run_corte_initial_from_message(
             continue
         content = client.download_attachment(str(message_id), str(attachment_id))
         source_hash = hashlib.sha256(content).hexdigest()
-        local_path = attachments_dir / _safe_filename(filename)
+        safe_name = _safe_filename(filename)
+        safe_stem = Path(safe_name).stem or "attachment"
+        safe_suffix = Path(safe_name).suffix
+        if not safe_suffix:
+            media_type = str(attachment.get("content_type") or "").lower()
+            if "spreadsheetml" in media_type or "openxmlformats" in media_type:
+                safe_suffix = ".xlsx"
+            elif "ms-excel" in media_type:
+                safe_suffix = ".xls"
+            elif "pdf" in media_type:
+                safe_suffix = ".pdf"
+            elif content[:2] == b"PK":
+                safe_suffix = ".xlsx"
+            elif content[:4] == b"%PDF":
+                safe_suffix = ".pdf"
+        attachment_token = re.sub(
+            r"[^A-Za-z0-9._-]+",
+            "_",
+            str(attachment_id or source_hash[:12]),
+        ).strip("._-") or source_hash[:12]
+        # AgentMail may give several files the same generic name. Keep every
+        # attachment distinct so one file cannot overwrite another before it
+        # is classified or parsed.
+        local_path = attachments_dir / f"{safe_stem}-{attachment_token}{safe_suffix}"
         local_path.write_bytes(content)
-        document_type = _document_type(filename)
+        document_type = _document_type_from_content(
+            local_path,
+            filename,
+            attachment.get("content_type"),
+        )
         if document_type == "email_attachment" and _is_image_attachment(
             filename, attachment.get("content_type")
         ):

@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from services.agent_mail.corte_santo_automation import (
     _document_type,
     _document_type_from_ocr,
+    _document_type_from_content,
     _is_probable_inline_signature,
 )
 
@@ -36,6 +39,18 @@ def test_weak_or_ambiguous_ocr_signal_stays_generic() -> None:
 
 def test_wansoft_workbook_is_classified() -> None:
     assert _document_type("CONTROL MOVIMIENTOS 14 JULIO 2026 WANSOFT.xlsx") == "wansoft_system_close"
+
+
+def test_generic_workbook_is_classified_from_corte_labels(tmp_path: Path) -> None:
+    fixture = Path("workflows/corte_santo/fixtures/santo_corte_sample.xlsx")
+    extensionless = tmp_path / "attachment"
+    extensionless.write_bytes(fixture.read_bytes())
+
+    assert _document_type_from_content(
+        extensionless,
+        "attachment",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ) == "corte_excel"
 
 
 def test_tira_ocr_wins_over_payment_brand_on_system_close_photo() -> None:
