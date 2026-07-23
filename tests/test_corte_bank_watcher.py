@@ -1,4 +1,5 @@
 from services.drive_connector.corte_bank_watcher import detect_bank_stage_trigger, poll_bank_folder_once
+from workflows.corte_santo.bank_statement_parser import bank_statement_deposit_keys, exclude_bank_statement_deposits
 
 
 def test_bank_pair_triggers_resume_command() -> None:
@@ -68,3 +69,19 @@ def test_poll_bank_folder_downloads_samples_for_generic_xls() -> None:
     )
 
     assert result["status"] == "triggered"
+
+
+def test_cumulative_statement_can_exclude_deposits_consumed_by_previous_batch() -> None:
+    deposits = [
+        {"source": "banorte", "amount": 10.0, "description": "REST SANTO", "detail": "-", "operation_date": "16/07/2026"},
+        {"source": "banorte", "amount": 20.0, "description": "REST SANTO", "detail": "-", "operation_date": "16/07/2026"},
+    ]
+    statement = {"status": "ok", "deposits": deposits, "deposits_by_source": {"banorte": 30.0}}
+
+    filtered = exclude_bank_statement_deposits(
+        statement,
+        {bank_statement_deposit_keys(deposits)[0]},
+    )
+
+    assert filtered["deposits"] == [deposits[1]]
+    assert filtered["deposits_by_source"] == {"banorte": 20.0}

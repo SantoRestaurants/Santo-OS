@@ -571,7 +571,7 @@ def reconcile_bank_stage(
         channel_items = [item for item in others_remaining if item.get("channel") == channel and not item["_matched"]]
         if not channel_items:
             continue
-        
+
         # Try to match single deposit or deposit group against expected items
         # First group available deposits by date
         available_channel_deps = [d for d in available if not d.get("matched") and d.get("source") == channel]

@@ -306,7 +306,15 @@ def _build_expected_collections(
 
     for business_date, run, output in normalized:
         # The latest snapshot already represents all prior open items.
-        if latest_snapshot_items is not None and business_date <= latest_snapshot_date:
+        # An explicit reprocess of the snapshot's own business date must add
+        # that date's newly captured Corte ledger again. Otherwise a previous
+        # run for the same date would make the new day's Banorte/AMEX/platform
+        # expectations disappear from the next reconciliation.
+        reprocess_snapshot_date = (
+            latest_snapshot_items is not None
+            and business_date == effective_date == latest_snapshot_date
+        )
+        if latest_snapshot_items is not None and business_date <= latest_snapshot_date and not reprocess_snapshot_date:
             continue
 
         bank = output.get("bank_reconciliation") or {}
@@ -341,7 +349,20 @@ def _build_expected_collections(
             "income_channels": register,
             "income_register": register,
             "revision_document": output.get("revision_document"),
+            "output_payload": output,
         })
+
+    # Legacy daily bank writes could retain only the newest platform row. Union
+    # older item-level pending rows back into the expected ledger; reconciliation
+    # will remove any row proven settled by the current statement.
+    expected.extend(
+        _legacy_platform_pending_items(
+            normalized,
+            latest_snapshot_items,
+            latest_stage,
+            effective_date,
+        )
+    )
 
     # Keep all runs available for historical status updates and snapshot writes.
     by_date = {item["business_date"]: item for item in pending_runs}
@@ -352,6 +373,7 @@ def _build_expected_collections(
             "income_channels": output.get("income_channels") or {},
             "income_register": output.get("income_register") or {},
             "revision_document": output.get("revision_document"),
+            "output_payload": output,
         })
 
     # Deduplicate expected collections
@@ -457,6 +479,141 @@ def _expected_collections_from_output(output: dict[str, Any], business_date: str
     return expected
 
 
+def _legacy_platform_pending_items(
+    normalized: list[tuple[str, dict[str, Any], dict[str, Any]]],
+    latest_snapshot_items: list[dict[str, Any]] | None,
+    latest_stage: dict[str, Any],
+    effective_date: str,
+) -> list[dict[str, Any]]:
+    """Recover platform rows lost by pre-snapshot daily bank writes.
+
+    Before ``bank_processing_snapshot`` was persisted, the daily Corte write
+    could leave only that day's platform item in ``bank_reconciliation``.  A
+    later watcher then treated that partial list as cumulative and dropped an
+    older still-open Rappi/Uber row.  Keep the recovery limited to platform rows
+    already recorded as pending in an earlier run. When a legacy aggregate
+    proves that item rows are missing, an exact amount match against the daily
+    platform sales can recover those rows too. The current bank statement
+    remains responsible for proving whether any recovered row was settled.
+
+    An explicit snapshot is authoritative and must not be broadened here.
+    """
+    if not latest_snapshot_items:
+        return []
+    if isinstance(latest_stage.get("bank_processing_snapshot"), dict):
+        return []
+
+    platform_channels = {"uber", "rappi"}
+    if not any(str(item.get("channel") or "").lower() in platform_channels for item in latest_snapshot_items):
+        return []
+
+    recovered: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, float]] = set()
+    for business_date, _run, output in normalized:
+        if not business_date or business_date > effective_date:
+            continue
+        bank = output.get("bank_reconciliation") or {}
+        pending_items = bank.get("pending_items") if isinstance(bank, dict) else None
+        if not isinstance(pending_items, list):
+            continue
+        for raw_item in pending_items:
+            if not isinstance(raw_item, dict):
+                continue
+            channel = str(raw_item.get("channel") or "").lower()
+            if channel not in platform_channels:
+                continue
+            item = _normalize_expected_collection(raw_item, business_date)
+            source_date = str(item.get("source_date") or item.get("business_date") or business_date)
+            amount = _to_money(item.get("amount", item.get("expected_deposit", 0)))
+            if not source_date or source_date > effective_date or amount <= 0:
+                continue
+            key = (channel, source_date, amount)
+            if key in seen:
+                continue
+            seen.add(key)
+            recovered.append(item)
+
+    # Some legacy bank runs preserved the cumulative platform total in
+    # ``bank_processing.pending_collections`` but lost one or more item rows.
+    # Reconcile each historical aggregate at its own cutoff date so newer Corte
+    # days do not mask an older missing row. Only exact cent-level combinations
+    # are accepted; an unresolved gap is left for review rather than guessed.
+    for run_date, _run, output in normalized:
+        processing = output.get("bank_processing")
+        if not isinstance(processing, dict):
+            continue
+        cutoff = str(processing.get("business_date") or run_date or "")
+        if not cutoff or cutoff > effective_date:
+            continue
+        aggregate = processing.get("pending_collections")
+        if not isinstance(aggregate, dict):
+            continue
+        for channel in platform_channels:
+            target = _to_money(aggregate.get(channel))
+            if target <= 0:
+                continue
+            represented = round(
+                sum(
+                    _to_money(item.get("amount", item.get("expected_deposit", 0)))
+                    for item in recovered
+                    if str(item.get("channel") or "").lower() == channel
+                    and str(item.get("source_date") or item.get("business_date") or "") <= cutoff
+                ),
+                2,
+            )
+            gap = round(target - represented, 2)
+            if gap <= 0:
+                continue
+
+            candidates: list[dict[str, Any]] = []
+            for candidate_date, _candidate_run, candidate_output in normalized:
+                if not candidate_date or candidate_date > cutoff:
+                    continue
+                register = candidate_output.get("income_register") or {}
+                if not isinstance(register, dict):
+                    continue
+                amount = _to_money(register.get(channel))
+                key = (channel, candidate_date, amount)
+                if amount <= 0 or key in seen:
+                    continue
+                candidates.append({
+                    "business_date": candidate_date,
+                    "source_date": candidate_date,
+                    "channel": channel,
+                    "amount": amount,
+                    "expected_deposit": amount,
+                })
+
+            candidates.sort(key=lambda item: str(item.get("source_date") or ""))
+            chosen: list[dict[str, Any]] | None = None
+
+            def find_exact(start: int, remaining_cents: int, selected: list[dict[str, Any]]) -> bool:
+                nonlocal chosen
+                if remaining_cents == 0:
+                    chosen = list(selected)
+                    return True
+                if remaining_cents < 0:
+                    return False
+                for index in range(start, len(candidates)):
+                    amount_cents = int(round(_to_money(candidates[index]["amount"]) * 100))
+                    if amount_cents > remaining_cents:
+                        continue
+                    if find_exact(index + 1, remaining_cents - amount_cents, selected + [candidates[index]]):
+                        return True
+                return False
+
+            find_exact(0, int(round(gap * 100)), [])
+            if not chosen:
+                continue
+            for item in chosen:
+                key = (channel, str(item["source_date"]), _to_money(item["amount"]))
+                if key in seen:
+                    continue
+                seen.add(key)
+                recovered.append(item)
+    return recovered
+
+
 def _summarize_pending(items: list[dict[str, Any]]) -> dict[str, float]:
     totals: dict[str, float] = {}
     for item in items:
@@ -476,11 +633,203 @@ def _summarize_pending(items: list[dict[str, Any]]) -> dict[str, float]:
     return totals
 
 
+def _normalize_pending_totals(
+    items: list[dict[str, Any]],
+    pending_collections: Any = None,
+) -> dict[str, float]:
+    """Normalize the cumulative outstanding snapshot by display channel.
+
+    ``pending_collections`` is already cumulative through the bank-processing
+    date.  Older payloads stored Banorte as separate ``debito`` and ``credito``
+    keys, so fold those into one Banorte value without changing the other
+    channels.
+    """
+    source = pending_collections if isinstance(pending_collections, dict) else _summarize_pending(items)
+    totals: dict[str, float] = {}
+    legacy_banorte = 0.0
+    for raw_channel, raw_amount in source.items():
+        amount = _to_money(raw_amount)
+        if amount <= 0:
+            continue
+        channel = str(raw_channel or "unclassified").lower()
+        if channel in ("debito", "credito", "terminal", "terminal_banorte"):
+            legacy_banorte = round(legacy_banorte + amount, 2)
+            continue
+        if channel in ("plataforma", "plataformas", "uber_eats", "ubereats"):
+            channel = "uber"
+        if channel == "cxc":
+            channel = "cxc"
+        totals[channel] = round(totals.get(channel, 0.0) + amount, 2)
+    if legacy_banorte > 0 and "banorte" not in totals:
+        totals["banorte"] = legacy_banorte
+    return totals
+
+
+def _statement_date_key(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) >= 10 and text[4] == "-":
+        return text[:10]
+    parts = text[:10].split("/")
+    if len(parts) == 3 and len(parts[2]) == 4:
+        return f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
+    return text[:10]
+
+
+def _latest_bank_snapshot(
+    runs: list[dict[str, Any]],
+    effective_date: str,
+) -> dict[str, Any]:
+    candidates: list[tuple[str, str, dict[str, Any]]] = []
+    for run in runs:
+        business_date = str(run.get("business_date") or "")
+        if not business_date or business_date > effective_date:
+            continue
+        output = run.get("output_payload") or {}
+        if isinstance(output, str):
+            try:
+                output = json.loads(output)
+            except Exception:
+                continue
+        snapshot = output.get("bank_processing_snapshot") if isinstance(output, dict) else None
+        if isinstance(snapshot, dict) and snapshot.get("processed_on"):
+            candidates.append((business_date, str(snapshot.get("processed_on")), snapshot))
+    if not candidates:
+        return {}
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return candidates[-1][2]
+
+
+def _bank_deposit_exclusion_keys(
+    snapshot: dict[str, Any],
+    deposits: list[dict[str, Any]],
+    keys: list[str],
+) -> set[str]:
+    """Identify deposits already consumed by the last bank batch.
+
+    New snapshots persist exact deposit identities. The date fallback keeps the
+    behavior safe for older snapshots that predate this field: Banorte settles
+    on the following operation date, so a snapshot for the 14th has already
+    observed deposits through the 15th.
+    """
+    persisted = snapshot.get("processed_bank_deposit_keys")
+    if isinstance(persisted, list) and persisted:
+        return {str(key) for key in persisted if key}
+    processed_on = str(snapshot.get("processed_on") or "")
+    cutoff = _statement_date_key(snapshot.get("statement_observed_through"))
+    if not cutoff and processed_on:
+        try:
+            cutoff = (datetime.strptime(processed_on, "%Y-%m-%d") + timedelta(days=1)).date().isoformat()
+        except ValueError:
+            cutoff = ""
+    if not cutoff:
+        return set()
+    return {
+        key
+        for deposit, key in zip(deposits, keys)
+        if _statement_date_key(deposit.get("operation_date")) <= cutoff
+    }
+
+
+def _historical_bank_dates(output: Any) -> set[str]:
+    if not isinstance(output, dict):
+        return set()
+    dates: set[str] = set()
+    per_day = output.get("falta_por_entrar_por_dia")
+    if isinstance(per_day, dict):
+        dates.update(str(date) for date in per_day if str(date))
+    per_day_details = output.get("falta_por_entrar_detalle_por_dia")
+    if isinstance(per_day_details, dict):
+        dates.update(str(date) for date in per_day_details if str(date))
+    snapshot = output.get("bank_processing_snapshot")
+    if isinstance(snapshot, dict) and isinstance(snapshot.get("processed_dates"), list):
+        dates.update(
+            str(date)
+            for date in snapshot["processed_dates"]
+            if isinstance(date, str) and date
+        )
+    return dates
+
+
+def _should_write_historical_bank_snapshot(
+    output: Any,
+    business_date: str,
+) -> bool:
+    """Write a date only when it has no persisted bank snapshot yet."""
+    return business_date not in _historical_bank_dates(output)
+
+
+def _merge_historical_outstanding(
+    output: Any,
+    dates: set[str],
+    total: float,
+) -> dict[str, float]:
+    history: dict[str, float] = {}
+    if isinstance(output, dict) and isinstance(output.get("falta_por_entrar_por_dia"), dict):
+        for date, value in output["falta_por_entrar_por_dia"].items():
+            if isinstance(date, str) and date:
+                history[date] = round(_to_money(value), 2)
+    for date in sorted(dates):
+        if date not in history:
+            history[date] = round(total, 2)
+    return history
+
+
+def _merge_historical_outstanding_details(
+    output: Any,
+    dates: set[str],
+    pending_totals: dict[str, float],
+) -> dict[str, dict[str, float]]:
+    """Keep the first bank snapshot's channel breakdown for each business day."""
+    history: dict[str, dict[str, float]] = {}
+    if isinstance(output, dict) and isinstance(output.get("falta_por_entrar_detalle_por_dia"), dict):
+        for date, value in output["falta_por_entrar_detalle_por_dia"].items():
+            if isinstance(date, str) and date and isinstance(value, dict):
+                history[date] = _normalize_pending_totals([], value)
+    for date in sorted(dates):
+        if date not in history:
+            history[date] = dict(pending_totals)
+    return history
+
+
 def _pending_items_for_date(items: list[dict[str, Any]], business_date: str) -> list[dict[str, Any]]:
     return [
         item for item in items
         if str(item.get("business_date") or item.get("source_date") or "") == business_date
     ]
+
+
+def _dates_from_bank_match(match: dict[str, Any]) -> set[str]:
+    dates: set[str] = set()
+    direct_date = str(match.get("business_date") or match.get("source_date") or "")
+    if direct_date:
+        dates.add(direct_date)
+    for key in ("expected", "expected_group", "allocations"):
+        value = match.get(key)
+        values = value if isinstance(value, list) else [value]
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            date = str(item.get("business_date") or item.get("source_date") or "")
+            if date:
+                dates.add(date)
+    return dates
+
+
+def _set_banorte_balance(output: dict[str, Any], balance: Any) -> None:
+    """Keep the latest Banorte statement balance even without an AMEX match."""
+    if balance is None:
+        return
+    try:
+        normalized = round(float(balance), 2)
+    except (TypeError, ValueError):
+        return
+    saldos = output.get("saldos")
+    if not isinstance(saldos, dict):
+        saldos = {}
+    saldos["banorte"] = normalized
+    output["saldos"] = saldos
 
 
 def _cxc_expected_collection(receivable: dict[str, Any]) -> dict[str, Any] | None:
@@ -679,6 +1028,38 @@ def run_bank_watcher_once(
             "watcher_result": watcher,
         }
 
+    # A statement file is usually cumulative. Keep only deposits that were
+    # not consumed by the previous bank batch, otherwise an old Banorte row can
+    # settle the same outstanding collection twice.
+    from workflows.corte_santo.bank_statement_parser import (
+        bank_statement_deposit_keys,
+        parse_banorte_csv,
+    )
+
+    banorte_doc = docs_by_type.get("banorte_statement", {})
+    tracked_banorte_statement = parse_banorte_csv(str(banorte_doc.get("source_path", "")), config)
+    tracked_deposits = [
+        item for item in (tracked_banorte_statement.get("deposits") or [])
+        if isinstance(item, dict)
+    ]
+    tracked_deposit_keys = bank_statement_deposit_keys(tracked_deposits)
+    previous_snapshot = _latest_bank_snapshot(all_runs, effective_date)
+    excluded_deposit_keys = _bank_deposit_exclusion_keys(
+        previous_snapshot,
+        tracked_deposits,
+        tracked_deposit_keys,
+    )
+    processed_bank_deposit_keys = set(
+        str(key)
+        for key in (previous_snapshot.get("processed_bank_deposit_keys") or [])
+        if key
+    )
+    processed_bank_deposit_keys.update(tracked_deposit_keys)
+    statement_observed_through = max(
+        (_statement_date_key(item.get("operation_date")) for item in tracked_deposits),
+        default="",
+    )
+
     # Re-download workbooks from Drive using latest stage1 data
     drive_file_ids = latest_stage1.get("drive_file_ids") or {}
     workbook_paths: dict[str, str] = {}
@@ -720,6 +1101,7 @@ def run_bank_watcher_once(
             "income_channels": _safe(latest_stage1.get("income_channels"), {}),
             "income_register": _safe(latest_stage1.get("income_register"), {}),
             "expected_collections": expected_cols,
+            "exclude_bank_deposit_keys": sorted(excluded_deposit_keys),
             "revision_document": _safe(latest_stage1.get("revision_document"), {}),
             "workbook_paths": workbook_paths or _safe(latest_stage1.get("workbook_paths"), {}),
             "workbook_outputs": workbook_outputs or _safe(latest_stage1.get("workbook_outputs"), {}),
@@ -728,13 +1110,10 @@ def run_bank_watcher_once(
     }
 
     # Extract Banorte final balance
-    banorte_balance = None
+    banorte_balance = tracked_banorte_statement.get("final_balance")
     try:
-        from workflows.corte_santo.bank_statement_parser import parse_banorte_csv
-        banorte_doc = docs_by_type.get("banorte_statement", {})
-        if banorte_doc.get("source_path"):
-            banorte_parsed = parse_banorte_csv(str(banorte_doc["source_path"]), config)
-            banorte_balance = banorte_parsed.get("final_balance")
+        if banorte_balance is None and banorte_doc.get("source_path"):
+            banorte_balance = parse_banorte_csv(str(banorte_doc["source_path"]), config).get("final_balance")
     except Exception:
         pass
 
@@ -747,10 +1126,69 @@ def run_bank_watcher_once(
     # ── Per-day: persist status AND write workbook to Drive ──
     bank_result = result.get("bank_reconciliation") or {}
     amex_matches = bank_result.get("amex_matches", [])
-    validated_dates: set[str] = set()
-
-    # Mark matched receivables as settled
     general_matches = bank_result.get("matches", [])
+    pending_items = [
+        item for item in (bank_result.get("pending_items") or [])
+        if isinstance(item, dict)
+    ]
+    pending_totals = _normalize_pending_totals(
+        pending_items,
+        bank_result.get("pending_collections"),
+    )
+    bank_result["pending_collections"] = pending_totals
+    pending_total = round(sum(pending_totals.values()), 2)
+    processed_dates = {
+        str(item.get("business_date") or item.get("source_date") or "")
+        for item in expected_cols
+        if str(item.get("business_date") or item.get("source_date") or "")
+    }
+    processed_dates.update(
+        str(item.get("business_date") or item.get("source_date") or "")
+        for item in pending_items
+        if str(item.get("business_date") or item.get("source_date") or "")
+    )
+    matches_by_date: dict[str, dict[str, Any]] = {}
+    for match in [*amex_matches, *general_matches]:
+        if not isinstance(match, dict):
+            continue
+        match_dates = _dates_from_bank_match(match)
+        processed_dates.update(match_dates)
+        for match_date in match_dates:
+            matches_by_date.setdefault(match_date, match)
+
+    # Each date records the cumulative outstanding state observed by this bank
+    # batch. A later batch gets a new date; it must not rewrite prior dates.
+    dates_to_write = {
+        str(pr.get("business_date"))
+        for pr in pending_runs
+        if str(pr.get("business_date") or "") in processed_dates
+        and _should_write_historical_bank_snapshot(
+            pr.get("output_payload"),
+            str(pr.get("business_date")),
+        )
+    }
+    if effective_date in processed_dates:
+        dates_to_write.add(effective_date)
+    result["falta_por_entrar_por_dia"] = {
+        bd: pending_total for bd in sorted(dates_to_write) if bd
+    }
+    result["falta_por_entrar_detalle_por_dia"] = {
+        bd: dict(pending_totals) for bd in sorted(dates_to_write) if bd
+    }
+    bank_processing_snapshot = {
+        "processed_on": effective_date,
+        "processed_dates": sorted(date for date in dates_to_write if date),
+        "falta_por_entrar_por_dia": result["falta_por_entrar_por_dia"],
+        "falta_por_entrar_detalle_por_dia": result["falta_por_entrar_detalle_por_dia"],
+        "falta_por_entrar": pending_totals,
+        "falta_por_entrar_total": pending_total,
+        "processed_bank_deposit_keys": sorted(processed_bank_deposit_keys),
+        "statement_observed_through": statement_observed_through,
+    }
+    validated_dates: set[str] = set(dates_to_write)
+
+    # Apply only bank-validated amounts to CxC. Exact matches close the row;
+    # FIFO partial matches increase settled_principal but leave the residual open.
     matched_receivable_ids = set()
     receivable_allocations: dict[str, float] = {}
     receivables_by_id = {
@@ -824,11 +1262,9 @@ def run_bank_watcher_once(
         except Exception as exc:
             logging.exception("Failed to apply partial receivable settlement %s: %s", rid, exc)
 
-    for match in amex_matches:
-        bd = match.get("business_date") or match.get("source_date")
+    for bd in sorted(dates_to_write):
         if not bd:
             continue
-        validated_dates.add(bd)
 
         # Find this day's pending run data
         day_data = next((pr for pr in pending_runs if pr["business_date"] == bd), {})
@@ -846,6 +1282,7 @@ def run_bank_watcher_once(
                 "income_channels": day_data.get("income_channels") or _safe(latest_stage1.get("income_channels"), {}),
                 "income_register": day_data.get("income_register") or _safe(latest_stage1.get("income_register"), {}),
                 "expected_collections": [e for e in expected_cols if e.get("business_date") == bd],
+                "exclude_bank_deposit_keys": sorted(excluded_deposit_keys),
                 "revision_document": day_data.get("revision_document") or _safe(latest_stage1.get("revision_document"), {}),
                 "workbook_paths": workbook_paths,
                 "workbook_outputs": workbook_outputs,
@@ -886,37 +1323,46 @@ def run_bank_watcher_once(
                             if isinstance(current_op, str):
                                 try: current_op = json.loads(current_op)
                                 except: current_op = {}
-                            current_op["bank_validation_status"] = "bank_validated"
+                            current_op["bank_validation_status"] = (
+                                "bank_requires_review" if pending_totals else "bank_validated"
+                            )
                             current_op["stage"] = "bank_validated"
                             current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
-                            day_pending_items = _pending_items_for_date(
-                                bank_result.get("pending_items") or [],
-                                bd,
-                            )
-                            day_pending = _summarize_pending(day_pending_items)
                             revision = current_op.get("revision_document") or {}
                             if isinstance(revision, dict):
-                                revision["falta_por_entrar"] = day_pending
+                                revision["falta_por_entrar"] = pending_totals
                                 revision["bank_validation_status"] = (
-                                    "bank_requires_review" if day_pending else "bank_validated"
+                                    "bank_requires_review" if pending_totals else "bank_validated"
                                 )
                                 current_op["revision_document"] = revision
                             current_op["bank_reconciliation"] = {
-                                "status": "bank_requires_review" if day_pending else "bank_validated",
-                                "pending_items": day_pending_items,
-                                "pending_collections": day_pending,
+                                **bank_result,
+                                "status": "bank_requires_review" if pending_totals else "bank_validated",
                                 "matched_on_later_statement": True,
+                                "processed_on": effective_date,
                             }
-                            # Update saldos with banorte balance
-                            if banorte_balance is not None:
-                                saldos = current_op.get("saldos") or {}
-                                if isinstance(saldos, dict):
-                                    saldos["banorte"] = banorte_balance
-                                    current_op["saldos"] = saldos
-                            current_op["bank_match"] = {
-                                "validated_by": match.get("validated_by"),
-                                "amex_cargo": match.get("amex_cargo") or match.get("amex_cargo_a"),
+                            current_op["falta_por_entrar_por_dia"] = _merge_historical_outstanding(
+                                current_op,
+                                dates_to_write,
+                                pending_total,
+                            )
+                            current_op["falta_por_entrar_detalle_por_dia"] = _merge_historical_outstanding_details(
+                                current_op,
+                                dates_to_write,
+                                pending_totals,
+                            )
+                            current_op["bank_processing_snapshot"] = {
+                                **bank_processing_snapshot,
+                                "falta_por_entrar_por_dia": current_op["falta_por_entrar_por_dia"],
+                                "falta_por_entrar_detalle_por_dia": current_op["falta_por_entrar_detalle_por_dia"],
                             }
+                            _set_banorte_balance(current_op, banorte_balance)
+                            match_for_day = matches_by_date.get(bd)
+                            if match_for_day:
+                                current_op["bank_match"] = {
+                                    "validated_by": match_for_day.get("validated_by") or "bank_statement",
+                                    "amex_cargo": match_for_day.get("amex_cargo") or match_for_day.get("amex_cargo_a"),
+                                }
                             httpx.patch(
                                 f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
                                 json={"output_payload": current_op},
@@ -924,29 +1370,13 @@ def run_bank_watcher_once(
                                          "Content-Type": "application/json"},
                                 timeout=10.0,
                             )
-                    logging.info("Validated %s via %s", bd, match.get("validated_by", "unknown"))
+                    logging.info("Validated %s via bank statement", bd)
                 except Exception as exc:
                     logging.exception("Failed to persist validation for %s: %s", bd, exc)
                 break
 
     result["validated_dates"] = sorted(validated_dates)
     result["validated_count"] = len(validated_dates)
-
-    # Rebuild per-day pending strictly from the unmatched items returned by the
-    # current reconciliation. Matched historical items are therefore removed.
-    result["falta_por_entrar_por_dia"] = {}
-    pending_items = [
-        item for item in (bank_result.get("pending_items") or [])
-        if isinstance(item, dict)
-    ]
-    pending_dates = {
-        str(item.get("business_date") or item.get("source_date") or "")
-        for item in pending_items
-    }
-    for bd in sorted(date for date in pending_dates if date):
-        day_total = sum(_summarize_pending(_pending_items_for_date(pending_items, bd)).values())
-        if day_total > 0:
-            result["falta_por_entrar_por_dia"][bd] = round(day_total, 2)
 
     # Persist the bank snapshot on the run selected by the operator. This must
     # happen before returning; otherwise Drive is updated but Dashboard keeps
@@ -971,13 +1401,29 @@ def run_bank_watcher_once(
                     if bank_result.get("status") == "bank_validated" and not pending_collections
                     else "bank_requires_review"
                 )
-                revision["falta_por_entrar"] = pending_collections
-                revision["bank_validation_status"] = persisted_bank_status
-                current_op["revision_document"] = revision
+                if isinstance(revision, dict):
+                    revision["falta_por_entrar"] = pending_collections
+                    revision["bank_validation_status"] = persisted_bank_status
+                    current_op["revision_document"] = revision
                 current_op["bank_reconciliation"] = bank_result
-                current_op["falta_por_entrar_por_dia"] = result["falta_por_entrar_por_dia"]
+                current_op["falta_por_entrar_por_dia"] = _merge_historical_outstanding(
+                    current_op,
+                    dates_to_write,
+                    pending_total,
+                )
+                current_op["falta_por_entrar_detalle_por_dia"] = _merge_historical_outstanding_details(
+                    current_op,
+                    dates_to_write,
+                    pending_collections,
+                )
+                current_op["bank_processing_snapshot"] = {
+                    **bank_processing_snapshot,
+                    "falta_por_entrar_por_dia": current_op["falta_por_entrar_por_dia"],
+                    "falta_por_entrar_detalle_por_dia": current_op["falta_por_entrar_detalle_por_dia"],
+                }
                 current_op["bank_validation_status"] = persisted_bank_status
                 current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
+                _set_banorte_balance(current_op, banorte_balance)
                 update = httpx.patch(
                     f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
                     json={"output_payload": current_op},
@@ -995,6 +1441,49 @@ def run_bank_watcher_once(
         logging.exception("Failed to persist bank stage summary")
 
     return result
+
+
+def _clear_bank_validation_for_missing_documents(
+    output: dict[str, Any],
+    business_date: str | None,
+) -> None:
+    """Remove stale bank evidence when the selected day's statements are absent."""
+    output.pop("bank_reconciliation", None)
+    output.pop("bank_processing_snapshot", None)
+    output.pop("bank_match", None)
+    output.pop("bank_validated_at", None)
+    output["bank_validation_status"] = "bank_pending_upload"
+    output["stage"] = "corte_loaded"
+
+    if business_date:
+        history = output.get("falta_por_entrar_por_dia")
+        if isinstance(history, dict):
+            history.pop(business_date, None)
+            if history:
+                output["falta_por_entrar_por_dia"] = history
+            else:
+                output.pop("falta_por_entrar_por_dia", None)
+        detail_history = output.get("falta_por_entrar_detalle_por_dia")
+        if isinstance(detail_history, dict):
+            detail_history.pop(business_date, None)
+            if detail_history:
+                output["falta_por_entrar_detalle_por_dia"] = detail_history
+            else:
+                output.pop("falta_por_entrar_detalle_por_dia", None)
+
+    revision = output.get("revision_document")
+    if isinstance(revision, dict):
+        revision.pop("falta_por_entrar", None)
+        revision["bank_validation_status"] = "bank_pending_upload"
+        output["revision_document"] = revision
+
+    saldos = output.get("saldos")
+    if isinstance(saldos, dict) and "banorte" in saldos:
+        saldos.pop("banorte", None)
+        if saldos:
+            output["saldos"] = saldos
+        else:
+            output.pop("saldos", None)
 
 
 def _persist_bank_processing_outcome(business_date: str | None, result: dict[str, Any]) -> None:
@@ -1034,9 +1523,23 @@ def _persist_bank_processing_outcome(business_date: str | None, result: dict[str
         if not isinstance(previous, dict):
             previous = {}
         result_status = str(result.get("status") or "requires_review")
-        processing_status = "completed" if result_status in (
-            "completed", "waiting_for_input", "bank_validated", "bank_requires_review"
-        ) else "requires_review"
+        watcher_result = result.get("watcher_result")
+        missing_bank_documents = (
+            result_status == "waiting_for_input"
+            or (
+                isinstance(watcher_result, dict)
+                and watcher_result.get("status") == "waiting_for_input"
+            )
+        )
+        processing_status = (
+            "waiting_for_input"
+            if missing_bank_documents
+            else "completed"
+            if result_status in ("completed", "bank_validated", "bank_requires_review")
+            else "requires_review"
+        )
+        if missing_bank_documents:
+            _clear_bank_validation_for_missing_documents(output, business_date)
         bank = output.get("bank_reconciliation") or {}
         pending = bank.get("pending_collections") if isinstance(bank, dict) else {}
         output["bank_processing"] = {
@@ -1049,9 +1552,12 @@ def _persist_bank_processing_outcome(business_date: str | None, result: dict[str
             "validated_dates": result.get("validated_dates") or [],
             "pending_collections": pending or {},
         }
+        row_update: dict[str, Any] = {"output_payload": output}
+        if missing_bank_documents:
+            row_update["status"] = "waiting_for_input"
         update = httpx.patch(
             f"{supabase_url}/rest/v1/workflow_runs?id=eq.{rows[0]['id']}",
-            json={"output_payload": output},
+            json=row_update,
             headers={**headers, "Content-Type": "application/json"},
             timeout=15.0,
         )

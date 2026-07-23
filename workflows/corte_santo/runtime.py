@@ -259,6 +259,12 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
     banorte_doc = by_type.get("banorte_statement", {})
     amex_doc = by_type.get("amex_statement", {})
     banorte = bank_parser.parse_banorte_csv(str(banorte_doc.get("source_path", "")), config)
+    excluded_deposit_keys = payload.get("exclude_bank_deposit_keys")
+    if isinstance(excluded_deposit_keys, list):
+        banorte = bank_parser.exclude_bank_statement_deposits(
+            banorte,
+            {str(key) for key in excluded_deposit_keys if key},
+        )
     amex = bank_reconciliation.parse_amex_xls(str(amex_doc.get("source_path", "")))
     income_channels = _bank_write_channels(payload)
     layout_columns = (config.get("ingresos_layout") or {}).get("columns", {})

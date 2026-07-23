@@ -1,5 +1,84 @@
 # Current State
 
+## 2026-07-23 - Daily falta por entrar snapshots are immutable in the views
+
+- The selected day in `/socios` and `/cortes` now reads the first persisted
+  bank snapshot associated with that business date instead of the latest
+  global outstanding balance.
+- Friday, Saturday and Sunday share the same snapshot when the bank batch
+  validates them together on Monday; a later validation writes only the newly
+  processed day.
+- Historical channel breakdowns are persisted in
+  `falta_por_entrar_detalle_por_dia`, while older total-only payloads remain
+  readable. The validation date stays audit metadata and is not shown as a
+  second date in the day card.
+
+## 2026-07-22 - Repaired legacy platform carry-forward and Rappi pending balance
+
+- The bank watcher now recovers older item-level Uber/Rappi rows that were
+  already recorded as pending when a legacy daily payload retained only the
+  newest platform row. Explicit `bank_processing_snapshot` payloads remain
+  authoritative and are not broadened.
+- Added regression coverage for the July-style Rappi sequence where 18 July
+  was lost from the later cumulative pending list.
+- Production workflow run for SANTO `2026-07-21` was corrected idempotently:
+  Rappi pending items now include 17 July `1050.00`, 18 July `2460.00`, 19
+  July `1785.00` and 20 July `1245.00`, with the aggregate updated from
+  `3030.00` to `6540.00`. The correction is recorded in the workflow payload
+  and in `events` audit rows.
+
+## 2026-07-22 - Corte intake tolerates alternate senders and opaque packages
+
+- Agent Mail now hydrates the full message when the list response omits the
+  body or attachment details, preserving the body needed for CxC parsing.
+- A unique confirmed Corte subject routes the workflow even when the sender is
+  a new operational mailbox; the sender mismatch remains an auditable warning.
+- Corte attachments receive unique local paths and generic office/PDF files
+  are classified from content labels before filename rules. Extensionless XLSX
+  files are saved with a parser-compatible extension.
+- Focused Agent Mail/Corte verification passes with 34 tests.
+- Manual production reprocess `29935975526` processed SANTO `2026-07-20` from
+  `SANTO CORTE LUNES 20 JULIO 2026`: six operational attachments were
+  classified, Total Real and Total Sistema both reconciled to `86057.79`, the
+  canonical daily record was written, and the initial stage is waiting only
+  for the bank files.
+- Manual production run `29947447260` processed the authorized forwarded mail
+  `Fwd: SANTO CORTE MARTES 21 JULIO 2026` from `developer@santorestaurants.com`:
+  opaque image attachments were classified by OCR as Bancarias, Tira and
+  Amex, Total Real and Total Sistema both reconciled to `64353.22`, the
+  canonical daily record was written for `2026-07-21`, and `cxc_events` was
+  empty. The run remains `waiting_for_input` for the bank-validation/review
+  stage.
+
+## 2026-07-17 - Corrected historical bank snapshots and per-day bank state
+
+- The prior bank run was effective for `2026-07-15`, and its confirmed
+  outstanding channel values were AMEX `36358.17`, Rappi `5795.00`, Uber
+  `3130.00`, and Banorte `19316.10`, for a cumulative snapshot of `81829.27`.
+  The Banorte amount was reconstructed from the prior 14 July residual
+  (`23178.30`) and the 16 July Banorte deposits (`76604.86`) applied FIFO to
+  the 15 July Banorte sales (`72742.66`).
+- The 16 July run has no bank documents. Its bank reconciliation and bank
+  snapshot were removed, its status is `waiting_for_input`, and the dashboard
+  must show that banks are missing instead of inheriting the latest snapshot.
+- `saldos.banorte` is persisted independently of AMEX matching. The run may
+  still remain `bank_requires_review` for other unresolved channels or
+  statement exceptions.
+
+## 2026-07-17 - Bank balance persistence and daily outstanding history
+
+- The latest July 15 bank run classified Banorte deposits and applied FIFO
+  matches, but the selected workflow run had no `saldos.banorte` because the
+  scheduler only saved the Banorte balance inside the AMEX-match loop.
+- The scheduler now persists the parsed Banorte balance for every bank batch,
+  records the dates included in that batch, and writes an explicit zero for a
+  processed day with no pending collections.
+- `/socios` and `/cortes` now render `Falta por entrar` per business day using
+  the historical bank snapshot for that day. Days without persisted bank data
+  remain hidden and are marked as awaiting bank upload; days processed
+  together resolve to the same later snapshot. Bank validation status is read
+  from the selected day's own payload, not from the latest run globally.
+
 ## 2026-07-15 - Gerencia sender and opaque Corte photos
 
 - Gmail confirms the SANTO Corte email for business date 2026-07-14 arrived on
@@ -664,3 +743,24 @@ Activate and validate the Corte two-stage runtime in production:
   matches the key exposed in Git history, and the GitHub repository remains
   public. Rotate the key in Supabase/local/Vercel/GitHub and make the repository
   private before operational acceptance.
+
+## 2026-07-20 - July 18/19 CXC correction and bank-validation guard
+
+- Corrected July 18 as two transfer settlements (movements 90359 and 90487)
+  that remain open until bank validation; corrected July 19 as two new CXC
+  openings (movements 91678 and 91691) totaling MXN 1,005.
+- Email-body CXC parsing now supports multiple movements and cannot be
+  overwritten by OCR/AI principal guesses.
+- Non-cash settlement evidence is idempotently attached to the open receivable;
+  configured bank matching applies exact or partial settled principal later.
+- The corrected open CXC ledger is MXN 18,235 before the reported MXN 1,410
+  transfer is confirmed by bank reconciliation.
+
+## 2026-07-20 - July 16/18 tip correction
+
+- July 16 tips are MXN 8,578.95 (AMEX 699.95 + Bancarias 7,879.00), not the
+  impossible OCR Tira total of MXN 1,557.70.
+- July 18 tips are MXN 18,576.81; the prior MXN 18,706.81 retained the same
+  erroneous MXN 130 CXC OCR delta already removed from PayPal.
+- The lower-supported-tip rule now rejects a Tira total below either individual
+  bank-tip component, keeps the supported bank sum and raises review.

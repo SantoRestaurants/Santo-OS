@@ -445,6 +445,98 @@ def test_bank_matching_clears_banorte_group_and_keeps_platforms_separate() -> No
     assert [item["channel"] for item in result["pending_items"]] == ["rappi"]
 
 
+def test_banorte_same_day_deposit_stays_pending_until_next_day() -> None:
+    result = bank.reconcile_bank_stage(
+        [{
+            "business_date": "2026-07-16",
+            "source_date": "2026-07-16",
+            "channel": "banorte",
+            "amount": 63444.0,
+        }],
+        {
+            "status": "ok",
+            "deposits": [{"source": "banorte", "amount": 63444.0, "operation_date": "16/07/2026"}],
+            "additional_expenses": [],
+        },
+        {"status": "ok", "payments": []},
+        settlement_rules={"banorte": {"mode": "fifo_partial"}},
+    )
+
+    assert result["pending_collections"] == {"banorte": 63444.0}
+    assert result["matches"] == []
+
+
+def test_banorte_next_batch_carries_prior_residual_and_leaves_latest_day_partial() -> None:
+    result = bank.reconcile_bank_stage(
+        [
+            {
+                "business_date": "2026-07-14",
+                "source_date": "2026-07-14",
+                "channel": "banorte",
+                "amount": 23178.30,
+                "original_amount": 69084.24,
+                "settled_amount": 45905.94,
+                "status": "parcialmente_depositado",
+            },
+            {
+                "business_date": "2026-07-15",
+                "source_date": "2026-07-15",
+                "channel": "banorte",
+                "amount": 72742.66,
+            },
+        ],
+        {
+            "status": "ok",
+            "deposits": [
+                {"source": "banorte", "amount": 37296.71, "operation_date": "16/07/2026"},
+                {"source": "banorte", "amount": 25004.65, "operation_date": "16/07/2026"},
+                {"source": "banorte", "amount": 11543.00, "operation_date": "16/07/2026"},
+                {"source": "banorte", "amount": 2760.50, "operation_date": "16/07/2026"},
+            ],
+            "additional_expenses": [],
+        },
+        {"status": "ok", "payments": []},
+        settlement_rules={"banorte": {"mode": "fifo_partial"}},
+    )
+
+    assert result["pending_collections"] == {"banorte": 19316.10}
+    assert result["pending_items"] == [{
+        "business_date": "2026-07-15",
+        "source_date": "2026-07-15",
+        "channel": "banorte",
+        "amount": 19316.10,
+        "expected_deposit": 19316.10,
+        "original_amount": 72742.66,
+        "settled_amount": 53426.56,
+        "status": "parcialmente_depositado",
+    }]
+
+
+def test_cxc_bank_transfer_allocates_partially_to_receivable() -> None:
+    result = bank.reconcile_bank_stage(
+        [{
+            "business_date": "2026-07-09",
+            "source_date": "2026-07-09",
+            "channel": "cxc",
+            "amount": 3185.0,
+            "receivable_id": "la-valisse",
+            "receivable_key": "restaurant:manual:la-valisse",
+        }],
+        {
+            "status": "ok",
+            "deposits": [{"source": "cxc", "amount": 1410.0, "operation_date": "18/07/2026"}],
+            "additional_expenses": [],
+        },
+        {"status": "ok", "payments": []},
+        settlement_rules={"cxc": {"mode": "fifo_partial"}},
+    )
+
+    assert result["pending_collections"] == {"cxc": 1775.0}
+    allocation = result["matches"][0]["allocations"][0]
+    assert allocation["receivable_id"] == "la-valisse"
+    assert allocation["amount"] == 1410.0
+
+
 def test_pending_amex_with_payment_date_is_cleared_when_batch_deposit_arrives() -> None:
     result = bank.reconcile_bank_stage(
         [{

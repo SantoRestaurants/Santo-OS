@@ -10,7 +10,7 @@ import {
 import Link from "next/link";
 
 import { getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, getLatestSaldos, hasForecastSourceForMonth, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
+import { bankValidationState, dailyForecastMeta, dailySales, dedupeRunsByDay, getLatestSaldos, hasForecastSourceForMonth, getMonthlyTotals, getOutstandingForDate } from "@/lib/corte-dashboard-utils";
 import { RESTAURANT_OPTIONS } from "@/lib/restaurant-options";
 import { CorteAiBox } from "./CorteAiBox";
 import { InlineEditTable } from "./InlineEditTable";
@@ -125,6 +125,8 @@ function getUnit(run: ReconciliationRun) {
 function statusText(run: ReconciliationRun) {
   const bankValidated = isBankValidated(run);
   if (bankValidated) return "Validado con bancos";
+  if (bankValidationState(run) === "pending_upload") return "Faltan bancos";
+  if (bankValidationState(run) === "review") return "Revisar conciliación";
   if (run.status === "requires_review") return "Necesita revision";
   if (run.status === "waiting_for_input") return "Faltan bancos";
   if (run.status === "completed") return "Corte cargado";
@@ -133,13 +135,15 @@ function statusText(run: ReconciliationRun) {
 
 function statusColor(run: ReconciliationRun) {
   if (isBankValidated(run)) return GREEN;
+  if (bankValidationState(run) === "pending_upload") return RED;
+  if (bankValidationState(run) === "review") return AMBER;
   if (run.status === "requires_review") return AMBER;
   if (run.status === "waiting_for_input") return RED;
   return MUTED;
 }
 
 function isBankValidated(run: ReconciliationRun) {
-  return run.status === "completed" || run.status === "bank_validated" || run.documents.some((doc) => doc.document_type === "amex_statement" || doc.document_type === "banorte_statement");
+  return bankValidationState(run) === "validated";
 }
 
 function runTotal(run: ReconciliationRun) { return dailySales(run); }
@@ -176,14 +180,6 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
   const unitAllRuns = allRuns.filter((run) => getUnit(run) === selectedUnit);
   const unitRuns = runs.filter((run) => getUnit(run) === selectedUnit);
-  const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const unitReceivables = data.receivables.filter((r) => {
-    const rs = (r as any).restaurants;
-    const rawKey = Array.isArray(rs) ? rs[0]?.restaurant_key : rs?.restaurant_key;
-    const key = rawKey === "default_restaurant_confirm" ? "SANTO" : rawKey?.toUpperCase();
-    return key === selectedUnit;
-  });
-  const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, todayMexico);
   const latestBalance = getLatestSaldos(unitAllRuns);
   const years = Array.from(new Set(unitRuns.map((run) => yearKey(run.business_date)))).sort().reverse();
   const selectedYear = params.year && years.includes(params.year) ? params.year : years[0] ?? new Date().toISOString().slice(0, 4);
@@ -195,6 +191,9 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const selectedWeek = params.week && weeks.includes(params.week) ? params.week : weeks[weeks.length - 1] ?? "sin-semana";
   const weekRuns = monthRuns.filter((run) => weekKey(run.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
+  const selectedOutstanding = selectedRun?.business_date
+    ? getOutstandingForDate(unitAllRuns, selectedRun.business_date)
+    : null;
   const returnTo = `/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth, data.forecastDocuments);
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth, data.forecastDocuments);
@@ -461,33 +460,37 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                       <span className="shrink-0" style={{ color: MUTED }}>Formato</span>
                       <span className="min-w-0 truncate text-right font-semibold">{selectedRun.revision?.formato_corte ?? "-"}</span>
                     </div>
-                    <div className="rounded-md border px-2.5 py-2" style={{ borderColor: LINE }}>
-                      <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Falta entrar</div>
-                      {(() => {
-                        // Bypass revision extraction, read directly from output_payload
-                        if (!outstanding) return <div className="text-xs" style={{ color: MUTED }}>Nada pendiente</div>;
-                        return <>
-                          <div className="mb-1 text-[10px]" style={{ color: MUTED }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
-                          {outstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
-                            <div key={channel} className="flex justify-between text-xs py-1" style={{ color: INK }}>
-                              <span style={{ color: MUTED }}>{outstandingChannelLabel(channel)}</span>
-                              <span className="font-medium">{money(amount)}</span>
-                            </div>
-                          ))}
-                          {outstanding.entries.some(({ channel }) => channel.startsWith("CXC")) && (
-                            <div className="mt-2 border-t pt-2" style={{ borderColor: LINE }}>
-                              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>Cuentas por cobrar</div>
-                              {outstanding.entries.filter(({ channel }) => channel.startsWith("CXC")).map(({ channel, amount }) => (
-                                <div key={channel} className="flex justify-between gap-3 py-1 text-xs" style={{ color: INK }}>
-                                  <span className="min-w-0 truncate" style={{ color: MUTED }}>{cxcLabel(channel)}</span>
-                                  <span className="shrink-0 font-medium">{money(amount)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>;
-                      })()}
-                    </div>
+                    {selectedOutstanding && (
+                      <div className="rounded-md border px-2.5 py-2" style={{ borderColor: LINE }}>
+                        <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Falta entrar del día</div>
+                        <div className="mb-1 text-[10px]" style={{ color: MUTED }}>Monto registrado para este día</div>
+                        <div className="mb-1 text-sm font-bold" style={{ color: selectedOutstanding.total > 0 ? RED : GREEN }}>{money(selectedOutstanding.total)}</div>
+                        {selectedOutstanding.total === 0 && <div className="text-xs" style={{ color: GREEN }}>Sin pendientes registrados.</div>}
+                        {selectedOutstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
+                          <div key={channel} className="flex justify-between text-xs py-1" style={{ color: INK }}>
+                            <span style={{ color: MUTED }}>{outstandingChannelLabel(channel)}</span>
+                            <span className="font-medium">{money(amount)}</span>
+                          </div>
+                        ))}
+                        {selectedOutstanding.entries.some(({ channel }) => channel.startsWith("CXC")) && (
+                          <div className="mt-2 border-t pt-2" style={{ borderColor: LINE }}>
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: MUTED }}>Cuentas por cobrar</div>
+                            {selectedOutstanding.entries.filter(({ channel }) => channel.startsWith("CXC")).map(({ channel, amount }) => (
+                              <div key={channel} className="flex justify-between gap-3 py-1 text-xs" style={{ color: INK }}>
+                                <span className="min-w-0 truncate" style={{ color: MUTED }}>{cxcLabel(channel)}</span>
+                                <span className="shrink-0 font-medium">{money(amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!selectedOutstanding && bankValidationState(selectedRun) === "pending_upload" && (
+                      <div className="rounded-md border px-2.5 py-2 md:col-span-2" style={{ borderColor: LINE }}>
+                        <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Conciliación bancaria</div>
+                        <div className="text-xs" style={{ color: RED }}>Faltan subir los bancos de este día. No se muestra la última conciliación.</div>
+                      </div>
+                    )}
                     <div className="rounded-md border px-2.5 py-2 md:col-span-2" style={{ borderColor: LINE }}>
                       <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Gastos adicionales</div>
                       {(() => {

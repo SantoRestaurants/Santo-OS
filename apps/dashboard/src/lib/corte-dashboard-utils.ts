@@ -362,6 +362,193 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
   };
 }
 
+export type DailyOutstandingSnapshot = OutstandingSnapshot & {
+  businessDate: string;
+  processedOn: string;
+};
+
+export type BankValidationState = "validated" | "review" | "pending_upload" | "not_validated";
+
+/** Read bank validation from the selected day's own payload, never globally. */
+export function bankValidationState(run: RunLike): BankValidationState {
+  const payload = run.output_payload ?? {};
+  const explicit = String(payload.bank_validation_status ?? "").toLowerCase();
+  const bank = isRecord(payload.bank_reconciliation)
+    ? payload.bank_reconciliation
+    : isRecord(payload.bank_stage) && isRecord(payload.bank_stage.bank_reconciliation)
+      ? payload.bank_stage.bank_reconciliation
+      : null;
+
+  if (explicit === "bank_pending_upload" || run.status === "waiting_for_input") {
+    return "pending_upload";
+  }
+  // Bank validation means the bank batch was processed for this day; pending
+  // money is shown separately in the daily outstanding card.
+  if (explicit === "bank_validated"
+    || String(bank?.status ?? "").toLowerCase() === "bank_validated"
+    || bank
+    || isRecord(payload.bank_processing_snapshot)) {
+    return "validated";
+  }
+  return "not_validated";
+}
+
+export function hasBankValidationForRun(run: RunLike) {
+  return bankValidationState(run) === "validated";
+}
+
+type BankSnapshotDetails = {
+  run: RunLike;
+  bank: Record<string, unknown>;
+  processedOn: string;
+  processedDates: Set<string>;
+  pendingItems: Record<string, unknown>[];
+  entries: Array<{ channel: string; amount: number }>;
+  perDay: Record<string, unknown> | null;
+  perDayEntries: Record<string, unknown> | null;
+};
+
+function collectBankMatchDates(value: unknown, dates: Set<string>) {
+  const values = Array.isArray(value) ? value : [value];
+  for (const item of values) {
+    if (!isRecord(item)) continue;
+    const date = String(item.business_date ?? item.source_date ?? "");
+    if (date) dates.add(date);
+  }
+}
+
+function pendingEntriesFromSnapshot(bank: Record<string, unknown>, items: Record<string, unknown>[]) {
+  const entriesMap = new Map<string, number>();
+  const pendingCollections = isRecord(bank.pending_collections) ? bank.pending_collections : null;
+  const source = pendingCollections ? Object.entries(pendingCollections) : items.map((item) => [String(item.channel ?? "unclassified"), item.amount ?? item.expected_deposit] as const);
+  const hasBanorteKey = source.some(([channel]) => channel.toLowerCase() === "banorte");
+  let legacyBanorte = 0;
+
+  for (const [channelRaw, rawAmount] of source) {
+    const channelKey = channelRaw.toLowerCase();
+    const amount = amountOf(rawAmount);
+    if (amount <= 0) continue;
+    if (["debito", "credito", "terminal", "terminal_banorte"].includes(channelKey)) {
+      legacyBanorte += amount;
+      continue;
+    }
+    const channel = normalizeOutstandingChannel(channelRaw);
+    if (!isOutstandingChannel(channel)) continue;
+    entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
+  }
+
+  if (!hasBanorteKey && legacyBanorte > 0) {
+    entriesMap.set("banorte", (entriesMap.get("banorte") ?? 0) + legacyBanorte);
+  }
+
+  return Array.from(entriesMap.entries())
+    .map(([channel, amount]) => ({ channel, amount: Math.round(amount * 100) / 100 }))
+    .sort((a, b) => b.amount - a.amount || a.channel.localeCompare(b.channel));
+}
+
+function bankSnapshotDetails(run: RunLike): BankSnapshotDetails | null {
+  const payload = run.output_payload ?? {};
+  const direct = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
+  const stage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
+  const nested = stage && isRecord(stage.bank_reconciliation) ? stage.bank_reconciliation : null;
+  const bank = direct ?? nested;
+  if (!bank) return null;
+
+  const savedSnapshot = isRecord(payload.bank_processing_snapshot) ? payload.bank_processing_snapshot : null;
+  const perDay = isRecord(payload.falta_por_entrar_por_dia)
+    ? payload.falta_por_entrar_por_dia
+    : savedSnapshot && isRecord(savedSnapshot.falta_por_entrar_por_dia)
+      ? savedSnapshot.falta_por_entrar_por_dia
+      : null;
+  const perDayEntries = isRecord(payload.falta_por_entrar_detalle_por_dia)
+    ? payload.falta_por_entrar_detalle_por_dia
+    : savedSnapshot && isRecord(savedSnapshot.falta_por_entrar_detalle_por_dia)
+      ? savedSnapshot.falta_por_entrar_detalle_por_dia
+      : null;
+  const processedOn = String(savedSnapshot?.processed_on ?? run.business_date ?? "");
+  const processedDates = new Set<string>(perDay ? Object.keys(perDay) : []);
+  const savedDates = savedSnapshot?.processed_dates;
+  if (Array.isArray(savedDates)) {
+    for (const date of savedDates) {
+      if (typeof date === "string" && date) processedDates.add(date);
+    }
+  }
+
+  const rawPendingItems = Array.isArray(bank.pending_items) ? bank.pending_items : [];
+  const pendingItems = rawPendingItems.filter(isRecord);
+  for (const item of pendingItems) {
+    const date = String(item.business_date ?? item.source_date ?? "");
+    if (date) processedDates.add(date);
+  }
+  const matches = [
+    ...(Array.isArray(bank.matches) ? bank.matches : []),
+    ...(Array.isArray(bank.amex_matches) ? bank.amex_matches : []),
+  ];
+  for (const match of matches) {
+    if (!isRecord(match)) continue;
+    collectBankMatchDates(match.expected, processedDates);
+    collectBankMatchDates(match.expected_group, processedDates);
+    collectBankMatchDates(match.allocations, processedDates);
+  }
+
+  return {
+    run,
+    bank,
+    processedOn,
+    processedDates,
+    pendingItems,
+    entries: pendingEntriesFromSnapshot(bank, pendingItems),
+    perDay,
+    perDayEntries,
+  };
+}
+
+/**
+ * Return the cumulative outstanding state attached to one business day. The
+ * earliest bank snapshot on or after the day wins; this preserves a day's
+ * historical state while allowing several days to share one later processing
+ * batch.
+ */
+export function getOutstandingForDate(runs: RunLike[], businessDate: string): DailyOutstandingSnapshot | null {
+  if (!businessDate) return null;
+  const candidates = runs
+    .map(bankSnapshotDetails)
+    .filter((snapshot): snapshot is BankSnapshotDetails => Boolean(snapshot && snapshot.processedOn >= businessDate && snapshot.processedDates.has(businessDate)))
+    .sort((a, b) => {
+      const aExact = a.processedOn === businessDate ? 0 : 1;
+      const bExact = b.processedOn === businessDate ? 0 : 1;
+      return aExact - bExact
+        || a.processedOn.localeCompare(b.processedOn)
+        || a.run.created_at.localeCompare(b.run.created_at);
+    });
+  const snapshot = candidates[0];
+  if (!snapshot) return null;
+
+  const hasPerDayValue = Boolean(snapshot.perDay && Object.prototype.hasOwnProperty.call(snapshot.perDay, businessDate));
+  const perDayTotal = hasPerDayValue ? amountOf(snapshot.perDay?.[businessDate]) : null;
+  const rawPerDayEntries = snapshot.perDayEntries?.[businessDate];
+  const perDayEntries = isRecord(rawPerDayEntries)
+    ? pendingEntriesFromSnapshot({ pending_collections: rawPerDayEntries }, [])
+    : null;
+  const globalTotal = snapshot.entries.reduce((sum, entry) => sum + entry.amount, 0);
+  const entries = perDayEntries
+    ?? (hasPerDayValue
+      ? Math.abs((perDayTotal ?? 0) - globalTotal) < 0.01
+        ? [...snapshot.entries]
+        : (perDayTotal ?? 0) > 0 ? [{ channel: "total", amount: perDayTotal ?? 0 }] : []
+      : [...snapshot.entries]);
+  const total = perDayTotal ?? entries.reduce((sum, entry) => sum + entry.amount, 0);
+  if (total > 0 && entries.length === 0) entries.push({ channel: "total", amount: total });
+
+  return {
+    businessDate,
+    processedOn: snapshot.processedOn,
+    asOfDate: snapshot.processedOn,
+    entries,
+    total,
+  };
+}
+
 function amountOf(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
@@ -438,9 +625,9 @@ function compareRunQuality(a: RunLike, b: RunLike) {
 
 function scoreRun(run: RunLike) {
   let score = 0;
-  // Bank-validated runs should ALWAYS win, even over revision data
-  const op = run.output_payload ?? {};
-  if (op.bank_validation_status === "bank_validated" || op.stage === "bank_validated") score += 200;
+  // Only an explicit bank-validated state should outrank the selected day's
+  // stage; `stage=bank_validated` was historically left behind on pending runs.
+  if (bankValidationState(run) === "validated") score += 200;
   if (run.revision?.reconciliation_totals?.total_real) score += 100;
   if (dailyForecastMeta(run) != null) score += 20;
   if ((run.documents ?? []).length) score += 10;

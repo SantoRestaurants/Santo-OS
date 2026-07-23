@@ -1,6 +1,6 @@
 import { getReconciliationData, type ReconciliationRun } from "@/lib/reconciliation-data";
 import { RESTAURANT_OPTIONS } from "@/lib/restaurant-options";
-import { dailyForecastMeta, dailySales, dedupeRunsByDay, getLatestSaldos, getMonthlyTotals, getOutstandingThroughDate } from "@/lib/corte-dashboard-utils";
+import { bankValidationState, dailyForecastMeta, dailySales, dedupeRunsByDay, getLatestSaldos, getMonthlyTotals, getOutstandingForDate } from "@/lib/corte-dashboard-utils";
 import Link from "next/link";
 import Image from "next/image";
 import { SociosChart } from "./SociosChart";
@@ -99,11 +99,13 @@ function additionalExpensesForRun(run: ReconciliationRun | null): AdditionalExpe
 }
 
 function isBankValidated(run: ReconciliationRun) {
-  return run.status === "completed" || run.status === "bank_validated" || run.documents.some(d => d.document_type === "amex_statement" || d.document_type === "banorte_statement");
+  return bankValidationState(run) === "validated";
 }
 
 function statusLabel(run: ReconciliationRun) {
   if (isBankValidated(run)) return "Validado";
+  if (bankValidationState(run) === "pending_upload") return "Faltan bancos";
+  if (bankValidationState(run) === "review") return "Revisar bancos";
   if (run.status === "requires_review") return "Revisión";
   if (run.status === "waiting_for_input") return "Pendiente";
   if (run.status === "completed") return "Cargado";
@@ -167,15 +169,6 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const selectedUnit = params.unit && units.includes(params.unit) ? params.unit : units[0] ?? "SANTO";
   const unitAllRuns = allRuns.filter(r => getUnit(r) === selectedUnit);
   const unitRuns = runs.filter(r => getUnit(r) === selectedUnit);
-  const todayMexico = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const unitReceivables = data.receivables.filter((r) => {
-    const rs = (r as any).restaurants;
-    const rawKey = Array.isArray(rs) ? rs[0]?.restaurant_key : rs?.restaurant_key;
-    const key = rawKey === "default_restaurant_confirm" ? "SANTO" : rawKey?.toUpperCase();
-    return key === selectedUnit;
-  });
-  const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, todayMexico);
-
   const allMonths = Array.from(new Set(unitRuns.map(r => monthKey(r.business_date)))).sort().reverse();
 
   // Also include months from forecast documents (even without workflow runs)
@@ -555,8 +548,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                       <div style={{ fontSize: "14px", fontWeight: 600 }}>{dateLabel(run.business_date, "short")}</div>
                       <div style={{ marginTop: "6px" }}>
                         <span className="status-badge" style={{
-                          background: validated ? C.greenDim : C.surfaceHover,
-                          color: validated ? C.green : C.dim,
+                          background: validated ? C.greenDim : bankValidationState(run) === "pending_upload" ? C.redDim : C.surfaceHover,
+                          color: validated ? C.green : bankValidationState(run) === "pending_upload" ? C.red : C.dim,
                         }}>
                           <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "currentColor" }} />
                           {statusLabel(run)}
@@ -589,6 +582,9 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                 const srMeta = dailyForecastMeta(selectedRun) ?? getMetaForDay(selectedRun.business_date);
                 const srTotal = dayVenta(selectedRun);
                 const srDiff = srMeta > 0 ? srTotal - srMeta : null;
+                const selectedOutstanding = selectedRun.business_date
+                  ? getOutstandingForDate(unitAllRuns, selectedRun.business_date)
+                  : null;
 
                 return (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
@@ -658,22 +654,23 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                     </div>
 
                     {/* falta por entrar */}
-                    {outstanding && (() => {
+                    {selectedOutstanding && (() => {
                       return (
                         <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
-                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falta por entrar hasta hoy</div>
-                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
-                          <div className="display-font" style={{ color: C.red, fontSize: "30px", fontWeight: 700, marginBottom: "12px" }}>{moneyFull(outstanding.total)}</div>
-                          {outstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falta por entrar del día</div>
+                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>Monto registrado para este día</div>
+                          <div className="display-font" style={{ color: selectedOutstanding.total > 0 ? C.red : C.green, fontSize: "30px", fontWeight: 700, marginBottom: "12px" }}>{moneyFull(selectedOutstanding.total)}</div>
+                          {selectedOutstanding.total === 0 && <div style={{ color: C.green, fontSize: "13px" }}>Sin pendientes registrados.</div>}
+                          {selectedOutstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
                             <div key={channel} className="flex justify-between" style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
                               <span style={{ color: C.dim, fontSize: "13px" }}>{outstandingChannelLabel(channel)}</span>
                               <span style={{ color: C.red, fontWeight: 600, fontSize: "14px" }}>{moneyFull(amount)}</span>
                             </div>
                           ))}
-                          {outstanding.entries.some(({ channel }) => channel.startsWith("CXC")) && (
+                          {selectedOutstanding.entries.some(({ channel }) => channel.startsWith("CXC")) && (
                             <div style={{ marginTop: "18px" }}>
                               <div style={{ color: C.santo, fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" }}>Cuentas por cobrar</div>
-                              {outstanding.entries.filter(({ channel }) => channel.startsWith("CXC")).map(({ channel, amount }) => (
+                              {selectedOutstanding.entries.filter(({ channel }) => channel.startsWith("CXC")).map(({ channel, amount }) => (
                                 <div key={channel} className="flex justify-between gap-3" style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
                                   <span style={{ color: C.dim, fontSize: "13px" }}>{cxcLabel(channel)}</span>
                                   <span style={{ color: C.red, fontWeight: 600, fontSize: "14px", whiteSpace: "nowrap" }}>{moneyFull(amount)}</span>
@@ -684,6 +681,12 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                         </div>
                       );
                     })()}
+                    {!selectedOutstanding && bankValidationState(selectedRun) === "pending_upload" && (
+                      <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px" }}>
+                        <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Conciliación bancaria</div>
+                        <div style={{ color: C.dim, fontSize: "13px", marginTop: "8px" }}>Faltan subir los bancos de este día. No se muestra una última conciliación como si correspondiera a esta fecha.</div>
+                      </div>
+                    )}
 
                     {/* gastos adicionales */}
                     {(() => {

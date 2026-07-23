@@ -20,7 +20,9 @@ so nothing is hardcoded as a business rule that can't be reconfigured.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
+import json
 from pathlib import Path
 from typing import Any
 
@@ -191,3 +193,49 @@ def parse_banorte_csv(source_path: str, config: dict[str, Any] | None = None) ->
     result = parse_banorte_rows(rows, config)
     result["row_count"] = len(rows)
     return result
+
+
+def bank_statement_deposit_keys(deposits: list[dict[str, Any]]) -> list[str]:
+    """Return stable identities for parsed deposits, including duplicates."""
+    occurrences: dict[tuple[Any, ...], int] = {}
+    keys: list[str] = []
+    for deposit in deposits:
+        base = (
+            str(deposit.get("source") or ""),
+            round(_to_amount(deposit.get("amount")), 2),
+            str(deposit.get("description") or ""),
+            str(deposit.get("detail") or ""),
+            str(deposit.get("operation_date") or ""),
+        )
+        occurrence = occurrences.get(base, 0)
+        occurrences[base] = occurrence + 1
+        payload = [*base, occurrence]
+        keys.append(hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode("utf-8")).hexdigest())
+    return keys
+
+
+def exclude_bank_statement_deposits(
+    statement: dict[str, Any],
+    excluded_keys: set[str],
+) -> dict[str, Any]:
+    """Remove deposits already consumed by a previous bank-processing batch."""
+    if not excluded_keys:
+        return statement
+    deposits = statement.get("deposits")
+    if not isinstance(deposits, list):
+        return statement
+    keys = bank_statement_deposit_keys([item for item in deposits if isinstance(item, dict)])
+    kept = [
+        item for item, key in zip(deposits, keys)
+        if isinstance(item, dict) and key not in excluded_keys
+    ]
+    filtered = {**statement, "deposits": kept}
+    deposits_by_source: dict[str, float] = {}
+    for deposit in kept:
+        source = str(deposit.get("source") or "unclassified")
+        deposits_by_source[source] = round(
+            deposits_by_source.get(source, 0.0) + _to_amount(deposit.get("amount")),
+            2,
+        )
+    filtered["deposits_by_source"] = deposits_by_source
+    return filtered

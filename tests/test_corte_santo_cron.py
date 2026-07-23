@@ -161,6 +161,201 @@ def test_expected_collections_do_not_recreate_days_before_authoritative_snapshot
     ]
 
 
+def test_expected_collections_readd_current_day_on_same_date_reprocess():
+    runs = [
+        {
+            "id": "same-day",
+            "business_date": "2026-07-16",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-15", "channel": "amex", "amount": 1800},
+                    ],
+                    "pending_collections": {"amex": 1800},
+                },
+                "income_register": {
+                    "amex": 5717.95,
+                    "debito": 23194.87,
+                    "credito": 40249.13,
+                    "uber": 3575,
+                    "rappi": 870,
+                },
+            },
+        },
+    ]
+
+    expected, pending_runs, _, _ = cron._build_expected_collections(runs, "2026-07-16")
+
+    assert {item["channel"] for item in expected} == {"amex", "banorte", "uber", "rappi"}
+    assert pending_runs[0]["business_date"] == "2026-07-16"
+
+
+def test_legacy_platform_snapshot_keeps_older_rappi_pending_item():
+    runs = [
+        {
+            "id": "july-18",
+            "business_date": "2026-07-18",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {
+                            "business_date": "2026-07-18",
+                            "source_date": "2026-07-18",
+                            "channel": "rappi",
+                            "amount": 2460,
+                        }
+                    ],
+                    "pending_collections": {"rappi": 2460},
+                },
+                "income_register": {"rappi": 2460},
+            },
+        },
+        {
+            "id": "july-19",
+            "business_date": "2026-07-19",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {
+                            "business_date": "2026-07-19",
+                            "source_date": "2026-07-19",
+                            "channel": "rappi",
+                            "amount": 1785,
+                        }
+                    ],
+                    "pending_collections": {"rappi": 1785},
+                },
+                "income_register": {"rappi": 1785},
+            },
+        },
+        {
+            "id": "july-20",
+            "business_date": "2026-07-20",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {
+                            "business_date": "2026-07-20",
+                            "source_date": "2026-07-20",
+                            "channel": "rappi",
+                            "amount": 1245,
+                        }
+                    ],
+                    "pending_collections": {"rappi": 1245},
+                },
+                "income_register": {"rappi": 1245},
+            },
+        },
+    ]
+
+    expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-20")
+
+    rappi = [item for item in expected if item["channel"] == "rappi"]
+    assert {(item["source_date"], item["amount"]) for item in rappi} == {
+        ("2026-07-18", 2460.0),
+        ("2026-07-19", 1785.0),
+        ("2026-07-20", 1245.0),
+    }
+
+
+def test_legacy_platform_aggregate_recovers_missing_rappi_item_exactly():
+    runs = [
+        {
+            "id": "july-17",
+            "business_date": "2026-07-17",
+            "output_payload": {
+                "income_register": {"rappi": 1050},
+            },
+        },
+        {
+            "id": "july-18",
+            "business_date": "2026-07-18",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-18", "channel": "rappi", "amount": 2460}
+                    ]
+                },
+                "income_register": {"rappi": 2460},
+            },
+        },
+        {
+            "id": "july-19",
+            "business_date": "2026-07-19",
+            "output_payload": {
+                "bank_processing": {
+                    "business_date": "2026-07-19",
+                    "pending_collections": {"rappi": 5295},
+                },
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-19", "channel": "rappi", "amount": 1785}
+                    ]
+                },
+                "income_register": {"rappi": 1785},
+            },
+        },
+        {
+            "id": "july-20",
+            "business_date": "2026-07-20",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-20", "channel": "rappi", "amount": 1245}
+                    ]
+                },
+                "income_register": {"rappi": 1245},
+            },
+        },
+    ]
+
+    expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-20")
+
+    rappi = [item for item in expected if item["channel"] == "rappi"]
+    assert {(item["source_date"], item["amount"]) for item in rappi} == {
+        ("2026-07-17", 1050.0),
+        ("2026-07-18", 2460.0),
+        ("2026-07-19", 1785.0),
+        ("2026-07-20", 1245.0),
+    }
+
+
+def test_explicit_bank_snapshot_does_not_recover_settled_platform_rows():
+    runs = [
+        {
+            "id": "old",
+            "business_date": "2026-07-18",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-18", "channel": "rappi", "amount": 2460}
+                    ]
+                },
+                "income_register": {"rappi": 2460},
+            },
+        },
+        {
+            "id": "snapshot",
+            "business_date": "2026-07-20",
+            "output_payload": {
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-20", "channel": "rappi", "amount": 1245}
+                    ]
+                },
+                "bank_processing_snapshot": {"processed_on": "2026-07-20"},
+                "income_register": {"rappi": 1245},
+            },
+        },
+    ]
+
+    expected, _, _, _ = cron._build_expected_collections(runs, "2026-07-20")
+
+    assert [(item["source_date"], item["amount"]) for item in expected if item["channel"] == "rappi"] == [
+        ("2026-07-20", 1245.0)
+    ]
+
+
 def test_pending_summary_uses_only_positive_unmatched_balances():
     items = [
         {"channel": "amex", "amount": 30000},
@@ -170,6 +365,74 @@ def test_pending_summary_uses_only_positive_unmatched_balances():
     ]
 
     assert cron._summarize_pending(items) == {"amex": 35000, "uber": 8000}
+
+
+def test_historical_bank_snapshot_is_written_once_per_business_date():
+    output = {
+        "falta_por_entrar_por_dia": {"2026-07-15": 62513.17},
+        "bank_processing_snapshot": {"processed_on": "2026-07-15"},
+    }
+
+    assert cron._should_write_historical_bank_snapshot(output, "2026-07-15") is False
+    assert cron._should_write_historical_bank_snapshot(output, "2026-07-16") is True
+
+
+def test_historical_bank_snapshot_merge_never_rewrites_an_existing_day():
+    output = {
+        "falta_por_entrar_por_dia": {"2026-07-18": 900.0},
+        "falta_por_entrar_detalle_por_dia": {
+            "2026-07-18": {"amex": 500.0, "banorte": 400.0},
+        },
+    }
+
+    assert cron._merge_historical_outstanding(
+        output,
+        {"2026-07-18", "2026-07-19"},
+        700.0,
+    ) == {
+        "2026-07-18": 900.0,
+        "2026-07-19": 700.0,
+    }
+    assert cron._merge_historical_outstanding_details(
+        output,
+        {"2026-07-18", "2026-07-19"},
+        {"amex": 300.0, "banorte": 400.0},
+    ) == {
+        "2026-07-18": {"amex": 500.0, "banorte": 400.0},
+        "2026-07-19": {"amex": 300.0, "banorte": 400.0},
+    }
+
+
+def test_missing_bank_documents_clear_only_selected_day_bank_validation():
+    output = {
+        "bank_reconciliation": {"pending_collections": {"banorte": 19316.10}},
+        "bank_processing_snapshot": {"processed_on": "2026-07-16"},
+        "bank_match": {"validated_by": "bank_statement"},
+        "bank_validated_at": "2026-07-16T12:00:00Z",
+        "bank_validation_status": "bank_requires_review",
+        "stage": "bank_validated",
+        "falta_por_entrar_por_dia": {
+            "2026-07-15": 81829.27,
+            "2026-07-16": 19316.10,
+        },
+        "revision_document": {
+            "falta_por_entrar": {"banorte": 19316.10},
+            "bank_validation_status": "bank_requires_review",
+        },
+        "saldos": {"banorte": 1411301.34},
+    }
+
+    cron._clear_bank_validation_for_missing_documents(output, "2026-07-16")
+
+    assert "bank_reconciliation" not in output
+    assert "bank_processing_snapshot" not in output
+    assert "bank_match" not in output
+    assert "bank_validated_at" not in output
+    assert output["bank_validation_status"] == "bank_pending_upload"
+    assert output["stage"] == "corte_loaded"
+    assert output["falta_por_entrar_por_dia"] == {"2026-07-15": 81829.27}
+    assert output["revision_document"] == {"bank_validation_status": "bank_pending_upload"}
+    assert "saldos" not in output
 
 
 def test_normalized_snapshot_preserves_gross_amount_and_net_bank_match_amount():
