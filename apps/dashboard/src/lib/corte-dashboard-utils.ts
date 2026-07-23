@@ -513,18 +513,7 @@ export function getOutstandingForDate(runs: RunLike[], businessDate: string): Da
   if (!businessDate) return null;
   const candidates = runs
     .map(bankSnapshotDetails)
-    .filter((snapshot): snapshot is BankSnapshotDetails => {
-      if (!snapshot || snapshot.processedOn < businessDate || !snapshot.processedDates.has(businessDate)) {
-        return false;
-      }
-      // A daily bank_reconciliation without a persisted per-day value is an
-      // old payload whose pending list may represent only that day's Corte.
-      // Do not present it as the historical cumulative snapshot.
-      return Boolean(
-        (snapshot.perDay && Object.prototype.hasOwnProperty.call(snapshot.perDay, businessDate))
-        || (snapshot.perDayEntries && Object.prototype.hasOwnProperty.call(snapshot.perDayEntries, businessDate)),
-      );
-    })
+    .filter((snapshot): snapshot is BankSnapshotDetails => Boolean(snapshot && snapshot.processedOn >= businessDate && snapshot.processedDates.has(businessDate)))
     .sort((a, b) => {
       const aExact = a.processedOn === businessDate ? 0 : 1;
       const bExact = b.processedOn === businessDate ? 0 : 1;

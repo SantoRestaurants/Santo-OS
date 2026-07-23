@@ -260,14 +260,11 @@ def _build_expected_collections(
     runs: list[dict[str, Any]],
     effective_date: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], set[str]]:
-    """Carry forward the latest cumulative bank ledger, then add newer Cortes.
+    """Carry forward only the latest unmatched bank items, then add newer Cortes.
 
-    A bank snapshot is authoritative for every day up to its processing date. In
-    particular, items absent from the snapshot's ``pending_items`` were matched
-    and must not be reconstructed from the original income register on the next
-    watcher run. Older daily bank payloads did not have a snapshot marker, so
-    they remain a compatibility fallback only; new writes always persist the
-    complete unmatched ledger in ``bank_processing_snapshot``.
+    A bank snapshot is authoritative for every day up to its business date.  In
+    particular, items absent from ``pending_items`` were matched and must not be
+    reconstructed from the original income register on the next watcher run.
     """
     normalized: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for run in runs:
@@ -286,48 +283,15 @@ def _build_expected_collections(
     latest_snapshot_date = ""
     latest_snapshot_items: list[dict[str, Any]] | None = None
     latest_stage: dict[str, Any] = {}
-    latest_output_date = ""
-    latest_snapshot_key: tuple[str, str, str] | None = None
-    has_authoritative_snapshot = False
-
-    for business_date, run, output in normalized:
-        if business_date >= latest_output_date:
-            latest_output_date = business_date
+    for business_date, _run, output in normalized:
+        if business_date >= latest_snapshot_date:
             latest_stage = output
-
-        snapshot = output.get("bank_processing_snapshot")
-        if not isinstance(snapshot, dict):
-            continue
-        processed_on = str(snapshot.get("processed_on") or business_date)
-        if not processed_on or processed_on > effective_date:
-            continue
-
-        raw_items = snapshot.get("pending_items")
-        if not isinstance(raw_items, list):
-            bank = output.get("bank_reconciliation") or {}
-            raw_items = bank.get("pending_items") if isinstance(bank, dict) else None
-        snapshot_items = [dict(item) for item in raw_items or [] if isinstance(item, dict)]
-        snapshot_key = (
-            processed_on,
-            business_date,
-            str(run.get("created_at") or ""),
-        )
-        if latest_snapshot_key is None or snapshot_key >= latest_snapshot_key:
-            latest_snapshot_key = snapshot_key
-            latest_snapshot_date = processed_on
-            latest_snapshot_items = snapshot_items
-            has_authoritative_snapshot = True
-
-    # Compatibility for rows written before bank_processing_snapshot existed.
-    # These rows may contain only a daily pending list, so they are never used
-    # once an explicit cumulative snapshot is available.
-    if not has_authoritative_snapshot:
-        for business_date, _run, output in normalized:
-            bank = output.get("bank_reconciliation") or {}
-            pending_items = bank.get("pending_items") if isinstance(bank, dict) else None
-            if isinstance(pending_items, list) and business_date >= latest_snapshot_date:
-                latest_snapshot_date = business_date
-                latest_snapshot_items = [dict(item) for item in pending_items if isinstance(item, dict)]
+        bank = output.get("bank_reconciliation") or {}
+        pending_items = bank.get("pending_items") if isinstance(bank, dict) else None
+        if isinstance(pending_items, list) and business_date >= latest_snapshot_date:
+            latest_snapshot_date = business_date
+            latest_snapshot_items = [dict(item) for item in pending_items if isinstance(item, dict)]
+            latest_stage = output
 
     expected: list[dict[str, Any]] = [
         _normalize_expected_collection(
@@ -397,7 +361,6 @@ def _build_expected_collections(
             latest_snapshot_items,
             latest_stage,
             effective_date,
-            authoritative_snapshot=has_authoritative_snapshot,
         )
     )
 
@@ -521,8 +484,6 @@ def _legacy_platform_pending_items(
     latest_snapshot_items: list[dict[str, Any]] | None,
     latest_stage: dict[str, Any],
     effective_date: str,
-    *,
-    authoritative_snapshot: bool = False,
 ) -> list[dict[str, Any]]:
     """Recover platform rows lost by pre-snapshot daily bank writes.
 
@@ -537,7 +498,7 @@ def _legacy_platform_pending_items(
 
     An explicit snapshot is authoritative and must not be broadened here.
     """
-    if authoritative_snapshot or not latest_snapshot_items:
+    if not latest_snapshot_items:
         return []
     if isinstance(latest_stage.get("bank_processing_snapshot"), dict):
         return []
@@ -1214,19 +1175,9 @@ def run_bank_watcher_once(
     result["falta_por_entrar_detalle_por_dia"] = {
         bd: dict(pending_totals) for bd in sorted(dates_to_write) if bd
     }
-    pending_snapshot_items = [
-        {key: value for key, value in item.items() if not str(key).startswith("_")}
-        for item in pending_items
-        if isinstance(item, dict)
-    ]
     bank_processing_snapshot = {
         "processed_on": effective_date,
         "processed_dates": sorted(date for date in dates_to_write if date),
-        # This is the carry-forward ledger for the next bank validation. It is
-        # deliberately cumulative through ``effective_date``; it must not be
-        # rebuilt from the selected Corte day's register alone.
-        "pending_items": pending_snapshot_items,
-        "pending_collections": dict(pending_totals),
         "falta_por_entrar_por_dia": result["falta_por_entrar_por_dia"],
         "falta_por_entrar_detalle_por_dia": result["falta_por_entrar_detalle_por_dia"],
         "falta_por_entrar": pending_totals,
@@ -1463,7 +1414,7 @@ def run_bank_watcher_once(
                 current_op["falta_por_entrar_detalle_por_dia"] = _merge_historical_outstanding_details(
                     current_op,
                     dates_to_write,
-                    pending_totals,
+                    pending_collections,
                 )
                 current_op["bank_processing_snapshot"] = {
                     **bank_processing_snapshot,

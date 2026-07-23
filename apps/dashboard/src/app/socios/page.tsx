@@ -657,8 +657,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                     {selectedOutstanding && (() => {
                       return (
                         <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
-                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falta por entrar hasta este día</div>
-                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>Saldo acumulado registrado para esta fecha</div>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falta por entrar del día</div>
+                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>Monto registrado para este día</div>
                           <div className="display-font" style={{ color: selectedOutstanding.total > 0 ? C.red : C.green, fontSize: "30px", fontWeight: 700, marginBottom: "12px" }}>{moneyFull(selectedOutstanding.total)}</div>
                           {selectedOutstanding.total === 0 && <div style={{ color: C.green, fontSize: "13px" }}>Sin pendientes registrados.</div>}
                           {selectedOutstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (

@@ -462,8 +462,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                     </div>
                     {selectedOutstanding && (
                       <div className="rounded-md border px-2.5 py-2" style={{ borderColor: LINE }}>
-                        <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Falta entrar hasta este día</div>
-                        <div className="mb-1 text-[10px]" style={{ color: MUTED }}>Saldo acumulado registrado para esta fecha</div>
+                        <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Falta entrar del día</div>
+                        <div className="mb-1 text-[10px]" style={{ color: MUTED }}>Monto registrado para este día</div>
                         <div className="mb-1 text-sm font-bold" style={{ color: selectedOutstanding.total > 0 ? RED : GREEN }}>{money(selectedOutstanding.total)}</div>
                         {selectedOutstanding.total === 0 && <div className="text-xs" style={{ color: GREEN }}>Sin pendientes registrados.</div>}
                         {selectedOutstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
