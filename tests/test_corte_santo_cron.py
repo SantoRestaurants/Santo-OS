@@ -122,6 +122,51 @@ def test_expected_collections_include_new_corte_channels_after_latest_snapshot()
     assert {item["business_date"] for item in pending_runs} == {"2026-07-05", "2026-07-06"}
 
 
+def test_next_bank_validation_carries_the_full_cumulative_snapshot_ledger():
+    runs = [
+        {
+            "id": "validated-17",
+            "business_date": "2026-07-17",
+            "created_at": "2026-07-18T03:00:00Z",
+            "output_payload": {
+                "bank_processing_snapshot": {
+                    "processed_on": "2026-07-17",
+                    "processed_dates": ["2026-07-16", "2026-07-17"],
+                    "pending_items": [
+                        {"business_date": "2026-07-16", "source_date": "2026-07-16", "channel": "amex", "amount": 700},
+                        {"business_date": "2026-07-17", "source_date": "2026-07-17", "channel": "uber", "amount": 300},
+                    ],
+                    "pending_collections": {"amex": 700, "uber": 300},
+                },
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-16", "source_date": "2026-07-16", "channel": "amex", "amount": 700},
+                        {"business_date": "2026-07-17", "source_date": "2026-07-17", "channel": "uber", "amount": 300},
+                    ],
+                    "pending_collections": {"amex": 700, "uber": 300},
+                },
+            },
+        },
+        {
+            "id": "new-18",
+            "business_date": "2026-07-18",
+            "output_payload": {
+                "income_register": {"amex": 500, "uber": 200},
+            },
+        },
+    ]
+
+    expected, pending_runs, _, _ = cron._build_expected_collections(runs, "2026-07-18")
+
+    assert {(item["source_date"], item["channel"], item["amount"]) for item in expected} == {
+        ("2026-07-16", "amex", 700.0),
+        ("2026-07-17", "uber", 300.0),
+        ("2026-07-18", "amex", 500.0),
+        ("2026-07-18", "uber", 200.0),
+    }
+    assert {item["business_date"] for item in pending_runs} == {"2026-07-17", "2026-07-18"}
+
+
 def test_expected_collections_do_not_recreate_days_before_authoritative_snapshot():
     runs = [
         {

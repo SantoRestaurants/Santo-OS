@@ -32,6 +32,10 @@ pending when it was processed and a later day that had already cleared it.
 - Persist cumulative `falta_por_entrar_por_dia` values from the bank snapshot,
   not the sum of items originating on that date. A missing date means no bank
   evidence, while an explicit zero means the cumulative snapshot was clear.
+- Persist the complete unmatched ledger in
+  `bank_processing_snapshot.pending_items`. The next bank validation must
+  reconcile that prior ledger together with only the newer Corte days; it must
+  never start from the selected day's register alone.
 - Persist the matching channel breakdown in
   `falta_por_entrar_detalle_por_dia`, so a historical total is never rendered
   with a newer batch's channel detail. The total-only field remains the

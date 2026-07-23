@@ -144,6 +144,22 @@ const sameDayLaterSnapshot = {
   },
 };
 
+const legacyDailyOnlySnapshot = {
+  business_date: "2026-07-20",
+  created_at: "2026-07-21T03:00:00Z",
+  status: "completed",
+  output_payload: {
+    bank_reconciliation: {
+      pending_collections: { amex: 17000, uber: 3000, rappi: 1200 },
+      pending_items: [
+        { business_date: "2026-07-20", channel: "amex", amount: 17000 },
+        { business_date: "2026-07-20", channel: "uber", amount: 3000 },
+        { business_date: "2026-07-20", channel: "rappi", amount: 1200 },
+      ],
+    },
+  },
+};
+
 const runs = [priorBankSnapshot, groupedBankSnapshot, onTheDaySnapshot, batchedOnlySnapshot] as any;
 const noBanksForJuly16 = {
   business_date: "2026-07-16",
@@ -188,5 +204,6 @@ for (const date of ["2026-07-17", "2026-07-18", "2026-07-19"]) {
 
 const sameDayRuns = [sameDayLaterSnapshot, sameDayFirstSnapshot] as any;
 assert.equal(getOutstandingForDate(sameDayRuns, "2026-07-21")?.total, 900);
+assert.equal(getOutstandingForDate([legacyDailyOnlySnapshot] as any, "2026-07-20"), null);
 
 console.log("OK: histórico diario de falta por entrar");

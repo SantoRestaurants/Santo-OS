@@ -1,5 +1,17 @@
 # Current State
 
+## 2026-07-23 - Bank revalidation carries the cumulative pending ledger
+
+- Every new bank validation now carries the complete unmatched ledger from the
+  previous bank snapshot, adds the newly available Corte days and reconciles
+  that combined state through the current validation date.
+- The persisted `bank_processing_snapshot.pending_items` is the carry-forward
+  source of truth for the next validation. Historical day totals and channel
+  details are still written only when that day receives its first bank
+  snapshot, so a later validation cannot rewrite an earlier day.
+- The dashboard no longer treats a legacy daily-only `bank_reconciliation` as
+  a cumulative historical snapshot; it waits for a real per-day snapshot.
+
 ## 2026-07-23 - Daily falta por entrar snapshots are immutable in the views
 
 - The selected day in `/socios` and `/cortes` now reads the first persisted
