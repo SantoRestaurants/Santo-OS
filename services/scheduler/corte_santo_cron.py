@@ -1295,7 +1295,7 @@ def _discover_pending_bank_business_date() -> str | None:
             status = str(processing.get("status") or "")
             completed_at = str(processing.get("completed_at") or "")
             uploaded_at = str(event.get("created_at") or "")
-            if status == "completed" and completed_at >= uploaded_at:
+            if status in ("completed", "requires_review") and completed_at >= uploaded_at:
                 continue
             candidates.append(bank_date)
 
