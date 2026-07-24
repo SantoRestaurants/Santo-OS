@@ -1,5 +1,26 @@
 # Current State
 
+## 2026-07-24 - Bank catch-up snapshots and automatic retry
+
+- The bank watcher previously stored one global reconciliation only on the
+  exact selected `workflow_runs` date. The dashboard then searched only for a
+  snapshot at or before the selected date, so a Monday upload could not make
+  Friday, Saturday and Sunday consistently show the same reconciliation.
+- Bank snapshots now carry their bank date and the covered catch-up Corte
+  dates. New uploads fill only dates after the previous bank snapshot; older
+  dates retain their historical snapshot. `/cortes` and `/socios` resolve the
+  snapshot by the selected day's covered bank date before applying newer-day
+  carry-forward data.
+- The Drive watcher rejects mixing files whose explicit filename date differs
+  from the requested bank date. A scheduled GitHub Actions fallback discovers
+  uploaded bank events that were not completed and retries them, covering the
+  dashboard's recent `401 Bad credentials` dispatch failure.
+- Production audit: bank files for 2026-07-21 and 2026-07-23 were uploaded on
+  2026-07-24, but the dashboard could not dispatch either watcher run because
+  GitHub returned `401 Bad credentials`. The 2026-07-21 bank run itself had
+  completed successfully earlier on 2026-07-22; the 2026-07-23 upload was the
+  missing latest reconciliation.
+
 ## 2026-07-24 - Corte 23 date preservation and OCR-only intake
 
 - The 2026-07-23 Corte email arrived and was classified, but its stage-1

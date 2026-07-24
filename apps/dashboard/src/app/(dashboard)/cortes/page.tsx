@@ -183,7 +183,6 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
     const key = rawKey === "default_restaurant_confirm" ? "SANTO" : rawKey?.toUpperCase();
     return key === selectedUnit;
   });
-  const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, todayMexico);
   const latestBalance = getLatestSaldos(unitAllRuns);
   const years = Array.from(new Set(unitRuns.map((run) => yearKey(run.business_date)))).sort().reverse();
   const selectedYear = params.year && years.includes(params.year) ? params.year : years[0] ?? new Date().toISOString().slice(0, 4);
@@ -195,6 +194,8 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
   const selectedWeek = params.week && weeks.includes(params.week) ? params.week : weeks[weeks.length - 1] ?? "sin-semana";
   const weekRuns = monthRuns.filter((run) => weekKey(run.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
   const selectedRun = weekRuns.find((run) => run.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? monthRuns[0] ?? null;
+  const outstandingThroughDate = selectedRun?.business_date ?? todayMexico;
+  const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, outstandingThroughDate);
   const returnTo = `/cortes?unit=${selectedUnit}&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}${selectedRun ? `&day=${selectedRun.id}` : ""}`;
   const forecastReady = hasForecastSourceForMonth(monthRuns, selectedMonth, data.forecastDocuments);
   let { monthTotal, monthMeta, monthMetaToDate } = getMonthlyTotals(monthRuns, selectedMonth, data.forecastDocuments);

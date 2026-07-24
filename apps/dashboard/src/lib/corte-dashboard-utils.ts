@@ -213,6 +213,44 @@ export type OutstandingSnapshot = {
   total: number;
 };
 
+type BankSnapshotSelection = {
+  run: RunLike;
+  bank: Record<string, unknown>;
+  snapshotBusinessDate: string;
+  coveredBusinessDates: string[];
+};
+
+function bankSnapshotForRun(run: RunLike): BankSnapshotSelection | null {
+  const payload = run.output_payload ?? {};
+  const explicit = isRecord(payload.bank_snapshot) ? payload.bank_snapshot : null;
+  const explicitBank = explicit && isRecord(explicit.bank_reconciliation)
+    ? explicit.bank_reconciliation
+    : explicit && isRecord(explicit.reconciliation)
+      ? explicit.reconciliation
+      : null;
+  const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
+  const nestedBank = bankStage && isRecord(bankStage.bank_reconciliation)
+    ? bankStage.bank_reconciliation
+    : null;
+  const bank = explicitBank
+    ?? (isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null)
+    ?? nestedBank;
+  if (!bank) return null;
+
+  const snapshotBusinessDate = String(
+    explicit?.snapshot_business_date
+    ?? bank.snapshot_business_date
+    ?? bank.bank_business_date
+    ?? run.business_date
+    ?? "",
+  );
+  if (!snapshotBusinessDate) return null;
+  const coveredBusinessDates = Array.isArray(explicit?.covered_business_dates)
+    ? explicit.covered_business_dates.filter((value): value is string => typeof value === "string")
+    : [];
+  return { run, bank, snapshotBusinessDate, coveredBusinessDates };
+}
+
 const SALDO_KEYS = ["banorte", "amex", "efectivo", "aguinaldos", "utilidades"] as const;
 
 export function getLatestSaldos(runs: RunLike[]) {
@@ -239,24 +277,26 @@ export type CorteReceivableLike = {
 };
 
 export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteReceivableLike[], throughDate: string): OutstandingSnapshot | null {
-  // Find the most recent run that has bank reconciliation to determine the "asOfDate"
-  const candidates = runs
-    .filter((run) => Boolean(run.business_date && run.business_date <= throughDate))
-    .sort((a, b) => (b.business_date as string).localeCompare(a.business_date as string) || b.created_at.localeCompare(a.created_at));
+  const snapshots = runs
+    .map((run) => bankSnapshotForRun(run))
+    .filter((snapshot): snapshot is BankSnapshotSelection => Boolean(snapshot));
+  const exactSnapshot = snapshots
+    .filter((snapshot) => snapshot.coveredBusinessDates.includes(throughDate))
+    .sort((a, b) => (
+      b.snapshotBusinessDate.localeCompare(a.snapshotBusinessDate)
+      || b.run.created_at.localeCompare(a.run.created_at)
+    ))[0];
+  const previousSnapshot = snapshots
+    .filter((snapshot) => snapshot.snapshotBusinessDate <= throughDate)
+    .sort((a, b) => (
+      b.snapshotBusinessDate.localeCompare(a.snapshotBusinessDate)
+      || b.run.created_at.localeCompare(a.run.created_at)
+    ))[0];
+  const selectedSnapshot = exactSnapshot ?? previousSnapshot;
 
-  const latestBankRun = candidates.find((run) => {
-    const payload = run.output_payload ?? {};
-    const bankReconciliation = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
-    const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
-    const nestedBankReconciliation = bankStage && isRecord(bankStage.bank_reconciliation)
-      ? bankStage.bank_reconciliation
-      : null;
-    return bankReconciliation || nestedBankReconciliation;
-  });
+  if (!selectedSnapshot) return null;
 
-  if (!latestBankRun) return null;
-
-  const asOfDate = latestBankRun.business_date as string;
+  const asOfDate = selectedSnapshot.snapshotBusinessDate;
 
   const entriesMap = new Map<string, number>();
   const representedReceivables = new Set<string>();
@@ -267,13 +307,7 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
     const outstanding = amountOf(rec.principal) - amountOf(rec.settled_principal);
     return rec.status === "open" && outstanding > 0 && !Number.isNaN(outstanding);
   });
-  const payload = latestBankRun.output_payload ?? {};
-  const bankReconciliation = isRecord(payload.bank_reconciliation) ? payload.bank_reconciliation : null;
-  const bankStage = isRecord(payload.bank_stage) ? payload.bank_stage : null;
-  const nestedBankReconciliation = bankStage && isRecord(bankStage.bank_reconciliation)
-    ? bankStage.bank_reconciliation
-    : null;
-  const bank = bankReconciliation ?? nestedBankReconciliation;
+  const bank = selectedSnapshot.bank;
 
   const pendingItems = Array.isArray(bank?.pending_items) ? bank.pending_items : [];
   const snapshotHasBanorte = pendingItems.some((raw) => (
@@ -327,17 +361,23 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
   // A bank snapshot closes the ledger only through its own date. Add Corte
   // channels from newer days so the card remains current without using the
   // CxC lifecycle table as a duplicate sales ledger.
-  const newerRunsByDate = new Map<string, RunLike[]>();
-  for (const run of runs) {
-    if (!run.business_date || run.business_date <= asOfDate || run.business_date > throughDate) continue;
-    const items = newerRunsByDate.get(run.business_date) ?? [];
-    items.push(run);
-    newerRunsByDate.set(run.business_date, items);
-  }
-  for (const dayRuns of newerRunsByDate.values()) {
-    const run = dayRuns.sort(compareRunQuality)[0];
-    for (const [channel, amount] of Object.entries(pendingChannelsFromRun(run))) {
-      if (amount > 0) entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
+  // A batch snapshot may intentionally be newer than the selected date. In
+  // that case it already represents the selected date and must not be mixed
+  // with newer Corte channels. When falling back to the latest prior snapshot,
+  // keep the existing carry-forward behavior for days after that snapshot.
+  if (!exactSnapshot) {
+    const newerRunsByDate = new Map<string, RunLike[]>();
+    for (const run of runs) {
+      if (!run.business_date || run.business_date <= asOfDate || run.business_date > throughDate) continue;
+      const items = newerRunsByDate.get(run.business_date) ?? [];
+      items.push(run);
+      newerRunsByDate.set(run.business_date, items);
+    }
+    for (const dayRuns of newerRunsByDate.values()) {
+      const run = dayRuns.sort(compareRunQuality)[0];
+      for (const [channel, amount] of Object.entries(pendingChannelsFromRun(run))) {
+        if (amount > 0) entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
+      }
     }
   }
 

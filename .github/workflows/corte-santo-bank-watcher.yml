@@ -7,6 +7,8 @@ on:
         description: "Business date for bank reconciliation (default: yesterday)"
         required: false
         default: ""
+  schedule:
+    - cron: "*/15 * * * *"
 
 jobs:
   bank-watcher:
@@ -53,9 +55,14 @@ jobs:
           SANTO_CRON_WRITE: "true"
         run: |
           BUSINESS_DATE="${{ github.event.inputs.business_date }}"
-          if [ -z "$BUSINESS_DATE" ]; then
-            BUSINESS_DATE=$(date -u -d 'yesterday' +%Y-%m-%d)
+          if [ -n "$BUSINESS_DATE" ]; then
+            python -m services.scheduler.corte_santo_cron \
+              --job bank-watcher \
+              --business-date "$BUSINESS_DATE"
+          else
+            # Scheduled runs discover the newest bank upload whose previous
+            # attempt did not complete. This also retries dashboard uploads
+            # left behind by a temporary GitHub credential failure.
+            python -m services.scheduler.corte_santo_cron \
+              --job bank-watcher
           fi
-          python -m services.scheduler.corte_santo_cron \
-            --job bank-watcher \
-            --business-date "$BUSINESS_DATE"

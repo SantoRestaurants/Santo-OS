@@ -68,3 +68,19 @@ def test_poll_bank_folder_downloads_samples_for_generic_xls() -> None:
     )
 
     assert result["status"] == "triggered"
+
+
+def test_dated_uploads_never_mix_another_business_date() -> None:
+    result = detect_bank_stage_trigger(
+        [
+            {"id": "old-amex", "name": "2026-07-22 AMEX old.xls", "modified_time": "2026-07-22T10:00:00Z"},
+            {"id": "old-banorte", "name": "2026-07-22 BANORTE old.csv", "modified_time": "2026-07-22T10:00:00Z"},
+            {"id": "new-amex", "name": "2026-07-23 AMEX new.xls", "modified_time": "2026-07-23T10:00:00Z"},
+        ],
+        restaurant_key="santo",
+        business_date="2026-07-22",
+    )
+
+    assert result["status"] == "triggered"
+    documents = result["command"]["payload"]["documents"]
+    assert {item["drive_file_id"] for item in documents} == {"old-amex", "old-banorte"}

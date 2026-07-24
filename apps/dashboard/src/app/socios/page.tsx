@@ -174,7 +174,6 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
     const key = rawKey === "default_restaurant_confirm" ? "SANTO" : rawKey?.toUpperCase();
     return key === selectedUnit;
   });
-  const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, todayMexico);
 
   const allMonths = Array.from(new Set(unitRuns.map(r => monthKey(r.business_date)))).sort().reverse();
 
@@ -266,6 +265,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
   const weekRuns = monthRuns.filter(r => weekKey(r.business_date) === selectedWeek).sort((a, b) => String(a.business_date).localeCompare(String(b.business_date)));
 
   const selectedRun = weekRuns.find(r => r.id === params.day) ?? weekRuns[weekRuns.length - 1] ?? null;
+  const outstandingThroughDate = selectedRun?.business_date ?? todayMexico;
+  const outstanding = getOutstandingThroughDate(unitAllRuns, unitReceivables, outstandingThroughDate);
 
   const getMetaForDay = (date: string | null) => {
     if (!date) return 0;
@@ -661,8 +662,8 @@ export default async function SociosPage({ searchParams }: { searchParams: Searc
                     {outstanding && (() => {
                       return (
                         <div style={{ background: C.surface, border: `1px solid ${C.border}`, padding: "24px", display: "flex", flexDirection: "column" }}>
-                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falta por entrar hasta hoy</div>
-                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: C.santo, textTransform: "uppercase", letterSpacing: "0.1em" }}>Falta por entrar</div>
+                          <div style={{ color: C.faint, fontSize: "11px", marginTop: "4px", marginBottom: "16px" }}>Día seleccionado: {dateLabel(outstandingThroughDate, "short")} · conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
                           <div className="display-font" style={{ color: C.red, fontSize: "30px", fontWeight: 700, marginBottom: "12px" }}>{moneyFull(outstanding.total)}</div>
                           {outstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
                             <div key={channel} className="flex justify-between" style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>

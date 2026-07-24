@@ -256,15 +256,92 @@ def _load_previous_pending_collections(
     return pending
 
 
+def _bank_snapshot_details(
+    output: dict[str, Any],
+    run_business_date: str,
+) -> tuple[str, dict[str, Any] | None, list[str]]:
+    """Return the bank snapshot date, reconciliation and covered Corte days.
+
+    New runs persist an explicit ``bank_snapshot`` so a later bank upload can
+    be attached only to the newly covered days. Older runs only have
+    ``bank_reconciliation``; those remain compatible and use their run date as
+    the snapshot date.
+    """
+    snapshot = output.get("bank_snapshot")
+    if isinstance(snapshot, dict):
+        bank = snapshot.get("bank_reconciliation") or snapshot.get("reconciliation")
+        if isinstance(bank, dict):
+            snapshot_date = str(
+                snapshot.get("snapshot_business_date")
+                or snapshot.get("bank_business_date")
+                or run_business_date
+            )
+            covered = [
+                str(item)
+                for item in (snapshot.get("covered_business_dates") or [])
+                if isinstance(item, str) and item
+            ]
+            return snapshot_date, bank, covered
+
+    bank = output.get("bank_reconciliation")
+    if isinstance(bank, dict) and ("pending_items" in bank or "pending_collections" in bank):
+        snapshot_date = str(
+            bank.get("snapshot_business_date")
+            or bank.get("bank_business_date")
+            or run_business_date
+        )
+        return snapshot_date, bank, []
+
+    return "", None, []
+
+
+def _latest_bank_snapshot_date(
+    runs: list[dict[str, Any]],
+    effective_date: str,
+) -> str:
+    latest = ""
+    for run in runs:
+        business_date = str(run.get("business_date") or "")
+        if not business_date or business_date > effective_date:
+            continue
+        output = run.get("output_payload") or {}
+        if isinstance(output, str):
+            try:
+                output = json.loads(output)
+            except Exception:
+                continue
+        if not isinstance(output, dict):
+            continue
+        snapshot_date, _bank, _covered = _bank_snapshot_details(output, business_date)
+        if snapshot_date and snapshot_date <= effective_date and snapshot_date > latest:
+            latest = snapshot_date
+    return latest
+
+
+def _snapshot_covered_dates(
+    runs: list[dict[str, Any]],
+    effective_date: str,
+    previous_snapshot_date: str,
+) -> list[str]:
+    dates = {
+        str(run.get("business_date"))
+        for run in runs
+        if run.get("business_date")
+        and str(run.get("business_date")) <= effective_date
+        and str(run.get("business_date")) > previous_snapshot_date
+    }
+    return sorted(dates)
+
+
 def _build_expected_collections(
     runs: list[dict[str, Any]],
     effective_date: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], set[str]]:
-    """Carry forward only the latest unmatched bank items, then add newer Cortes.
+    """Carry forward the latest unmatched bank items, then add newer Cortes.
 
-    A bank snapshot is authoritative for every day up to its business date.  In
-    particular, items absent from ``pending_items`` were matched and must not be
-    reconstructed from the original income register on the next watcher run.
+    A bank snapshot is authoritative for its persisted bank date and covered
+    catch-up days. Items absent from ``pending_items`` were matched and must
+    not be reconstructed from the original income register on the next run.
     """
     normalized: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for run in runs:
@@ -283,13 +360,15 @@ def _build_expected_collections(
     latest_snapshot_date = ""
     latest_snapshot_items: list[dict[str, Any]] | None = None
     latest_stage: dict[str, Any] = {}
-    for business_date, _run, output in normalized:
+    for business_date, _run, output in sorted(normalized, key=lambda item: item[0]):
+        snapshot_date, bank, _covered_dates = _bank_snapshot_details(output, business_date)
+        if snapshot_date > effective_date:
+            continue
         if business_date >= latest_snapshot_date:
             latest_stage = output
-        bank = output.get("bank_reconciliation") or {}
         pending_items = bank.get("pending_items") if isinstance(bank, dict) else None
-        if isinstance(pending_items, list) and business_date >= latest_snapshot_date:
-            latest_snapshot_date = business_date
+        if isinstance(pending_items, list) and snapshot_date >= latest_snapshot_date:
+            latest_snapshot_date = snapshot_date
             latest_snapshot_items = [dict(item) for item in pending_items if isinstance(item, dict)]
             latest_stage = output
 
@@ -948,49 +1027,113 @@ def run_bank_watcher_once(
         if day_total > 0:
             result["falta_por_entrar_por_dia"][bd] = round(day_total, 2)
 
-    # Persist the bank snapshot on the run selected by the operator. This must
-    # happen before returning; otherwise Drive is updated but Dashboard keeps
-    # rendering the stale stage-1 payload.
+    # Persist an immutable-by-day bank snapshot before returning. A bank file
+    # can catch up several Corte days, but a later upload must not rewrite the
+    # snapshot already shown for an older covered day.
+    previous_snapshot_date = _latest_bank_snapshot_date(all_runs, effective_date)
+    covered_business_dates = _snapshot_covered_dates(
+        all_runs,
+        effective_date,
+        previous_snapshot_date,
+    )
+    result["snapshot_business_date"] = effective_date
+    result["snapshot_previous_business_date"] = previous_snapshot_date or None
+    result["snapshot_covered_business_dates"] = covered_business_dates
+
+    snapshot_payload = {
+        "snapshot_business_date": effective_date,
+        "covered_business_dates": covered_business_dates,
+        "bank_reconciliation": bank_result,
+        "falta_por_entrar_por_dia": result["falta_por_entrar_por_dia"],
+        "persisted_at": datetime.now(UTC).isoformat(),
+        "source": "bank_watcher",
+    }
+
+    # Persist the bank snapshot on every newly covered daily run. This keeps
+    # the historical lookup deterministic in both /cortes and /socios, even
+    # when the exact bank date has no Agent Mail run of its own.
     try:
-        for pr in pending_runs:
-            if pr["business_date"] == effective_date:
-                response = httpx.get(
-                    f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}&select=output_payload",
-                    headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
-                    timeout=10.0,
-                )
-                response.raise_for_status()
-                rows = response.json()
-                current_op = rows[0].get("output_payload") or {}
-                if isinstance(current_op, str):
-                    current_op = json.loads(current_op)
-                revision = current_op.get("revision_document") or {}
-                pending_collections = bank_result.get("pending_collections") or {}
-                persisted_bank_status = (
-                    "bank_validated"
-                    if bank_result.get("status") == "bank_validated" and not pending_collections
-                    else "bank_requires_review"
-                )
-                revision["falta_por_entrar"] = pending_collections
-                revision["bank_validation_status"] = persisted_bank_status
-                current_op["revision_document"] = revision
-                current_op["bank_reconciliation"] = bank_result
-                current_op["falta_por_entrar_por_dia"] = result["falta_por_entrar_por_dia"]
-                current_op["bank_validation_status"] = persisted_bank_status
-                current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
-                update = httpx.patch(
-                    f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
-                    json={"output_payload": current_op},
-                    headers={
-                        "apikey": service_key,
-                        "Authorization": f"Bearer {service_key}",
-                        "Content-Type": "application/json",
-                    },
-                    timeout=10.0,
-                )
-                update.raise_for_status()
-                logging.info("Persisted bank stage summary for %s", effective_date)
-                break
+        target_runs = [
+            pr for pr in pending_runs
+            if pr.get("business_date") in covered_business_dates
+        ]
+        if not target_runs:
+            # If the bank date has no daily run, retain the snapshot on the
+            # latest available day so the global dashboard can still find it.
+            target_runs = [
+                pr for pr in pending_runs
+                if str(pr.get("business_date") or "") <= effective_date
+            ]
+            target_runs = sorted(
+                target_runs,
+                key=lambda item: str(item.get("business_date") or ""),
+                reverse=True,
+            )[:1]
+
+        persisted_count = 0
+        pending_collections = bank_result.get("pending_collections") or {}
+        persisted_bank_status = (
+            "bank_validated"
+            if bank_result.get("status") == "bank_validated" and not pending_collections
+            else "bank_requires_review"
+        )
+        for pr in target_runs:
+            response = httpx.get(
+                f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}&select=output_payload",
+                headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            rows = response.json()
+            if not rows:
+                continue
+            current_op = rows[0].get("output_payload") or {}
+            if isinstance(current_op, str):
+                current_op = json.loads(current_op)
+            if not isinstance(current_op, dict):
+                current_op = {}
+
+            existing_snapshot = current_op.get("bank_snapshot")
+            existing_snapshot_date = (
+                str(existing_snapshot.get("snapshot_business_date") or "")
+                if isinstance(existing_snapshot, dict)
+                else ""
+            )
+            if existing_snapshot_date and existing_snapshot_date > effective_date:
+                continue
+
+            revision = current_op.get("revision_document") or {}
+            if not isinstance(revision, dict):
+                revision = {}
+            revision["falta_por_entrar"] = pending_collections
+            revision["bank_validation_status"] = persisted_bank_status
+            current_op["revision_document"] = revision
+            current_op["bank_snapshot"] = snapshot_payload
+            # Keep the existing top-level contract for consumers that have not
+            # yet migrated to bank_snapshot. For a newly covered day, the new
+            # full reconciliation is the canonical value.
+            current_op["bank_reconciliation"] = bank_result
+            current_op["falta_por_entrar_por_dia"] = result["falta_por_entrar_por_dia"]
+            current_op["bank_validation_status"] = persisted_bank_status
+            current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
+            update = httpx.patch(
+                f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
+                json={"output_payload": current_op},
+                headers={
+                    "apikey": service_key,
+                    "Authorization": f"Bearer {service_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=10.0,
+            )
+            update.raise_for_status()
+            persisted_count += 1
+            logging.info(
+                "Persisted bank snapshot %s on Corte %s",
+                effective_date,
+                pr.get("business_date"),
+            )
+        result["snapshot_persisted_count"] = persisted_count
     except Exception:
         logging.exception("Failed to persist bank stage summary")
 
@@ -1012,10 +1155,10 @@ def _persist_bank_processing_outcome(business_date: str | None, result: dict[str
         response = httpx.get(
             f"{supabase_url}/rest/v1/workflow_runs",
             params={
-                "business_date": f"eq.{business_date}",
                 "source_channel": "eq.agent_mail",
                 "select": "id,output_payload",
-                "order": "created_at.desc",
+                "business_date": f"lte.{business_date}",
+                "order": "business_date.desc,created_at.desc",
                 "limit": "1",
             },
             headers=headers,
@@ -1043,6 +1186,7 @@ def _persist_bank_processing_outcome(business_date: str | None, result: dict[str
             **previous,
             "status": processing_status,
             "completed_at": datetime.now(UTC).isoformat(),
+            "processed_business_date": business_date,
             "result_status": result_status,
             "requires_review_reason": result.get("requires_review_reason"),
             "validated_count": result.get("validated_count"),
@@ -1058,6 +1202,107 @@ def _persist_bank_processing_outcome(business_date: str | None, result: dict[str
         update.raise_for_status()
     except Exception:
         logging.exception("Failed to persist bank processing outcome for %s", business_date)
+
+
+def _discover_pending_bank_business_date() -> str | None:
+    """Find the newest uploaded bank date that still needs a watcher run.
+
+    This is the fallback for scheduled Actions runs. The dashboard normally
+    dispatches the workflow directly, but a bad dashboard GitHub credential
+    must not leave files uploaded with no reconciliation attempt.
+    """
+    supabase_url = _env("SUPABASE_URL") or _env("NEXT_PUBLIC_SUPABASE_URL")
+    service_key = _env("SUPABASE_SERVICE_KEY") or _env("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not service_key:
+        return None
+
+    import httpx
+
+    headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+    try:
+        events_response = httpx.get(
+            f"{supabase_url}/rest/v1/events",
+            params={
+                "event_type": "eq.corte.bank_files_uploaded",
+                "select": "aggregate_id,created_at,payload",
+                "order": "created_at.desc",
+                "limit": "50",
+            },
+            headers=headers,
+            timeout=15.0,
+        )
+        events_response.raise_for_status()
+        events = events_response.json()
+        if not isinstance(events, list):
+            return None
+
+        runs_response = httpx.get(
+            f"{supabase_url}/rest/v1/workflow_runs",
+            params={
+                "source_channel": "eq.agent_mail",
+                "select": "id,business_date,output_payload",
+                "order": "business_date.desc,created_at.desc",
+                "limit": "100",
+            },
+            headers=headers,
+            timeout=15.0,
+        )
+        runs_response.raise_for_status()
+        runs = runs_response.json()
+        if not isinstance(runs, list):
+            runs = []
+
+        latest_snapshot = ""
+        for row in runs:
+            row_date = str(row.get("business_date") or "")
+            output = row.get("output_payload") or {}
+            if isinstance(output, str):
+                try:
+                    output = json.loads(output)
+                except Exception:
+                    continue
+            if not isinstance(output, dict):
+                continue
+            snapshot_date, _bank, _covered = _bank_snapshot_details(output, row_date)
+            if snapshot_date > latest_snapshot:
+                latest_snapshot = snapshot_date
+
+        candidates: list[str] = []
+        for event in events:
+            payload = event.get("payload") or {}
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = {}
+            if not isinstance(payload, dict):
+                continue
+            bank_date = str(payload.get("business_date") or "")
+            if not bank_date or (latest_snapshot and bank_date < latest_snapshot):
+                continue
+            run_id = str(event.get("aggregate_id") or "")
+            run = next((row for row in runs if str(row.get("id")) == run_id), None)
+            output = (run or {}).get("output_payload") or {}
+            if isinstance(output, str):
+                try:
+                    output = json.loads(output)
+                except Exception:
+                    output = {}
+            processing = output.get("bank_processing") if isinstance(output, dict) else None
+            if not isinstance(processing, dict):
+                candidates.append(bank_date)
+                continue
+            status = str(processing.get("status") or "")
+            completed_at = str(processing.get("completed_at") or "")
+            uploaded_at = str(event.get("created_at") or "")
+            if status == "completed" and completed_at >= uploaded_at:
+                continue
+            candidates.append(bank_date)
+
+        return max(candidates) if candidates else None
+    except Exception:
+        logging.exception("Failed to discover pending bank upload")
+        return None
 
 
 def run_all(args: argparse.Namespace) -> dict[str, Any]:
@@ -1077,12 +1322,15 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
     if args.job in ("bank-watcher", "all"):
+        bank_business_date = args.business_date
+        if not bank_business_date:
+            bank_business_date = _discover_pending_bank_business_date()
         bank_result = run_bank_watcher_once(
             config_path=args.corte_config,
             restaurant_key=args.restaurant_key,
-            business_date=args.business_date,
+            business_date=bank_business_date,
         )
-        _persist_bank_processing_outcome(args.business_date, bank_result)
+        _persist_bank_processing_outcome(bank_business_date, bank_result)
         jobs.append(
             {
                 "job": "bank-watcher",

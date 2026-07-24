@@ -161,6 +161,49 @@ def test_expected_collections_do_not_recreate_days_before_authoritative_snapshot
     ]
 
 
+def test_snapshot_metadata_covers_only_days_after_previous_bank_date():
+    runs = [
+        {"id": "old", "business_date": "2026-07-20", "output_payload": {
+            "bank_reconciliation": {"pending_items": []},
+        }},
+        {"id": "new-1", "business_date": "2026-07-21", "output_payload": {}},
+        {"id": "new-2", "business_date": "2026-07-22", "output_payload": {}},
+        {"id": "new-3", "business_date": "2026-07-23", "output_payload": {}},
+    ]
+
+    assert cron._latest_bank_snapshot_date(runs, "2026-07-23") == "2026-07-20"
+    assert cron._snapshot_covered_dates(runs, "2026-07-23", "2026-07-20") == [
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+    ]
+
+
+def test_build_expected_collections_reads_explicit_bank_snapshot_date():
+    runs = [
+        {"id": "snapshot", "business_date": "2026-07-22", "output_payload": {
+            "bank_snapshot": {
+                "snapshot_business_date": "2026-07-23",
+                "covered_business_dates": ["2026-07-22", "2026-07-23"],
+                "bank_reconciliation": {
+                    "pending_items": [
+                        {"business_date": "2026-07-22", "channel": "rappi", "amount": 6540},
+                    ],
+                },
+            },
+        }},
+        {"id": "future", "business_date": "2026-07-24", "output_payload": {
+            "income_register": {"amex": 1000},
+        }},
+    ]
+
+    expected, pending_runs, _, _ = cron._build_expected_collections(runs, "2026-07-24")
+
+    assert expected[0]["channel"] == "rappi"
+    assert expected[0]["amount"] == 6540
+    assert {item["business_date"] for item in pending_runs} == {"2026-07-22", "2026-07-24"}
+
+
 def test_pending_summary_uses_only_positive_unmatched_balances():
     items = [
         {"channel": "amex", "amount": 30000},

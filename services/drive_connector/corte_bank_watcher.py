@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from typing import Any
 
@@ -23,6 +24,12 @@ def _extension(name: str) -> str:
         if upper.endswith(ext):
             return ext
     return ""
+
+
+def extract_bank_business_date(filename: str) -> str | None:
+    """Read the bank business date from the upload filename when present."""
+    match = re.match(r"^\s*(20\d{2}-\d{2}-\d{2})(?:\s|_|-)", str(filename or ""))
+    return match.group(1) if match else None
 
 
 def classify_bank_file(
@@ -61,9 +68,22 @@ def detect_bank_stage_trigger(
     restaurant_key: str,
     business_date: str,
 ) -> dict[str, Any]:
+    dated_files = [
+        item for item in files
+        if isinstance(item, dict) and extract_bank_business_date(str(item.get("name", "")))
+    ]
+    target_dated_files = [
+        item for item in dated_files
+        if extract_bank_business_date(str(item.get("name", ""))) == business_date
+    ]
+    # Once uploads carry an explicit business date, never pair a requested day
+    # with the newest file from another day. Undated legacy files remain
+    # supported for older Drive folders and fixtures.
+    candidate_files = target_dated_files if target_dated_files else (files if not dated_files else [])
+
     # Pick most recent file per document_type
     best: dict[str, dict[str, Any]] = {}
-    for item in files:
+    for item in candidate_files:
         if not isinstance(item, dict):
             continue
         document_type = classify_bank_file(
