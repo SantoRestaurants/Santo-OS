@@ -4,8 +4,21 @@ import json
 from services.agent_mail.poller import AgentMailClient
 from services.agent_mail.poller import SupabaseWriter
 from services.agent_mail.poller import _agentmail_to_intake_format
+from services.agent_mail.poller import _corte_business_date
 from services.agent_mail.poller import poll_and_classify
 from services.agent_mail.intake import intake_email, message_content_fingerprint
+
+
+def test_corte_business_date_prefers_workflow_result_and_preserves_stage_request_date() -> None:
+    assert _corte_business_date({
+        "workflow_result": {"workflow_run": {"business_date": "2026-07-23"}},
+        "request": {"payload": {"business_date": "2026-07-24"}},
+    }) == "2026-07-23"
+    assert _corte_business_date({
+        "status": "requires_review",
+        "request": {"payload": {"business_date": "2026-07-23"}},
+    }) == "2026-07-23"
+    assert _corte_business_date({"status": "requires_review"}) is None
 
 
 def test_transfer_settlement_stays_pending_until_bank_and_follows_superseded_row() -> None:

@@ -86,12 +86,14 @@ def _document_type_from_ocr(text: str) -> str:
         "bancarias": 0,
         "detalle_efectivo": 0,
         "tira": 0,
+        "discounts": 0,
     }
 
     def add(document_type: str, *signals: str, weight: int = 1) -> None:
         scores[document_type] += sum(weight for signal in signals if signal in normalized)
 
     add("cxc", "CUENTA POR COBRAR", "AJUSTE DE CXC", "MOVIMIENTO CXC", "CXC", weight=4)
+    add("discounts", "MAL COBRO", weight=4)
     add("amex", "AMERICAN EXPRESS", "AMEX", weight=4)
     add("bancarias", "BANORTE", "VANORTE", "BANCARIAS", "MASTERCARD", "MASTER CARD", weight=3)
     add(
@@ -155,6 +157,8 @@ def _document_type(filename: str, *, ocr_text: str | None = None) -> str:
         return "detalle_efectivo"
     if "CXC" in normalized:
         return "cxc"
+    if "MAL COBRO" in normalized:
+        return "discounts"
     if "DESCUENTO" in normalized:
         return "discounts"
     if ocr_text:
@@ -409,6 +413,12 @@ def _vision_document_type(path: Path, config: dict[str, Any]) -> str:
         from workflows.corte_santo import vision_extractor
 
         cfg = vision_extractor._vision_config(config)
+        if not cfg.get("local_ocr_fallback_to_vision"):
+            logger.info(
+                "Opaque Corte vision classification disabled; keeping OCR-only mode for image=%s",
+                path.name,
+            )
+            return "email_attachment"
         if not cfg.get("api_key") or not cfg.get("model") or not path.is_file():
             return "email_attachment"
         prompt = (

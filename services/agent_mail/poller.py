@@ -33,7 +33,6 @@ from services.agent_mail.corte_santo_automation import run_corte_initial_from_me
 from workflows.corte_santo.cxc import parse_cxc_events, receivable_key
 from services.ai.classifier import classify_email, summarize_email
 from services.drive_connector.connector import save_document
-from services.business_time import business_today
 
 logger = logging.getLogger("agent_mail.poller")
 
@@ -73,6 +72,25 @@ def _message_text(message: dict[str, Any]) -> str:
                 value = unescape(value)
             return "\n".join(line.strip() for line in value.splitlines() if line.strip())
     return ""
+
+
+def _corte_business_date(stage_result: dict[str, Any] | None) -> str | None:
+    """Keep the source Corte date when stage 1 stops before a workflow result."""
+    stage = stage_result if isinstance(stage_result, dict) else {}
+    workflow = stage.get("workflow_result")
+    workflow = workflow if isinstance(workflow, dict) else {}
+    workflow_run = workflow.get("workflow_run")
+    workflow_run = workflow_run if isinstance(workflow_run, dict) else {}
+    request = stage.get("request")
+    request = request if isinstance(request, dict) else {}
+    payload = request.get("payload")
+    payload = payload if isinstance(payload, dict) else {}
+
+    for candidate in (workflow_run.get("business_date"), payload.get("business_date")):
+        value = str(candidate or "").strip()
+        if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", value):
+            return value
+    return None
 
 
 def _hydrate_message(client: Any, message: dict[str, Any]) -> dict[str, Any]:
@@ -918,11 +936,11 @@ def poll_and_classify(
                     ).hexdigest()[:32]
 
                     corte_stage_result = result.get("corte_santo_initial_stage", {})
-                    corte_business_date = (
-                        corte_stage_result.get("workflow_result", {})
-                        .get("workflow_run", {})
-                        .get("business_date")
-                    ) or business_today().isoformat()
+                    corte_business_date = _corte_business_date(corte_stage_result)
+                    if not corte_business_date:
+                        logger.error(
+                            "Corte stage did not provide a business date; preserving requires_review instead of using today"
+                        )
 
                     run_id = supabase.upsert_workflow_run({
                         "workflow_id": workflow_id,

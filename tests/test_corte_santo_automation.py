@@ -5,6 +5,7 @@ from services.agent_mail.corte_santo_automation import (
     _document_type_from_ocr,
     _document_type_from_content,
     _is_probable_inline_signature,
+    _vision_document_type,
 )
 
 
@@ -15,6 +16,11 @@ def test_cxc_adjustment_photo_is_classified_for_vision() -> None:
 
 def test_adjustment_photo_without_cxc_stays_generic() -> None:
     assert _document_type("AJUSTE MANUAL.jpeg") == "email_attachment"
+
+
+def test_mal_cobro_photo_is_nonvision_adjustment_evidence() -> None:
+    assert _document_type("mal cobro 23 jul.jpeg") == "discounts"
+    assert _document_type_from_ocr("MAL COBRO MOVIMIENTO 91868") == "discounts"
 
 
 def test_random_photo_is_classified_from_ocr_labels() -> None:
@@ -63,3 +69,27 @@ def test_tira_ocr_wins_over_payment_brand_on_system_close_photo() -> None:
 def test_common_forwarded_signature_image_is_ignored() -> None:
     assert _is_probable_inline_signature("image.png", "image/png") is True
     assert _is_probable_inline_signature("random-photo.jpg", "image/jpeg") is False
+
+
+def test_opaque_image_classification_does_not_call_vision_when_ocr_only(monkeypatch, tmp_path: Path) -> None:
+    image = tmp_path / "opaque.jpeg"
+    image.write_bytes(b"fake-image")
+    monkeypatch.setenv("TEST_GEMINI_KEY", "key")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("vision fallback must be disabled in OCR-only mode")
+
+    monkeypatch.setattr("workflows.corte_santo.vision_extractor._call_gemini", fail_if_called)
+    result = _vision_document_type(
+        image,
+        {
+            "vision_extraction": {
+                "provider": "gemini",
+                "model": "gemini-test",
+                "api_key_env": "TEST_GEMINI_KEY",
+                "local_ocr_fallback_to_vision": False,
+            }
+        },
+    )
+
+    assert result == "email_attachment"

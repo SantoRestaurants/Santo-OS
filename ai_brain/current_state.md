@@ -1,5 +1,19 @@
 # Current State
 
+## 2026-07-24 - Corte 23 date preservation and OCR-only intake
+
+- The 2026-07-23 Corte email arrived and was classified, but its stage-1
+  image classification stopped on `mal cobro 23 jul.jpeg` after Gemini returned
+  HTTP 429. The poller then incorrectly used the current date because the
+  stage had no `workflow_result`, so the run was stored as 2026-07-24.
+- Intake now classifies `mal cobro` as non-vision adjustment evidence, respects
+  the confirmed OCR-only setting, and does not call a vision provider for an
+  opaque image when that fallback is disabled. A stage request date is used
+  when stage 1 has stopped before producing a workflow result; the current
+  date is never substituted.
+- Regression coverage passes for OCR-only classification, date preservation,
+  and the existing Corte vision/extraction behavior.
+
 ## 2026-07-15 - Gerencia sender and opaque Corte photos
 
 - Gmail confirms the SANTO Corte email for business date 2026-07-14 arrived on

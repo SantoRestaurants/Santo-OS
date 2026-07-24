@@ -190,6 +190,7 @@ def test_vision_uses_success_cache(monkeypatch, tmp_path: Path) -> None:
             "confidence_threshold": 0.9,
             "cache_enabled": True,
             "cache_dir": str(tmp_path / "cache"),
+            "local_ocr_fallback_to_vision": True,
         }
     }
 
