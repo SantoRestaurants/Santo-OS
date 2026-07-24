@@ -183,16 +183,22 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
   const trigger = await triggerBankWatcher(businessDate);
   if (!trigger.ok) {
     await updateBankProcessing(serviceClient, workflowRunId, {
-      status: "failed",
+      // The files are already safely registered in Drive and Supabase. Keep
+      // this retryable so the scheduled bank watcher can recover from a
+      // temporary dashboard/GitHub credential failure.
+      status: "waiting_for_input",
       business_date: businessDate,
       completed_at: new Date().toISOString(),
       error: trigger.error,
+      retryable: true,
     });
     await markUploadBlocked(serviceClient, workflowRunId, user.email ?? null, {
       reason: "bank_watcher_trigger_failed",
       trigger_error: trigger.error,
     });
-    redirect(withQuery(returnTo, "error", `Archivos subidos, pero no pude disparar bank-watcher: ${trigger.error}`));
+    revalidatePath("/conciliacion");
+    revalidatePath("/cortes");
+    redirect(withQuery(returnTo, "success", "Archivos subidos. La conciliación se reintentará automáticamente."));
   }
 
   revalidatePath("/conciliacion");
