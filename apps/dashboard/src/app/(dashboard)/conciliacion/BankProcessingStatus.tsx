@@ -44,6 +44,7 @@ export function BankProcessingStatus({ workflowRunId, initialState }: { workflow
   }, [status, workflowRunId, router]);
 
   if (!state || !status) return null;
+  if (status !== "running" && status !== "completed") return null;
   const uploaded = Array.isArray(state.uploaded_documents) ? state.uploaded_documents : [];
   const pending = state.pending_collections && typeof state.pending_collections === "object"
     ? Object.entries(state.pending_collections as Record<string, number>)

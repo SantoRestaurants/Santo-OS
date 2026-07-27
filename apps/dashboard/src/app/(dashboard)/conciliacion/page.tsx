@@ -15,7 +15,6 @@ const LINE = "#ded7ca";
 const PAPER = "#fbfaf7";
 const PANEL = "#ffffff";
 const GOLD = "#e8463b";
-const GREEN = "#2e7d55";
 const RED = "#b84a3a";
 
 type SearchParams = Promise<{ success?: string; error?: string }>;
@@ -39,11 +38,11 @@ function hasApproval(run: ReconciliationRun) {
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     waiting_for_input: "Esperando bancos",
-    requires_review: "Necesita revisión",
+    requires_review: "Cargado",
     completed: "Completado",
     running: "En proceso",
     queued: "En cola",
-    failed: "Con error",
+    failed: "Cargado",
   };
   return labels[status] ?? status;
 }
@@ -136,9 +135,6 @@ function RunCard({ run, defaultOpen = false }: { run: ReconciliationRun; default
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-md px-2.5 py-1 text-xs" style={{ background: "#fbfaf7", color: MUTED, border: `1px solid ${LINE}` }}>{statusLabel(run.status)}</span>
-          <span className="rounded-md px-2.5 py-1 text-xs" style={{ background: approved ? "#f1fbf5" : "#fdf2f2", color: approved ? GREEN : GOLD, border: `1px solid ${approved ? "#b8dbc9" : "#e4c58f"}` }}>
-            {approved ? "Aprobado por supervisora" : "Pendiente de aprobación"}
-          </span>
         </div>
       </summary>
 
@@ -190,11 +186,6 @@ function RunCard({ run, defaultOpen = false }: { run: ReconciliationRun; default
               totalBruto={Number(daily.total_bruto ?? run.revision?.daily_financial_record?.total_bruto ?? 0)}
               ventaBruta={Number(daily.venta_bruta ?? run.revision?.daily_financial_record?.venta_bruta ?? dailySales(run))}
             />
-            {run.requires_review_reason && (
-              <p className="mt-3 rounded-md px-3 py-2 text-xs" style={{ color: "#E08A3A", background: "#E08A3A11", border: "1px solid #E08A3A33" }}>
-                Motivo: {run.requires_review_reason}
-              </p>
-            )}
           </div>
         </div>
 

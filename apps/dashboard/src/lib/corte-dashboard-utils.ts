@@ -247,7 +247,7 @@ function bankSnapshotForRun(run: RunLike): BankSnapshotSelection | null {
   if (!snapshotBusinessDate) return null;
   const coveredBusinessDates = Array.isArray(explicit?.covered_business_dates)
     ? explicit.covered_business_dates.filter((value): value is string => typeof value === "string")
-    : [];
+    : run.business_date ? [run.business_date] : [];
   return { run, bank, snapshotBusinessDate, coveredBusinessDates };
 }
 
@@ -286,13 +286,9 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
       b.snapshotBusinessDate.localeCompare(a.snapshotBusinessDate)
       || b.run.created_at.localeCompare(a.run.created_at)
     ))[0];
-  const previousSnapshot = snapshots
-    .filter((snapshot) => snapshot.snapshotBusinessDate <= throughDate)
-    .sort((a, b) => (
-      b.snapshotBusinessDate.localeCompare(a.snapshotBusinessDate)
-      || b.run.created_at.localeCompare(a.run.created_at)
-    ))[0];
-  const selectedSnapshot = exactSnapshot ?? previousSnapshot;
+  // A bank amount is meaningful only for a date explicitly covered by a bank
+  // upload. Do not carry a prior snapshot into a day whose banks are missing.
+  const selectedSnapshot = exactSnapshot;
 
   if (!selectedSnapshot) return null;
 
@@ -355,29 +351,6 @@ export function getOutstandingThroughDate(runs: RunLike[], receivables: CorteRec
     }
     if (!collectionKeys.has("banorte") && legacyCollectionBanorte > 0) {
       entriesMap.set("banorte", (entriesMap.get("banorte") ?? 0) + legacyCollectionBanorte);
-    }
-  }
-
-  // A bank snapshot closes the ledger only through its own date. Add Corte
-  // channels from newer days so the card remains current without using the
-  // CxC lifecycle table as a duplicate sales ledger.
-  // A batch snapshot may intentionally be newer than the selected date. In
-  // that case it already represents the selected date and must not be mixed
-  // with newer Corte channels. When falling back to the latest prior snapshot,
-  // keep the existing carry-forward behavior for days after that snapshot.
-  if (!exactSnapshot) {
-    const newerRunsByDate = new Map<string, RunLike[]>();
-    for (const run of runs) {
-      if (!run.business_date || run.business_date <= asOfDate || run.business_date > throughDate) continue;
-      const items = newerRunsByDate.get(run.business_date) ?? [];
-      items.push(run);
-      newerRunsByDate.set(run.business_date, items);
-    }
-    for (const dayRuns of newerRunsByDate.values()) {
-      const run = dayRuns.sort(compareRunQuality)[0];
-      for (const [channel, amount] of Object.entries(pendingChannelsFromRun(run))) {
-        if (amount > 0) entriesMap.set(channel, (entriesMap.get(channel) ?? 0) + amount);
-      }
     }
   }
 
@@ -452,24 +425,6 @@ function isOutstandingChannel(channel: string) {
     || channel === "rappi"
     || channel === "CXC"
     || channel.startsWith("CXC — ");
-}
-
-function pendingChannelsFromRun(run: RunLike) {
-  const payload = run.output_payload ?? {};
-  const daily = isRecord(payload.daily_record) ? payload.daily_record : null;
-  const register = isRecord(payload.income_register)
-    ? payload.income_register
-    : isRecord(payload.income_channels)
-      ? payload.income_channels
-      : null;
-  const source = daily ?? register;
-  if (!source) return {};
-  return {
-    amex: amountOf(source.amex),
-    banorte: amountOf(source.debito) + amountOf(source.credito),
-    uber: amountOf(source.uber_eats ?? source.uber),
-    rappi: amountOf(source.rappi),
-  };
 }
 
 function compareRunQuality(a: RunLike, b: RunLike) {

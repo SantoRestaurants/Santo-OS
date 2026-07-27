@@ -4,7 +4,6 @@ import {
   ChevronRight,
   FileSpreadsheet,
   FolderOpen,
-  MessageSquareText,
   UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
@@ -466,7 +465,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                       <div className="mb-1 text-xs font-semibold" style={{ color: MUTED }}>Falta entrar</div>
                       {(() => {
                         // Bypass revision extraction, read directly from output_payload
-                        if (!outstanding) return <div className="text-xs" style={{ color: MUTED }}>Nada pendiente</div>;
+                        if (!outstanding) return <div className="text-xs" style={{ color: MUTED }}>Sin bancos cargados para este día</div>;
                         return <>
                           <div className="mb-1 text-[10px]" style={{ color: MUTED }}>Conciliado hasta {dateLabel(outstanding.asOfDate, "short")}</div>
                           {outstanding.entries.filter(({ channel }) => !channel.startsWith("CXC")).map(({ channel, amount }) => (
@@ -544,35 +543,6 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
 
                 <CorteAiBox runId={selectedRun.id} />
 
-                <div className="rounded-md border p-5" style={{ borderColor: LINE, background: PANEL }}>
-                  <div className="mb-3 flex items-center gap-2 font-semibold" style={{ color: INK }}>
-                    <MessageSquareText className="h-4 w-4" />
-                    Comentarios y correcciones
-                  </div>
-                  {(() => {
-                    const hasReviews = selectedRun.reviews && selectedRun.reviews.length > 0;
-                    const hasExceptions = selectedRun.exceptions && selectedRun.exceptions.length > 0;
-                    if (!hasReviews && !hasExceptions) {
-                      return <p className="text-sm" style={{ color: MUTED }}>Sin comentarios ni correcciones</p>;
-                    }
-                    return (
-                      <div className="space-y-2">
-                        {selectedRun.reviews?.map((r) => (
-                          <div key={r.id} className="rounded border px-3 py-2 text-xs" style={{ borderColor: LINE }}>
-                            <span className="font-medium" style={{ color: INK }}>{r.review_key}:</span>{" "}
-                            <span style={{ color: MUTED }}>{r.review_notes || "Sin notas"} — {r.status}</span>
-                          </div>
-                        ))}
-                        {selectedRun.exceptions?.map((e) => (
-                          <div key={e.id} className="rounded border px-3 py-2 text-xs" style={{ borderColor: "#fde68a", background: "#fefce8" }}>
-                            <span className="font-medium" style={{ color: "#92400e" }}>{e.exception_key}</span>
-                            <span className="ml-2" style={{ color: MUTED }}>({e.exception_type}) — {e.status}</span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
               </div>
 
               <aside className="space-y-4">
@@ -631,19 +601,6 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                     );
                   })}
                 </div>
-
-                {selectedRun.exceptions.filter((item) => item.status !== "resolved").length > 0 && (
-                  <div className="rounded-md border p-4" style={{ borderColor: "#e4c58f", background: "#fff8ec" }}>
-                    <div className="font-semibold" style={{ color: INK }}>Pendientes por resolver</div>
-                    <div className="mt-2 space-y-2">
-                      {selectedRun.exceptions.filter((item) => item.status !== "resolved").slice(0, 4).map((item) => (
-                        <div key={item.id} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#e4c58f", color: MUTED }}>
-                          {item.exception_key}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {Object.keys(latestBalance.saldos).length > 0 && (
                   <div className="rounded-md border p-4" style={{ borderColor: LINE, background: PANEL }}>

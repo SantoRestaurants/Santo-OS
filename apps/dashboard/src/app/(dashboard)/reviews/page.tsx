@@ -9,6 +9,7 @@ import { approveReview, requestCorrection, resolveException, correctValue, retry
 
 const GOLD = "#C9A84C";
 const CREAM = "#E8E0D0";
+const HIDDEN_REVIEW_KEYS = new Set(["corte_agent_mail_supervisor_approval"]);
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -109,7 +110,9 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Sear
         supabase.from("exceptions").select("id,exception_key,exception_type,severity,status,details,created_at,workflow_run_id").in("status", ["open", "requires_review"]).order("created_at", { ascending: false }).limit(20),
     ]);
 
-    const reviews = reviewsResult.data ?? [];
+    const reviews = (reviewsResult.data ?? []).filter((review) =>
+        !review.review_key.startsWith("agent_mail_intake_") && !HIDDEN_REVIEW_KEYS.has(review.review_key)
+    );
     const exceptions = exceptionsResult.data ?? [];
     const pendingReviews = reviews.filter((r) => r.status === "requested" || r.status === "requires_review");
     const completedReviews = reviews.filter((r) => r.status !== "requested" && r.status !== "requires_review");

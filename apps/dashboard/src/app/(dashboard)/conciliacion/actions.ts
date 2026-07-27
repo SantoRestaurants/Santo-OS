@@ -192,10 +192,6 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
       error: trigger.error,
       retryable: true,
     });
-    await markUploadBlocked(serviceClient, workflowRunId, user.email ?? null, {
-      reason: "bank_watcher_trigger_failed",
-      trigger_error: trigger.error,
-    });
     revalidatePath("/conciliacion");
     revalidatePath("/cortes");
     redirect(withQuery(returnTo, "success", "Archivos subidos. La conciliación se reintentará automáticamente."));

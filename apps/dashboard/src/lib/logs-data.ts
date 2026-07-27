@@ -19,6 +19,20 @@ export type LogsData = {
   events: EventLog[];
 };
 
+const HIDDEN_EVENT_TYPES = new Set([
+  "agent_mail.received",
+  "agent_mail.classified",
+  "agent_mail.requires_review",
+  "corte.agent_mail_stage_approved",
+  "corte.bank_upload_requires_review",
+  "bank_reconciliation_corrected",
+  "corte.manual_value_corrected",
+  "corte.outstanding_snapshot_repaired",
+  "corte.outstanding_ledger_repaired",
+  "corte.monthly_source_repaired",
+  "corte.dashboard_comment_added",
+]);
+
 export async function getLogsData(): Promise<LogsData> {
   const config = getSupabasePublicConfig();
   if (!config.configured) {
@@ -57,6 +71,6 @@ export async function getLogsData(): Promise<LogsData> {
     status: "ready",
     missingConfig: [],
     error: null,
-    events: events as EventLog[],
+    events: (events as EventLog[]).filter((event) => !HIDDEN_EVENT_TYPES.has(event.event_type)),
   };
 }

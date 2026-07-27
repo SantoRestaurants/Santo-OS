@@ -699,3 +699,13 @@ Activate and validate the Corte two-stage runtime in production:
   matches the key exposed in Git history, and the GitHub repository remains
   public. Rotate the key in Supabase/local/Vercel/GitHub and make the repository
   private before operational acceptance.
+
+## 2026-07-27 - Bank visibility and alert cleanup
+
+- The dashboard now shows "falta entrar" only when an explicit bank snapshot
+  covers the selected business date. Dates without uploaded banks no longer
+  inherit a prior snapshot or add newer Corte sales to an estimated amount.
+- Non-functional Agent Mail, bank-trigger, correction and repair alerts are
+  hidden from the dashboard and logs. Bank files remain auditable, and the
+  supervisor approval record remains in the database because it is still the
+  upload gate for the bank stage.
