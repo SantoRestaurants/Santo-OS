@@ -242,6 +242,7 @@ def build_canonical_evidence(
     checks: list[dict[str, Any]] = []
     income_overrides: dict[str, float] = {}
     tip_overrides: dict[str, float] = {}
+    validated_photo_documents: set[str] = set()
 
     for document_type, group in (("amex", "amex"), ("bancarias", "bancos")):
         document = vision.get(document_type)
@@ -292,6 +293,8 @@ def build_canonical_evidence(
                 "status": "ok" if accepted_difference else "requires_review",
             }
         )
+        if accepted_difference:
+            validated_photo_documents.add(document_type)
         if not accepted_difference:
             exceptions.append(
                 _exception(
@@ -312,13 +315,15 @@ def build_canonical_evidence(
 
     tira_tips = _amount(tira_values.get("propina_total"))
     amex_tips = tip_overrides.get("amex")
-    if amex_tips is None:
+    if amex_tips is None and "amex" in validated_photo_documents:
         amex_tips = _amount(amex_values.get("propina"))
     if amex_tips is None:
         amex_tips = _amount(sistema.get("amex", {}).get("propina"))
-    bancarias_tips = _amount(bancarias_values.get("propina"))
-    if bancarias_tips is None:
-        bancarias_tips = _sum_values(bancarias_values, "propina_debito", "propina_credito")
+    bancarias_tips = None
+    if "bancarias" in validated_photo_documents:
+        bancarias_tips = _amount(bancarias_values.get("propina"))
+        if bancarias_tips is None:
+            bancarias_tips = _sum_values(bancarias_values, "propina_debito", "propina_credito")
     if bancarias_tips is None:
         bancarias_tips = _amount(sistema.get("bancos", {}).get("propina"))
     bank_tips_parts = [amex_tips, bancarias_tips]

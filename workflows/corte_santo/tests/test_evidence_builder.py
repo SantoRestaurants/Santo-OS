@@ -138,6 +138,36 @@ def test_photo_total_mismatch_requires_review() -> None:
     assert result["exceptions"][0]["exception_key"] == "amex_photo_vs_excel_discrepancy"
 
 
+def test_invalid_bank_photo_does_not_override_validated_excel_tips() -> None:
+    result = evidence_builder.build_canonical_evidence(
+        {
+            "amex": {"consumo": 1000.0, "propina": 100.0},
+            "bancos": {"consumo": 9000.0, "propina": 900.0},
+        },
+        {
+            "amex": {"consumo": 1000.0, "propina": 100.0},
+            "bancos": {"consumo": 9000.0, "propina": 900.0},
+        },
+        vision_documents=[
+            {
+                "document_type": "bancarias",
+                "status": "extracted",
+                "values": {"consumo": 5000.0, "propina": 200.0, "total": 5200.0},
+            }
+        ],
+        config={"evidence_rules": {"evidence_tolerance": 0}},
+    )
+
+    assert result["status"] == "requires_review"
+    assert result["selected_tips"] == 1000.0
+    assert result["income_register"]["propinas"] == 1000.0
+    assert any(
+        check["check_key"] == "bancarias_photo_vs_corte_excel"
+        and check["status"] == "requires_review"
+        for check in result["checks"]
+    )
+
+
 def test_cxc_adjustment_is_checked_against_bancos_difference() -> None:
     result = evidence_builder.build_canonical_evidence(
         {"bancos": {"consumo": 83564.65, "propina": 0.0}},

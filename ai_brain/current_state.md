@@ -1,5 +1,17 @@
 # Current State
 
+## 2026-07-27 - Propina uses only validated payment evidence
+
+- A Sunday 2026-07-26 Corte run persisted $5,192.45 in propinas even though
+  the XLS and Tira X supported $12,635.88. The Bancarias OCR total was partial
+  and mismatched the XLS, but its partial tip value was still used.
+- The evidence builder now trusts AMEX/Bancarias photo tips only after that
+  photo's total reconciles to the XLS. When a photo mismatches, it keeps the
+  run in `requires_review` and falls back to the validated Cierre Sistema
+  tips instead of persisting a partial OCR amount.
+- Production records for 2026-07-26 were corrected to propinas $12,635.88 and
+  Venta Bruta $105,044.10, with an audit event and manual-correction source.
+
 ## 2026-07-24 - Bank catch-up snapshots and automatic retry
 
 - The bank watcher previously stored one global reconciliation only on the
