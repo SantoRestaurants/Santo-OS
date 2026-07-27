@@ -61,7 +61,7 @@ export async function getLogsData(): Promise<LogsData> {
     .from("events")
     .select("id,aggregate_type,aggregate_id,event_type,severity,payload,created_at")
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(500);
 
   if (error) {
     return { status: "query_failed", missingConfig: [], error: error.message, events: [] };
@@ -71,6 +71,6 @@ export async function getLogsData(): Promise<LogsData> {
     status: "ready",
     missingConfig: [],
     error: null,
-    events: (events as EventLog[]).filter((event) => !HIDDEN_EVENT_TYPES.has(event.event_type)),
+    events: (events as EventLog[]).filter((event) => !HIDDEN_EVENT_TYPES.has(event.event_type)).slice(0, 100),
   };
 }
