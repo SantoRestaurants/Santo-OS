@@ -99,7 +99,19 @@ function additionalExpensesForRun(run: ReconciliationRun | null): AdditionalExpe
 }
 
 function isBankValidated(run: ReconciliationRun) {
-  return run.status === "completed" || run.status === "bank_validated" || run.documents.some(d => d.document_type === "amex_statement" || d.document_type === "banorte_statement");
+  const payload = run.output_payload ?? {};
+  const bankReconciliation = payload.bank_reconciliation;
+  const bankStatus = typeof bankReconciliation === "object" && bankReconciliation !== null && !Array.isArray(bankReconciliation)
+    ? (bankReconciliation as Record<string, unknown>).status
+    : null;
+  const validatedByPayload = payload.bank_validation_status === "bank_validated"
+    || payload.stage === "bank_validated"
+    || bankStatus === "bank_validated";
+  const validatedBankDocuments = run.documents.some((doc) =>
+    (doc.document_type === "amex_statement" || doc.document_type === "banorte_statement")
+    && doc.status === "validated"
+  );
+  return validatedByPayload || validatedBankDocuments;
 }
 
 function statusLabel(run: ReconciliationRun) {
