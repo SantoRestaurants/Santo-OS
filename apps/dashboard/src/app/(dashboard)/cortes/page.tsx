@@ -124,6 +124,7 @@ function getUnit(run: ReconciliationRun) {
 function statusText(run: ReconciliationRun) {
   const bankValidated = isBankValidated(run);
   if (bankValidated) return "Validado con bancos";
+  if (bankUploadPending(run)) return "Faltan bancos";
   if (run.status === "requires_review") return "Necesita revision";
   if (run.status === "waiting_for_input") return "Faltan bancos";
   if (run.status === "completed") return "Corte cargado";
@@ -132,9 +133,18 @@ function statusText(run: ReconciliationRun) {
 
 function statusColor(run: ReconciliationRun) {
   if (isBankValidated(run)) return GREEN;
+  if (bankUploadPending(run)) return RED;
   if (run.status === "requires_review") return AMBER;
   if (run.status === "waiting_for_input") return RED;
   return MUTED;
+}
+
+function bankUploadPending(run: ReconciliationRun) {
+  const payload = run.output_payload ?? {};
+  return !isBankValidated(run)
+    && (run.status === "waiting_for_input"
+      || payload.bank_validation_status === "pending_bank_upload"
+      || payload.bank_files_status === "not_uploaded");
 }
 
 function isBankValidated(run: ReconciliationRun) {

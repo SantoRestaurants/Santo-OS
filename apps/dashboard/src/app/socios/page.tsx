@@ -116,11 +116,20 @@ function isBankValidated(run: ReconciliationRun) {
 
 function statusLabel(run: ReconciliationRun) {
   if (isBankValidated(run)) return "Validado";
+  if (bankUploadPending(run)) return "Faltan bancos";
   if (run.status === "requires_review") return "Revisión";
   if (run.status === "waiting_for_input") return "Pendiente";
   if (run.status === "completed") return "Cargado";
   if (run.status === "pending_corte") return "En curso";
   return run.status;
+}
+
+function bankUploadPending(run: ReconciliationRun) {
+  const payload = run.output_payload ?? {};
+  return !isBankValidated(run)
+    && (run.status === "waiting_for_input"
+      || payload.bank_validation_status === "pending_bank_upload"
+      || payload.bank_files_status === "not_uploaded");
 }
 
 function getUnit(run: ReconciliationRun) {
