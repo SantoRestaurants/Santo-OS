@@ -184,11 +184,12 @@ export async function uploadBankFilesAndTrigger(formData: FormData) {
   if (!trigger.ok) {
     await updateBankProcessing(serviceClient, workflowRunId, {
       // The files are already safely registered in Drive and Supabase. Keep
-      // this retryable so the scheduled bank watcher can recover from a
-      // temporary dashboard/GitHub credential failure.
-      status: "waiting_for_input",
+      // this queued so the scheduled bank watcher can recover from a
+      // temporary dashboard/GitHub credential failure without presenting it
+      // as if the bank files were missing.
+      status: "queued",
       business_date: businessDate,
-      completed_at: new Date().toISOString(),
+      queued_at: new Date().toISOString(),
       error: trigger.error,
       retryable: true,
     });

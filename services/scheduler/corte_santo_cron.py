@@ -575,7 +575,7 @@ def _cxc_expected_collection(receivable: dict[str, Any]) -> dict[str, Any] | Non
     principal = _to_money(receivable.get("principal")) - _to_money(receivable.get("settled_principal"))
     if principal <= 0:
         return None
-    return {
+    expected = {
         "business_date": receivable.get("opened_on"),
         "channel": "cxc",
         "amount": principal,
@@ -585,6 +585,16 @@ def _cxc_expected_collection(receivable: dict[str, Any]) -> dict[str, Any] | Non
         "receivable_key": receivable.get("receivable_key"),
         "description": evidence.get("description"),
     }
+    pending_settlements = [
+        item for item in evidence.get("pending_settlements", [])
+        if isinstance(item, dict)
+    ]
+    if pending_settlements:
+        reported = pending_settlements[0]
+        expected["settlement_priority"] = 1
+        expected["settlement_reported_on"] = reported.get("reported_on")
+        expected["settlement_movement_id"] = reported.get("movement_id")
+    return expected
 
 
 def run_bank_watcher_once(
@@ -825,6 +835,14 @@ def run_bank_watcher_once(
 
     # ── Per-day: persist status AND write workbook to Drive ──
     bank_result = result.get("bank_reconciliation") or {}
+    # The bank files can be parsed and reconciled successfully while some
+    # deposits are still pending. That is a valid bank outcome, not an
+    # execution failure.
+    if (
+        result.get("status") == "requires_review"
+        and bank_result.get("status") == "bank_requires_review"
+    ):
+        result["status"] = "bank_requires_review"
     amex_matches = bank_result.get("amex_matches", [])
     validated_dates: set[str] = set()
 
@@ -941,11 +959,19 @@ def run_bank_watcher_once(
         for pr in pending_runs:
             if pr["business_date"] == bd:
                 try:
+                    day_pending_items = _pending_items_for_date(
+                        bank_result.get("pending_items") or [],
+                        bd,
+                    )
+                    day_pending = _summarize_pending(day_pending_items)
+                    day_bank_status = (
+                        "bank_requires_review" if day_pending else "bank_validated"
+                    )
                     # Only update status and bank fields, don't replace output_payload
                     r_upd = httpx.patch(
                         f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
                         json={
-                            "status": "completed",
+                            "status": "waiting_for_input" if day_pending else "completed",
                         },
                         headers={"apikey": service_key, "Authorization": f"Bearer {service_key}",
                                  "Content-Type": "application/json", "Prefer": "return=representation"},
@@ -965,23 +991,18 @@ def run_bank_watcher_once(
                             if isinstance(current_op, str):
                                 try: current_op = json.loads(current_op)
                                 except: current_op = {}
-                            current_op["bank_validation_status"] = "bank_validated"
-                            current_op["stage"] = "bank_validated"
-                            current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
-                            day_pending_items = _pending_items_for_date(
-                                bank_result.get("pending_items") or [],
-                                bd,
+                            current_op["bank_validation_status"] = day_bank_status
+                            current_op["stage"] = (
+                                "bank_requires_review" if day_pending else "bank_validated"
                             )
-                            day_pending = _summarize_pending(day_pending_items)
+                            current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
                             revision = current_op.get("revision_document") or {}
                             if isinstance(revision, dict):
                                 revision["falta_por_entrar"] = day_pending
-                                revision["bank_validation_status"] = (
-                                    "bank_requires_review" if day_pending else "bank_validated"
-                                )
+                                revision["bank_validation_status"] = day_bank_status
                                 current_op["revision_document"] = revision
                             current_op["bank_reconciliation"] = {
-                                "status": "bank_requires_review" if day_pending else "bank_validated",
+                                "status": day_bank_status,
                                 "pending_items": day_pending_items,
                                 "pending_collections": day_pending,
                                 "matched_on_later_statement": True,
@@ -996,6 +1017,21 @@ def run_bank_watcher_once(
                                 "validated_by": match.get("validated_by"),
                                 "amex_cargo": match.get("amex_cargo") or match.get("amex_cargo_a"),
                             }
+                            previous_processing = current_op.get("bank_processing") or {}
+                            if isinstance(previous_processing, dict):
+                                current_op["bank_processing"] = {
+                                    **previous_processing,
+                                    "status": "completed",
+                                    "completed_at": datetime.now(UTC).isoformat(),
+                                    "processed_business_date": effective_date,
+                                    "result_status": day_bank_status,
+                                    "requires_review_reason": None,
+                                    "error": None,
+                                    "retryable": False,
+                                    "validated_count": result.get("validated_count"),
+                                    "validated_dates": result.get("validated_dates") or [],
+                                    "pending_collections": day_pending,
+                                }
                             httpx.patch(
                                 f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
                                 json={"output_payload": current_op},
@@ -1115,7 +1151,23 @@ def run_bank_watcher_once(
             current_op["bank_reconciliation"] = bank_result
             current_op["falta_por_entrar_por_dia"] = result["falta_por_entrar_por_dia"]
             current_op["bank_validation_status"] = persisted_bank_status
+            current_op["stage"] = persisted_bank_status
             current_op["bank_validated_at"] = datetime.now(UTC).isoformat()
+            previous_processing = current_op.get("bank_processing") or {}
+            if isinstance(previous_processing, dict):
+                current_op["bank_processing"] = {
+                    **previous_processing,
+                    "status": "completed",
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "processed_business_date": effective_date,
+                    "result_status": persisted_bank_status,
+                    "requires_review_reason": None,
+                    "error": None,
+                    "retryable": False,
+                    "validated_count": result.get("validated_count"),
+                    "validated_dates": result.get("validated_dates") or [],
+                    "pending_collections": pending_collections,
+                }
             update = httpx.patch(
                 f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
                 json={"output_payload": current_op},
@@ -1133,6 +1185,95 @@ def run_bank_watcher_once(
                 effective_date,
                 pr.get("business_date"),
             )
+
+        # A dashboard-triggered attempt may have stored a stale GitHub 401 on
+        # a run that this successful scheduled reconciliation has now covered.
+        # Clear that transport error without changing the bank result itself.
+        for pr in pending_runs:
+            response = httpx.get(
+                f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}&select=output_payload",
+                headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            rows = response.json()
+            if not rows:
+                continue
+            current_op = rows[0].get("output_payload") or {}
+            if isinstance(current_op, str):
+                current_op = json.loads(current_op)
+            if not isinstance(current_op, dict):
+                continue
+            processing = current_op.get("bank_processing") or {}
+            day_pending_items = _pending_items_for_date(
+                bank_result.get("pending_items") or [],
+                str(pr.get("business_date") or ""),
+            )
+            day_pending = _summarize_pending(day_pending_items)
+            existing_bank = current_op.get("bank_reconciliation") or {}
+            existing_pending = (
+                existing_bank.get("pending_collections")
+                if isinstance(existing_bank, dict)
+                else {}
+            ) or {}
+            stale_validated_pending = (
+                current_op.get("bank_validation_status") == "bank_validated"
+                and bool(existing_pending)
+                and not day_pending
+            )
+            stage_needs_sync = (
+                current_op.get("bank_validation_status") == persisted_bank_status
+                and current_op.get("stage") == "corte_loaded"
+            )
+            if not isinstance(processing, dict) or not (
+                processing.get("error")
+                or processing.get("retryable")
+                or stage_needs_sync
+                or stale_validated_pending
+            ):
+                continue
+            if stale_validated_pending:
+                current_op["bank_reconciliation"] = {
+                    "status": "bank_validated",
+                    "pending_items": [],
+                    "pending_collections": {},
+                    "matched_on_later_statement": True,
+                }
+                current_op["falta_por_entrar_por_dia"] = {
+                    key: value
+                    for key, value in (result.get("falta_por_entrar_por_dia") or {}).items()
+                    if key != str(pr.get("business_date") or "")
+                }
+                current_op["bank_validation_status"] = "bank_validated"
+                current_op["stage"] = "bank_validated"
+            if stage_needs_sync:
+                current_op["stage"] = persisted_bank_status
+            processing_result_status = (
+                "bank_validated" if stale_validated_pending else persisted_bank_status
+            )
+            current_op["bank_processing"] = {
+                **processing,
+                "status": "completed",
+                "completed_at": datetime.now(UTC).isoformat(),
+                "processed_business_date": effective_date,
+                "result_status": processing_result_status,
+                "requires_review_reason": None,
+                "error": None,
+                "retryable": False,
+                "validated_count": result.get("validated_count"),
+                "validated_dates": result.get("validated_dates") or [],
+            }
+            update = httpx.patch(
+                f"{supabase_url}/rest/v1/workflow_runs?id=eq.{pr['id']}",
+                json={"output_payload": current_op},
+                headers={
+                    "apikey": service_key,
+                    "Authorization": f"Bearer {service_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=10.0,
+            )
+            update.raise_for_status()
         result["snapshot_persisted_count"] = persisted_count
     except Exception:
         logging.exception("Failed to persist bank stage summary")
@@ -1180,6 +1321,7 @@ def _persist_bank_processing_outcome(business_date: str | None, result: dict[str
         processing_status = "completed" if result_status in (
             "completed", "waiting_for_input", "bank_validated", "bank_requires_review"
         ) else "requires_review"
+        processed_without_execution_error = processing_status == "completed"
         bank = output.get("bank_reconciliation") or {}
         pending = bank.get("pending_collections") if isinstance(bank, dict) else {}
         output["bank_processing"] = {
@@ -1189,6 +1331,8 @@ def _persist_bank_processing_outcome(business_date: str | None, result: dict[str
             "processed_business_date": business_date,
             "result_status": result_status,
             "requires_review_reason": result.get("requires_review_reason"),
+            "error": None if processed_without_execution_error else result.get("error"),
+            "retryable": False if processed_without_execution_error else previous.get("retryable"),
             "validated_count": result.get("validated_count"),
             "validated_dates": result.get("validated_dates") or [],
             "pending_collections": pending or {},
@@ -1340,7 +1484,7 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
     statuses = [job["result"].get("status") for job in jobs]
     status = (
         "completed"
-        if statuses and all(item in ("completed", "waiting_for_input") for item in statuses)
+        if statuses and all(item in ("completed", "waiting_for_input", "bank_requires_review") for item in statuses)
         else "requires_review"
     )
     return {
