@@ -138,7 +138,19 @@ function statusColor(run: ReconciliationRun) {
 }
 
 function isBankValidated(run: ReconciliationRun) {
-  return run.status === "completed" || run.status === "bank_validated" || run.documents.some((doc) => doc.document_type === "amex_statement" || doc.document_type === "banorte_statement");
+  const payload = run.output_payload ?? {};
+  const bankReconciliation = payload.bank_reconciliation;
+  const bankStatus = typeof bankReconciliation === "object" && bankReconciliation !== null && !Array.isArray(bankReconciliation)
+    ? (bankReconciliation as Record<string, unknown>).status
+    : null;
+  const validatedByPayload = payload.bank_validation_status === "bank_validated"
+    || payload.stage === "bank_validated"
+    || bankStatus === "bank_validated";
+  const validatedBankDocuments = run.documents.some((doc) =>
+    (doc.document_type === "amex_statement" || doc.document_type === "banorte_statement")
+    && doc.status === "validated"
+  );
+  return validatedByPayload || validatedBankDocuments;
 }
 
 function runTotal(run: ReconciliationRun) { return dailySales(run); }
@@ -541,7 +553,7 @@ export default async function CortesPage({ searchParams }: { searchParams: Searc
                   })()}
                 </div>
 
-                <CorteAiBox runId={selectedRun.id} />
+                <CorteAiBox runId={selectedRun.id} selectedMonth={selectedMonth} businessDate={selectedRun.business_date ?? undefined} />
 
               </div>
 
