@@ -57,11 +57,10 @@ def bank_stage_result(
     pending_collections = bank_reconciliation.get("pending_collections") or {}
     ready = (
         bank_reconciliation.get("status") == "bank_validated"
-        and not pending_collections
         and ingresos_result.get("status") in ("planned", "written")
     )
     notification_text = (
-        "Los estados AMEX y Banorte fueron cruzados. Hay importes pendientes de entrar, así que el Excel queda como corte cargado/pendiente y no se marca en azul."
+        "Los estados AMEX y Banorte fueron cruzados. Los importes que todavía no entraron se conservan aparte como falta por entrar por día."
         if pending_collections
         else "Los estados AMEX y Banorte fueron cruzados. El Excel quedó marcado en azul y REVISION fue actualizado."
     )

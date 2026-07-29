@@ -115,9 +115,8 @@ function isBankValidated(run: ReconciliationRun) {
 }
 
 function statusLabel(run: ReconciliationRun) {
-  if (isBankValidated(run)) return "Validado";
+  if (isBankValidated(run)) return "Validado con bancos";
   if (bankProcessingPending(run)) return "Bancos cargados";
-  if (bankReconciliationPending(run)) return "Pendiente de conciliar";
   if (bankUploadPending(run)) return "Faltan bancos";
   if (run.status === "requires_review") return "Revisión";
   if (run.status === "waiting_for_input") return "Pendiente";
@@ -145,16 +144,6 @@ function bankProcessingPending(run: ReconciliationRun) {
   if (!processing || typeof processing !== "object" || Array.isArray(processing)) return false;
   const status = (processing as Record<string, unknown>).status;
   return status === "queued" || status === "running";
-}
-
-function bankReconciliationPending(run: ReconciliationRun) {
-  const payload = run.output_payload ?? {};
-  if (payload.bank_validation_status === "bank_requires_review") return true;
-  const bankReconciliation = payload.bank_reconciliation;
-  return typeof bankReconciliation === "object"
-    && bankReconciliation !== null
-    && !Array.isArray(bankReconciliation)
-    && (bankReconciliation as Record<string, unknown>).status === "bank_requires_review";
 }
 
 function getUnit(run: ReconciliationRun) {

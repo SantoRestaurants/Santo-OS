@@ -304,6 +304,23 @@ def test_bank_matching_allows_legitimate_pending_collections() -> None:
     assert result["pending_collections"]["amex"] == 50.0
 
 
+def test_bank_stage_remains_validated_when_collections_are_pending() -> None:
+    result = pipeline.bank_stage_result(
+        {
+            "status": "bank_validated",
+            "pending_collections": {"amex": 50.0},
+        },
+        {"status": "written"},
+        {},
+        "developer@santorestaurants.com",
+    )
+
+    assert result["status"] == "completed"
+    assert result["stage"] == "bank_validated"
+    assert result["bank_reconciliation"]["pending_collections"] == {"amex": 50.0}
+    assert result["notification"]["kind"] == "bank_validated"
+
+
 def test_bank_matching_dedupes_equivalent_pending_amex_representations() -> None:
     result = bank.reconcile_bank_stage(
         [

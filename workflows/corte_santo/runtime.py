@@ -273,46 +273,33 @@ def run_bank_stage(request: dict[str, Any], config: dict[str, Any]) -> dict[str,
         business_date=str(payload.get("business_date", "")),
         settlement_rules=config.get("bank_settlement_rules") or {},
     )
-    pending_collections = bank_result.get("pending_collections") or {}
     bank_stage_status = (
         "bank_validated"
-        if bank_result.get("status") == "bank_validated" and not pending_collections
+        if bank_result.get("status") == "bank_validated"
         else "bank_requires_review"
     )
     bank_result = {**bank_result, "status": bank_stage_status}
 
     paths = payload.get("workbook_paths", {})
     outputs = payload.get("workbook_outputs", {})
-    if bank_stage_status == "bank_validated":
-        ingresos_result = writer.write_ingresos(
-            str(paths.get("ingresos", "")),
-            str(outputs.get("ingresos", "")),
-            str(payload.get("business_date", "")),
-            income_channels,
-            stage="bank_validated",
-            dry_run=bool(request.get("dry_run", True)),
-            layout=config.get("ingresos_layout"),
-            cell_notes=payload.get("income_cell_notes") if isinstance(payload.get("income_cell_notes"), dict) else None,
-        )
-    else:
-        # A bank file upload means "we checked banks", not "this sale day was
-        # deposited". If money is still pending, repaint the row as loaded
-        # instead of leaving a stale blue fill from a previous watcher run.
-        ingresos_result = writer.write_ingresos(
-            str(paths.get("ingresos", "")),
-            str(outputs.get("ingresos", "")),
-            str(payload.get("business_date", "")),
-            income_channels,
-            stage="corte_loaded",
-            dry_run=bool(request.get("dry_run", True)),
-            layout=config.get("ingresos_layout"),
-            cell_notes=payload.get("income_cell_notes") if isinstance(payload.get("income_cell_notes"), dict) else None,
-        )
-        if ingresos_result.get("status") not in ("planned", "written"):
-            ingresos_result = {
-                "status": "requires_review",
-                "review_reason": ingresos_result.get("review_reason") or "bank_reconciliation_not_ready",
-            }
+    # A successful bank parse/cross-check validates the bank stage even when
+    # some expected deposits have not landed yet. Those amounts are carried in
+    # ``pending_collections`` and shown as ``falta_por_entrar`` separately.
+    ingresos_result = writer.write_ingresos(
+        str(paths.get("ingresos", "")),
+        str(outputs.get("ingresos", "")),
+        str(payload.get("business_date", "")),
+        income_channels,
+        stage="bank_validated" if bank_stage_status == "bank_validated" else "corte_loaded",
+        dry_run=bool(request.get("dry_run", True)),
+        layout=config.get("ingresos_layout"),
+        cell_notes=payload.get("income_cell_notes") if isinstance(payload.get("income_cell_notes"), dict) else None,
+    )
+    if ingresos_result.get("status") not in ("planned", "written"):
+        ingresos_result = {
+            "status": "requires_review",
+            "review_reason": ingresos_result.get("review_reason") or "bank_reconciliation_not_ready",
+        }
     revision = dict(payload.get("revision_document", {}))
     revision["falta_por_entrar"] = bank_result.get("pending_collections", {})
     revision["gastos_adicionales"] = bank_result.get("additional_expenses", [])

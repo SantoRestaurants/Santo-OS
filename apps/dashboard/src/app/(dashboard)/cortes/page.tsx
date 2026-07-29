@@ -125,7 +125,6 @@ function statusText(run: ReconciliationRun) {
   const bankValidated = isBankValidated(run);
   if (bankValidated) return "Validado con bancos";
   if (bankProcessingPending(run)) return "Bancos cargados — en proceso";
-  if (bankReconciliationPending(run)) return "Pendiente de conciliar";
   if (bankUploadPending(run)) return "Faltan bancos";
   if (run.status === "requires_review") return "Necesita revision";
   if (run.status === "waiting_for_input") return "Faltan bancos";
@@ -136,7 +135,6 @@ function statusText(run: ReconciliationRun) {
 function statusColor(run: ReconciliationRun) {
   if (isBankValidated(run)) return GREEN;
   if (bankProcessingPending(run)) return AMBER;
-  if (bankReconciliationPending(run)) return AMBER;
   if (bankUploadPending(run)) return RED;
   if (run.status === "requires_review") return AMBER;
   if (run.status === "waiting_for_input") return RED;
@@ -162,16 +160,6 @@ function bankProcessingPending(run: ReconciliationRun) {
   if (!processing || typeof processing !== "object" || Array.isArray(processing)) return false;
   const status = (processing as Record<string, unknown>).status;
   return status === "queued" || status === "running";
-}
-
-function bankReconciliationPending(run: ReconciliationRun) {
-  const payload = run.output_payload ?? {};
-  if (payload.bank_validation_status === "bank_requires_review") return true;
-  const bankReconciliation = payload.bank_reconciliation;
-  return typeof bankReconciliation === "object"
-    && bankReconciliation !== null
-    && !Array.isArray(bankReconciliation)
-    && (bankReconciliation as Record<string, unknown>).status === "bank_requires_review";
 }
 
 function isBankValidated(run: ReconciliationRun) {
